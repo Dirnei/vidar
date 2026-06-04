@@ -75,11 +75,27 @@ public sealed class DevicesController : ControllerBase
         var device = await _deviceRepo.GetByIdAsync(id);
         if (device == null) return NotFound();
 
-        var command = new DeviceCommand(id, device.CommunicationType, device.NativeId, request.Capability, request.Value);
-        _logger.LogInformation("Sending command {Capability}={Value} to device {DeviceId}", request.Capability, request.Value, id);
+        // Unwrap JsonElement to a primitive so it survives Akka serialization
+        var value = UnwrapJsonElement(request.Value) ?? request.Value;
+        var command = new DeviceCommand(id, device.CommunicationType, device.NativeId, request.Capability, value);
+        _logger.LogInformation("Sending command {Capability}={Value} ({Type}) to device {DeviceId}",
+            request.Capability, value, value?.GetType().Name ?? "null", id);
         var region = _twinRegion.ActorRef;
         region.Tell(command);
         return Accepted();
+    }
+
+    private static object? UnwrapJsonElement(object? value)
+    {
+        if (value is not System.Text.Json.JsonElement el) return value;
+        return el.ValueKind switch
+        {
+            System.Text.Json.JsonValueKind.Number => el.TryGetInt64(out var l) ? l : el.GetDouble(),
+            System.Text.Json.JsonValueKind.True => true,
+            System.Text.Json.JsonValueKind.False => false,
+            System.Text.Json.JsonValueKind.String => el.GetString(),
+            _ => value
+        };
     }
 
     [HttpPut("{id:guid}")]

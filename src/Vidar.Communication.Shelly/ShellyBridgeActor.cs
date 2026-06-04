@@ -135,8 +135,10 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
 
             try
             {
-                var numericValue = CoerceToInt(cmd.Value);
-                var boolValue = CoerceToBool(cmd.Value);
+                _log.Info("Command value type: {Type}, value: {Value}", cmd.Value?.GetType().FullName ?? "null", cmd.Value);
+                var numericValue = cmd.Value != null ? CoerceToInt(cmd.Value) : null;
+                var boolValue = cmd.Value != null ? CoerceToBool(cmd.Value) : null;
+                _log.Info("Coerced: numeric={Numeric}, bool={Bool}", numericValue?.ToString() ?? "null", boolValue?.ToString() ?? "null");
 
                 if (device.Generation == 1)
                 {
@@ -145,7 +147,10 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
                     else if (cmd.Capability == CapabilityType.Cover)
                     {
                         if (numericValue.HasValue)
-                            await _httpClient.Gen1SetCoverPositionAsync(device.Host, numericValue.Value);
+                        {
+                            var result = await _httpClient.Gen1SetCoverPositionAsync(device.Host, numericValue.Value);
+                            _log.Info("Gen1 cover response from {Host}: {Response}", device.Host, result);
+                        }
                         else if (cmd.Value is string dir)
                         {
                             if (dir == "open") await _httpClient.Gen1OpenCoverAsync(device.Host);

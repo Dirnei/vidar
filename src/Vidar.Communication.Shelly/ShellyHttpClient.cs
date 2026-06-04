@@ -67,11 +67,12 @@ public sealed class ShellyHttpClient(HttpClient httpClient)
         response.EnsureSuccessStatusCode();
     }
 
-    public async Task Gen1SetCoverPositionAsync(string host, int position)
+    public async Task<string> Gen1SetCoverPositionAsync(string host, int position)
     {
         var url = $"http://{host}/roller/0?go=to_pos&roller_pos={position}";
         var response = await httpClient.GetAsync(url);
         response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync();
     }
 
     public async Task Gen1OpenCoverAsync(string host)
