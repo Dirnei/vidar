@@ -70,7 +70,8 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange }: Pr
     alignItems: 'center',
     gap: 10,
     flexShrink: 0,
-    maxWidth: 200,
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
   };
 
   function renderControls() {
