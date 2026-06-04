@@ -1,0 +1,11 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Akka" Version="1.5.68" />
+    <PackageReference Include="Akka.Cluster.Sharding" Version="1.5.68" />
+  </ItemGroup>
+
+</Project>

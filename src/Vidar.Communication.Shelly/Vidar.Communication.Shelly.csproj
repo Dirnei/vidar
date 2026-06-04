@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <UserSecretsId>dotnet-Vidar.Communication.Shelly-525372d9-0143-46bb-ae32-e08502212423</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Akka.Cluster.Hosting" Version="1.5.68" />
+    <PackageReference Include="Akka.Cluster.Tools" Version="1.5.68" />
+    <PackageReference Include="Akka.Hosting" Version="1.5.68" />
+    <PackageReference Include="Akka.Remote.Hosting" Version="1.5.68" />
+    <PackageReference Include="Akka.Streams" Version="1.5.68" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vidar.Core\Vidar.Core.csproj" />
+  </ItemGroup>
+</Project>
