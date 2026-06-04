@@ -135,14 +135,17 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
 
             try
             {
+                var numericValue = CoerceToInt(cmd.Value);
+                var boolValue = CoerceToBool(cmd.Value);
+
                 if (device.Generation == 1)
                 {
-                    if (cmd.Capability == CapabilityType.Switch && cmd.Value is bool on1)
-                        await _httpClient.Gen1SetSwitchAsync(device.Host, 0, on1);
+                    if (cmd.Capability == CapabilityType.Switch && boolValue.HasValue)
+                        await _httpClient.Gen1SetSwitchAsync(device.Host, 0, boolValue.Value);
                     else if (cmd.Capability == CapabilityType.Cover)
                     {
-                        if (cmd.Value is int pos1)
-                            await _httpClient.Gen1SetCoverPositionAsync(device.Host, pos1);
+                        if (numericValue.HasValue)
+                            await _httpClient.Gen1SetCoverPositionAsync(device.Host, numericValue.Value);
                         else if (cmd.Value is string dir)
                         {
                             if (dir == "open") await _httpClient.Gen1OpenCoverAsync(device.Host);
@@ -152,11 +155,13 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
                 }
                 else
                 {
-                    if (cmd.Capability == CapabilityType.Switch && cmd.Value is bool on2)
-                        await _httpClient.SetSwitchAsync(device.Host, 0, on2);
-                    else if (cmd.Capability == CapabilityType.Cover && cmd.Value is int pos2)
-                        await _httpClient.SetCoverPositionAsync(device.Host, 0, pos2);
+                    if (cmd.Capability == CapabilityType.Switch && boolValue.HasValue)
+                        await _httpClient.SetSwitchAsync(device.Host, 0, boolValue.Value);
+                    else if (cmd.Capability == CapabilityType.Cover && numericValue.HasValue)
+                        await _httpClient.SetCoverPositionAsync(device.Host, 0, numericValue.Value);
                 }
+
+                _log.Info("Executed {Capability} command on {NativeId} (Gen{Gen})", cmd.Capability, device.NativeId, device.Generation);
             }
             catch (Exception ex)
             {
@@ -281,6 +286,27 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
     {
         _log.Warning(msg.Exception, "Failed to poll Shelly device {NativeId}", msg.NativeId);
     }
+
+    private static int? CoerceToInt(object value) => value switch
+    {
+        int i => i,
+        long l => (int)l,
+        double d => (int)d,
+        float f => (int)f,
+        decimal m => (int)m,
+        System.Text.Json.JsonElement el when el.ValueKind == System.Text.Json.JsonValueKind.Number => el.GetInt32(),
+        string s when int.TryParse(s, out var parsed) => parsed,
+        _ => null
+    };
+
+    private static bool? CoerceToBool(object value) => value switch
+    {
+        bool b => b,
+        System.Text.Json.JsonElement el when el.ValueKind == System.Text.Json.JsonValueKind.True => true,
+        System.Text.Json.JsonElement el when el.ValueKind == System.Text.Json.JsonValueKind.False => false,
+        string s when bool.TryParse(s, out var parsed) => parsed,
+        _ => null
+    };
 
     private sealed record PollFailed(string NativeId, Exception Exception);
 }
