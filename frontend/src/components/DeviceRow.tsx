@@ -132,8 +132,8 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange }: Pr
     if (device.capabilities.includes('Temperature')) {
       const temp = state['Temperature'];
       items.push(
-        <span key="temp" style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-          {temp != null ? `${Number(temp).toFixed(1)}°C` : '—'}
+        <span key="temp" style={{ fontSize: 13, color: temp != null ? 'var(--text-secondary)' : 'var(--text-dimmed)' }}>
+          {temp != null ? `${Number(temp).toFixed(1)} °C` : '— °C'}
         </span>
       );
     }
@@ -141,8 +141,8 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange }: Pr
     if (device.capabilities.includes('Power')) {
       const power = state['Power'];
       items.push(
-        <span key="power" style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-          {power != null ? `${Number(power).toFixed(1)} W` : '—'}
+        <span key="power" style={{ fontSize: 13, color: power != null ? 'var(--text-secondary)' : 'var(--text-dimmed)' }}>
+          {power != null ? `${Number(power).toFixed(1)} W` : '— W'}
         </span>
       );
     }
@@ -150,8 +150,8 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange }: Pr
     if (device.capabilities.includes('Energy')) {
       const energy = state['Energy'];
       items.push(
-        <span key="energy" style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-          {energy != null ? `${Number(energy).toFixed(2)} kWh` : '—'}
+        <span key="energy" style={{ fontSize: 13, color: energy != null ? 'var(--text-secondary)' : 'var(--text-dimmed)' }}>
+          {energy != null ? `${Number(energy).toFixed(2)} kWh` : '— kWh'}
         </span>
       );
     }

@@ -76,7 +76,7 @@ export function RoomsPage() {
 
   const grid: React.CSSProperties = {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))',
     gap: 16,
   };
 
