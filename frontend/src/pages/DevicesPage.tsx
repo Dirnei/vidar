@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { Device, Room } from '../types';
 import { getDevices, getRooms } from '../api/client';
 import { subscribeDeviceState } from '../api/sse';
@@ -37,53 +37,19 @@ export function DevicesPage() {
       ? devices
       : devices.filter((d) => d.capabilities.includes(filter));
 
-  const pageTitle: React.CSSProperties = {
-    fontSize: 20,
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    marginBottom: 16,
-  };
-
-  const filterBar: React.CSSProperties = {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 20,
-  };
-
-  function filterBtn(active: boolean): React.CSSProperties {
-    return {
-      padding: '5px 14px',
-      borderRadius: 20,
-      fontSize: 13,
-      fontWeight: 500,
-      cursor: 'pointer',
-      backgroundColor: active ? 'var(--tab-active)' : 'var(--bg-row)',
-      color: active ? '#fff' : 'var(--text-muted)',
-      border: active ? '1px solid var(--tab-active)' : '1px solid var(--border)',
-      transition: 'all 0.15s',
-    };
-  }
-
-  const list: React.CSSProperties = {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 0,
-  };
-
   if (loading) {
-    return <div style={{ color: 'var(--text-muted)', padding: 24 }}>Loading devices…</div>;
+    return <div style={{ color: 'var(--text-muted)', padding: 24, fontFamily: 'var(--font-body)' }}>Loading devices…</div>;
   }
 
   return (
-    <div>
-      <div style={pageTitle}>Devices</div>
+    <div className="page-content">
+      <div className="page-title">All Devices</div>
 
-      <div style={filterBar}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
         {filters.map((f) => (
           <button
             key={f}
-            style={filterBtn(filter === f)}
+            className={`filter-pill${filter === f ? ' active' : ''}`}
             onClick={() => setFilter(f)}
           >
             {f}
@@ -92,11 +58,19 @@ export function DevicesPage() {
       </div>
 
       {filtered.length === 0 ? (
-        <div style={{ color: 'var(--text-dimmed)', fontSize: 14 }}>
+        <div style={{ color: 'var(--text-muted)', fontSize: 14 }}>
           No devices{filter !== 'All' ? ` with capability "${filter}"` : ''}.
         </div>
       ) : (
-        <div style={list}>
+        <div
+          style={{
+            background: 'var(--bg-elevated)',
+            border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '4px 20px',
+            boxShadow: 'var(--shadow-card)',
+          }}
+        >
           {filtered.map((d) => (
             <DeviceRow
               key={d.id}

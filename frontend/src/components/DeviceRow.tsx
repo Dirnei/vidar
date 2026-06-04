@@ -35,40 +35,10 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange }: Pr
     ? (rooms.find((r) => r.id === device.roomId)?.name ?? 'Unassigned')
     : null;
 
-  const row: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12,
-    padding: '10px 14px',
-    backgroundColor: 'var(--bg-row)',
-    borderRadius: 6,
-    marginBottom: 4,
-  };
-
-  const nameSection: React.CSSProperties = {
-    flex: 1,
-    minWidth: 0,
-  };
-
-  const nameLink: React.CSSProperties = {
-    fontWeight: 500,
-    color: 'var(--text-primary)',
-    display: 'block',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-    whiteSpace: 'nowrap',
-  };
-
-  const sub: React.CSSProperties = {
-    fontSize: 12,
-    color: 'var(--text-muted)',
-    marginTop: 2,
-  };
-
   const controls: React.CSSProperties = {
     display: 'flex',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
     flexShrink: 0,
     flexWrap: 'wrap',
     justifyContent: 'flex-end',
@@ -87,15 +57,15 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange }: Pr
     if (device.capabilities.includes('Dimmer')) {
       const level = typeof state['Dimmer'] === 'number' ? (state['Dimmer'] as number) : 0;
       items.push(
-        <div key="dimmer" style={{ display: 'flex', alignItems: 'center', gap: 6, width: 100 }}>
+        <div key="dimmer" style={{ display: 'flex', alignItems: 'center', gap: 6, width: 110 }}>
           <input
             type="range"
+            className="slider-dimmer"
             min={0}
             max={100}
             value={level}
             style={{
-              background: `linear-gradient(to right, var(--accent-yellow) ${level}%, var(--border) ${level}%)`,
-              accentColor: 'var(--accent-yellow)',
+              background: `linear-gradient(to right, var(--accent-primary) ${level}%, var(--bg-hover) ${level}%)`,
             }}
             onChange={(e) => handleDimmer(Number(e.target.value))}
           />
@@ -106,15 +76,15 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange }: Pr
     if (device.capabilities.includes('Cover')) {
       const pos = typeof state['Cover'] === 'number' ? (state['Cover'] as number) : 0;
       items.push(
-        <div key="cover" style={{ display: 'flex', alignItems: 'center', gap: 6, width: 100 }}>
+        <div key="cover" style={{ display: 'flex', alignItems: 'center', gap: 6, width: 110 }}>
           <input
             type="range"
+            className="slider-cover"
             min={0}
             max={100}
             value={pos}
             style={{
-              background: `linear-gradient(to right, var(--accent-blue) ${pos}%, var(--border) ${pos}%)`,
-              accentColor: 'var(--accent-blue)',
+              background: `linear-gradient(to right, var(--accent-teal) ${pos}%, var(--bg-hover) ${pos}%)`,
             }}
             onChange={(e) => handleCover(Number(e.target.value))}
           />
@@ -132,7 +102,7 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange }: Pr
     if (device.capabilities.includes('Temperature')) {
       const temp = state['Temperature'];
       items.push(
-        <span key="temp" style={{ fontSize: 13, color: temp != null ? 'var(--text-secondary)' : 'var(--text-dimmed)' }}>
+        <span key="temp" style={{ fontSize: 13, color: temp != null ? 'var(--accent-red)' : 'var(--text-muted)' }}>
           {temp != null ? `${Number(temp).toFixed(1)} °C` : '— °C'}
         </span>
       );
@@ -141,7 +111,7 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange }: Pr
     if (device.capabilities.includes('Power')) {
       const power = state['Power'];
       items.push(
-        <span key="power" style={{ fontSize: 13, color: power != null ? 'var(--text-secondary)' : 'var(--text-dimmed)' }}>
+        <span key="power" style={{ fontSize: 13, color: power != null ? 'var(--accent-blue)' : 'var(--text-muted)' }}>
           {power != null ? `${Number(power).toFixed(1)} W` : '— W'}
         </span>
       );
@@ -150,7 +120,7 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange }: Pr
     if (device.capabilities.includes('Energy')) {
       const energy = state['Energy'];
       items.push(
-        <span key="energy" style={{ fontSize: 13, color: energy != null ? 'var(--text-secondary)' : 'var(--text-dimmed)' }}>
+        <span key="energy" style={{ fontSize: 13, color: energy != null ? 'var(--accent-green)' : 'var(--text-muted)' }}>
           {energy != null ? `${Number(energy).toFixed(2)} kWh` : '— kWh'}
         </span>
       );
@@ -169,14 +139,16 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange }: Pr
   }
 
   return (
-    <div style={row}>
-      <div style={nameSection}>
-        <Link to={`/devices/${device.id}`} style={nameLink}>
+    <div className="device-row">
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <Link to={`/devices/${device.id}`} className="device-name-link">
           {device.name}
         </Link>
-        {roomName && <div style={sub}>{roomName}</div>}
+        {roomName && (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{roomName}</div>
+        )}
         {device.capabilities.length > 0 && (
-          <div style={{ ...sub, fontSize: 11, color: 'var(--text-dimmed)' }}>
+          <div className="device-caps">
             {device.capabilities.join(' · ')}
           </div>
         )}

@@ -44,77 +44,47 @@ export function RoomsPage() {
     }
   }
 
-  const topBar: React.CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 20,
-  };
-
-  const inputStyle: React.CSSProperties = {
-    backgroundColor: 'var(--bg-card)',
-    border: '1px solid var(--border)',
-    borderRadius: 6,
-    padding: '8px 12px',
-    color: 'var(--text-primary)',
-    outline: 'none',
-    minWidth: 220,
-    fontSize: 14,
-  };
-
-  const btnAdd: React.CSSProperties = {
-    backgroundColor: 'var(--tab-active)',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 6,
-    padding: '8px 16px',
-    fontWeight: 500,
-    fontSize: 14,
-    opacity: addingRoom ? 0.6 : 1,
-    cursor: addingRoom ? 'not-allowed' : 'pointer',
-  };
-
-  const grid: React.CSSProperties = {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))',
-    gap: 16,
-  };
-
-  const pageTitle: React.CSSProperties = {
-    fontSize: 20,
-    fontWeight: 600,
-    color: 'var(--text-primary)',
-    marginBottom: 16,
-  };
-
   if (loading) {
-    return <div style={{ color: 'var(--text-muted)', padding: 24 }}>Loading rooms…</div>;
+    return <div style={{ color: 'var(--text-muted)', padding: 24, fontFamily: 'var(--font-body)' }}>Loading rooms…</div>;
   }
 
   return (
-    <div>
-      <div style={pageTitle}>Rooms</div>
+    <div className="page-content">
+      <div className="page-title">Rooms</div>
 
-      <form onSubmit={handleAddRoom} style={topBar}>
+      <form
+        onSubmit={handleAddRoom}
+        style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 28 }}
+      >
         <input
           ref={inputRef}
-          style={inputStyle}
           type="text"
           placeholder="New room name…"
           value={newRoomName}
           onChange={(e) => setNewRoomName(e.target.value)}
+          style={{ minWidth: 240, fontFamily: 'var(--font-body)', fontSize: 14 }}
         />
-        <button type="submit" style={btnAdd} disabled={addingRoom || !newRoomName.trim()}>
+        <button
+          type="submit"
+          className="btn-primary"
+          disabled={addingRoom || !newRoomName.trim()}
+        >
           Add Room
         </button>
       </form>
 
       {rooms.length === 0 ? (
-        <div style={{ color: 'var(--text-dimmed)', fontSize: 14, marginTop: 16 }}>
+        <div style={{ color: 'var(--text-muted)', fontSize: 14, marginTop: 8 }}>
           No rooms yet. Add one above.
         </div>
       ) : (
-        <div style={grid}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+            gap: 18,
+          }}
+        >
           {rooms.map((room) => (
             <RoomCard
               key={room.id}

@@ -17,16 +17,16 @@ export function ProgressBar({ value, color = 'var(--accent-blue)', label }: Prop
 
   const track: React.CSSProperties = {
     flex: 1,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'var(--border)',
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'var(--bg-hover)',
     overflow: 'hidden',
   };
 
   const fill: React.CSSProperties = {
     height: '100%',
     width: `${clamped}%`,
-    borderRadius: 3,
+    borderRadius: 2,
     backgroundColor: color,
     transition: 'width 0.3s',
   };
@@ -36,6 +36,7 @@ export function ProgressBar({ value, color = 'var(--accent-blue)', label }: Prop
     textAlign: 'right',
     fontSize: 12,
     color: 'var(--text-muted)',
+    fontFamily: 'var(--font-body)',
   };
 
   return (
