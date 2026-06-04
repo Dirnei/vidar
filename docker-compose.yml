@@ -44,7 +44,7 @@ services:
       - "5281:27017"
 
   emqx:
-    image: emqx/emqx:5
+    image: emqx/emqx:latest
     volumes:
       - vidar-emqx-data:/opt/emqx/data
     ports:

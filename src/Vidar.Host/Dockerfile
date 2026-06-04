@@ -1,5 +1,6 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
+COPY Directory.Build.props .
 COPY src/Vidar.Core/Vidar.Core.csproj src/Vidar.Core/
 COPY src/Vidar.Host/Vidar.Host.csproj src/Vidar.Host/
 RUN dotnet restore src/Vidar.Host/Vidar.Host.csproj
