@@ -5,6 +5,7 @@ using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Hosting;
 using Akka.Remote.Hosting;
 using MongoDB.Driver;
+using Vidar.Core.Messages;
 using Vidar.Core.Sharding;
 using Vidar.Host.Actors;
 using Vidar.Host.Persistence;
@@ -57,12 +58,31 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
                 Role = "host",
                 StateStoreMode = StateStoreMode.DData
             })
-        .WithActors((system, registry, resolver) =>
+        .WithActors(async (system, registry, resolver) =>
         {
             var discoveryManager = system.ActorOf(DiscoveryManagerActor.Props(discoveredRepo), "discovery-manager");
             registry.Register<DiscoveryManagerActor>(discoveryManager);
             var sseManager = system.ActorOf(SseManagerActor.Props(), "sse-manager");
             registry.Register<SseManagerActor>(sseManager);
+
+            // Publish registrations for all already-configured Shelly devices so
+            // the communication node starts polling them immediately on startup.
+            var mediator = DistributedPubSub.Get(system).Mediator;
+            var configuredDevices = await deviceRepo.GetAllAsync();
+            foreach (var d in configuredDevices)
+            {
+                if (d.CommunicationType != "shelly") continue;
+                if (!d.Settings.TryGetValue("host", out var host)) continue;
+                int.TryParse(d.Settings.GetValueOrDefault("generation", "2"), out var generation);
+                var msg = new RegisterDeviceForPolling(
+                    d.Id,
+                    d.CommunicationType,
+                    d.NativeId,
+                    host,
+                    generation,
+                    d.Capabilities);
+                mediator.Tell(new Publish("register.shelly", msg));
+            }
         });
 });
 

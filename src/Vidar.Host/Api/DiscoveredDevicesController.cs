@@ -1,4 +1,7 @@
+using Akka.Actor;
+using Akka.Cluster.Tools.PublishSubscribe;
 using Microsoft.AspNetCore.Mvc;
+using Vidar.Core.Messages;
 using Vidar.Core.Model;
 using Vidar.Host.Api.Dto;
 using Vidar.Host.Persistence;
@@ -11,11 +14,13 @@ public sealed class DiscoveredDevicesController : ControllerBase
 {
     private readonly IDiscoveredDeviceRepository _discoveredRepo;
     private readonly IDeviceRepository _deviceRepo;
+    private readonly ActorSystem _actorSystem;
 
-    public DiscoveredDevicesController(IDiscoveredDeviceRepository discoveredRepo, IDeviceRepository deviceRepo)
+    public DiscoveredDevicesController(IDiscoveredDeviceRepository discoveredRepo, IDeviceRepository deviceRepo, ActorSystem actorSystem)
     {
         _discoveredRepo = discoveredRepo;
         _deviceRepo = deviceRepo;
+        _actorSystem = actorSystem;
     }
 
     [HttpGet]
@@ -39,6 +44,11 @@ public sealed class DiscoveredDevicesController : ControllerBase
         var discovered = await _discoveredRepo.GetByIdAsync(id);
         if (discovered == null) return NotFound();
 
+        // Copy relevant metadata into Settings so it is available after the DiscoveredDevice is deleted
+        var settings = new Dictionary<string, string>();
+        foreach (var kv in discovered.Metadata)
+            settings[kv.Key] = kv.Value;
+
         var device = new DeviceConfiguration
         {
             Id = Guid.NewGuid(),
@@ -46,11 +56,29 @@ public sealed class DiscoveredDevicesController : ControllerBase
             RoomId = request.RoomId,
             CommunicationType = discovered.CommunicationType,
             NativeId = discovered.NativeId,
-            Capabilities = discovered.Capabilities
+            Capabilities = discovered.Capabilities,
+            Settings = settings
         };
 
         await _deviceRepo.CreateAsync(device);
         await _discoveredRepo.DeleteAsync(id);
+
+        // Publish registration so the appropriate communication node can start polling
+        if (discovered.CommunicationType == "shelly" &&
+            discovered.Metadata.TryGetValue("host", out var host))
+        {
+            int.TryParse(discovered.Metadata.GetValueOrDefault("generation", "2"), out var generation);
+            var msg = new RegisterDeviceForPolling(
+                device.Id,
+                device.CommunicationType,
+                device.NativeId,
+                host,
+                generation,
+                device.Capabilities);
+            var mediator = DistributedPubSub.Get(_actorSystem).Mediator;
+            mediator.Tell(new Publish("register.shelly", msg));
+        }
+
         return Created($"/api/devices/{device.Id}", new DeviceResponse(
             device.Id, device.Name, device.RoomId, null,
             device.CommunicationType, device.Capabilities, null));

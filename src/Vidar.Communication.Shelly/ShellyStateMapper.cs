@@ -7,6 +7,8 @@ public record ShellyCapabilityValue(CapabilityType Capability, object Value);
 
 public static class ShellyStateMapper
 {
+    // ── Gen2 (RPC) ────────────────────────────────────────────────────────────
+
     public static List<ShellyCapabilityValue> MapSwitchStatus(JsonElement element)
     {
         var results = new List<ShellyCapabilityValue>();
@@ -42,6 +44,47 @@ public static class ShellyStateMapper
 
         if (element.TryGetProperty("tC", out var tC) && tC.ValueKind == JsonValueKind.Number)
             results.Add(new ShellyCapabilityValue(CapabilityType.Temperature, tC.GetDouble()));
+
+        return results;
+    }
+
+    // ── Gen1 (REST) ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Maps a single roller entry from the Gen1 /status response rollers array.
+    /// </summary>
+    public static List<ShellyCapabilityValue> MapGen1RollerStatus(JsonElement roller)
+    {
+        var results = new List<ShellyCapabilityValue>();
+
+        if (roller.TryGetProperty("current_pos", out var pos) && pos.ValueKind == JsonValueKind.Number)
+            results.Add(new ShellyCapabilityValue(CapabilityType.Cover, pos.GetInt32()));
+
+        if (roller.TryGetProperty("power", out var power) && power.ValueKind == JsonValueKind.Number)
+            results.Add(new ShellyCapabilityValue(CapabilityType.Power, power.GetDouble()));
+
+        return results;
+    }
+
+    /// <summary>
+    /// Extracts temperature from the Gen1 /status root element.
+    /// Tries tmp.tC first, then temperature (float field present on some models).
+    /// </summary>
+    public static List<ShellyCapabilityValue> MapGen1Temperature(JsonElement root)
+    {
+        var results = new List<ShellyCapabilityValue>();
+
+        if (root.TryGetProperty("tmp", out var tmp) &&
+            tmp.TryGetProperty("tC", out var tC) &&
+            tC.ValueKind == JsonValueKind.Number)
+        {
+            results.Add(new ShellyCapabilityValue(CapabilityType.Temperature, tC.GetDouble()));
+        }
+        else if (root.TryGetProperty("temperature", out var temp) &&
+                 temp.ValueKind == JsonValueKind.Number)
+        {
+            results.Add(new ShellyCapabilityValue(CapabilityType.Temperature, temp.GetDouble()));
+        }
 
         return results;
     }

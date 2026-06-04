@@ -32,6 +32,22 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
             _log.Info("Registered Shelly device: {NativeId} at {Host}", msg.Device.NativeId, msg.Device.Host);
         });
 
+        Receive<RegisterDeviceForPolling>(msg =>
+        {
+            if (msg.CommunicationType != "shelly") return;
+            var device = new ShellyDevice
+            {
+                NativeId = msg.NativeId,
+                Host = msg.Host,
+                Generation = msg.Generation,
+                Capabilities = msg.Capabilities,
+                VidarDeviceId = msg.DeviceId
+            };
+            _devices[device.NativeId] = device;
+            _log.Info("Registered configured Shelly device: {NativeId} at {Host} (Gen{Gen})",
+                msg.NativeId, msg.Host, msg.Generation);
+        });
+
         Receive<PollTick>(_ => PollAllDevices());
 
         ReceiveAsync<DiscoverShellyDevice>(async msg =>
@@ -104,19 +120,42 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
 
         ReceiveAsync<DeviceCommand>(async cmd =>
         {
-            var device = _devices.Values.FirstOrDefault(d => d.VidarDeviceId == cmd.DeviceId);
+            // Match by NativeId (most specific) or fall back to VidarDeviceId
+            var device = _devices.TryGetValue(cmd.NativeId, out var byNative)
+                ? byNative
+                : _devices.Values.FirstOrDefault(d => d.VidarDeviceId == cmd.DeviceId);
+
             if (device == null)
             {
-                _log.Warning("No Shelly device found for DeviceId {DeviceId}", cmd.DeviceId);
+                _log.Warning("No Shelly device found for DeviceId {DeviceId} / NativeId {NativeId}",
+                    cmd.DeviceId, cmd.NativeId);
                 return;
             }
 
             try
             {
-                if (cmd.Capability == CapabilityType.Switch && cmd.Value is bool on)
-                    await _httpClient.SetSwitchAsync(device.Host, 0, on);
-                else if (cmd.Capability == CapabilityType.Cover && cmd.Value is int pos)
-                    await _httpClient.SetCoverPositionAsync(device.Host, 0, pos);
+                if (device.Generation == 1)
+                {
+                    if (cmd.Capability == CapabilityType.Switch && cmd.Value is bool on1)
+                        await _httpClient.Gen1SetSwitchAsync(device.Host, 0, on1);
+                    else if (cmd.Capability == CapabilityType.Cover)
+                    {
+                        if (cmd.Value is int pos1)
+                            await _httpClient.Gen1SetCoverPositionAsync(device.Host, pos1);
+                        else if (cmd.Value is string dir)
+                        {
+                            if (dir == "open") await _httpClient.Gen1OpenCoverAsync(device.Host);
+                            else if (dir == "close") await _httpClient.Gen1CloseCoverAsync(device.Host);
+                        }
+                    }
+                }
+                else
+                {
+                    if (cmd.Capability == CapabilityType.Switch && cmd.Value is bool on2)
+                        await _httpClient.SetSwitchAsync(device.Host, 0, on2);
+                    else if (cmd.Capability == CapabilityType.Cover && cmd.Value is int pos2)
+                        await _httpClient.SetCoverPositionAsync(device.Host, 0, pos2);
+                }
             }
             catch (Exception ex)
             {
@@ -131,6 +170,7 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
         var mediator = DistributedPubSub.Get(Context.System).Mediator;
         mediator.Tell(new Subscribe("commands.shelly", Self));
         mediator.Tell(new Subscribe("discover.shelly", Self));
+        mediator.Tell(new Subscribe("register.shelly", Self));
         Timers.StartPeriodicTimer("poll", PollTick.Instance, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
     }
 
@@ -145,11 +185,24 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
 
     private async Task PollDeviceAsync(ShellyDevice device)
     {
+        var deviceId = device.VidarDeviceId!.Value;
+
+        if (device.Generation == 1)
+        {
+            await PollGen1DeviceAsync(device, deviceId);
+        }
+        else
+        {
+            await PollGen2DeviceAsync(device, deviceId);
+        }
+    }
+
+    private async Task PollGen2DeviceAsync(ShellyDevice device, Guid deviceId)
+    {
         var doc = await _httpClient.GetStatusAsync(device.Host);
         if (doc == null) return;
 
         var root = doc.RootElement;
-        var deviceId = device.VidarDeviceId!.Value;
 
         foreach (var cap in device.Capabilities)
         {
@@ -177,6 +230,40 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
                     {
                         updates = ShellyStateMapper.MapTemperatureStatus(temp);
                         SendUpdates(deviceId, updates);
+                    }
+                    break;
+            }
+        }
+    }
+
+    private async Task PollGen1DeviceAsync(ShellyDevice device, Guid deviceId)
+    {
+        var doc = await _httpClient.GetGen1StatusAsync(device.Host);
+        if (doc == null) return;
+
+        var root = doc.RootElement;
+        bool temperatureSent = false;
+
+        foreach (var cap in device.Capabilities)
+        {
+            switch (cap)
+            {
+                case CapabilityType.Cover:
+                case CapabilityType.Power:
+                    if (root.TryGetProperty("rollers", out var rollers) &&
+                        rollers.ValueKind == JsonValueKind.Array &&
+                        rollers.GetArrayLength() > 0)
+                    {
+                        var updates = ShellyStateMapper.MapGen1RollerStatus(rollers[0]);
+                        SendUpdates(deviceId, updates);
+                    }
+                    break;
+                case CapabilityType.Temperature:
+                    if (!temperatureSent)
+                    {
+                        var updates = ShellyStateMapper.MapGen1Temperature(root);
+                        SendUpdates(deviceId, updates);
+                        temperatureSent = true;
                     }
                     break;
             }

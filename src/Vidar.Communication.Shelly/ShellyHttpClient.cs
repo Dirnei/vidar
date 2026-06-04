@@ -4,6 +4,8 @@ namespace Vidar.Communication.Shelly;
 
 public sealed class ShellyHttpClient(HttpClient httpClient)
 {
+    // ── Gen2 (RPC) ────────────────────────────────────────────────────────────
+
     public async Task<JsonDocument?> GetStatusAsync(string host)
     {
         var response = await httpClient.GetAsync($"http://{host}/rpc/Shelly.GetStatus");
@@ -37,6 +39,51 @@ public sealed class ShellyHttpClient(HttpClient httpClient)
     public async Task SetCoverPositionAsync(string host, int channel, int position)
     {
         var url = $"http://{host}/rpc/Cover.GoToPosition?id={channel}&pos={position}";
+        var response = await httpClient.GetAsync(url);
+        response.EnsureSuccessStatusCode();
+    }
+
+    // ── Gen1 (REST) ───────────────────────────────────────────────────────────
+
+    public async Task<JsonDocument?> GetGen1StatusAsync(string host)
+    {
+        try
+        {
+            var response = await httpClient.GetAsync($"http://{host}/status");
+            response.EnsureSuccessStatusCode();
+            var stream = await response.Content.ReadAsStreamAsync();
+            return await JsonDocument.ParseAsync(stream);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task Gen1SetSwitchAsync(string host, int channel, bool on)
+    {
+        var url = $"http://{host}/relay/{channel}?turn={(on ? "on" : "off")}";
+        var response = await httpClient.GetAsync(url);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task Gen1SetCoverPositionAsync(string host, int position)
+    {
+        var url = $"http://{host}/roller/0?go=to_pos&roller_pos={position}";
+        var response = await httpClient.GetAsync(url);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task Gen1OpenCoverAsync(string host)
+    {
+        var url = $"http://{host}/roller/0?go=open";
+        var response = await httpClient.GetAsync(url);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task Gen1CloseCoverAsync(string host)
+    {
+        var url = $"http://{host}/roller/0?go=close";
         var response = await httpClient.GetAsync(url);
         response.EnsureSuccessStatusCode();
     }
