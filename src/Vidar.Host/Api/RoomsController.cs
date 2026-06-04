@@ -11,11 +11,13 @@ public sealed class RoomsController : ControllerBase
 {
     private readonly IRoomRepository _roomRepo;
     private readonly IDeviceRepository _deviceRepo;
+    private readonly IDeviceStateRepository _stateRepo;
 
-    public RoomsController(IRoomRepository roomRepo, IDeviceRepository deviceRepo)
+    public RoomsController(IRoomRepository roomRepo, IDeviceRepository deviceRepo, IDeviceStateRepository stateRepo)
     {
         _roomRepo = roomRepo;
         _deviceRepo = deviceRepo;
+        _stateRepo = stateRepo;
     }
 
     [HttpGet]
@@ -65,8 +67,14 @@ public sealed class RoomsController : ControllerBase
         var room = await _roomRepo.GetByIdAsync(id);
         if (room == null) return NotFound();
         var devices = await _deviceRepo.GetByRoomIdAsync(id);
-        var response = devices.Select(d => new DeviceResponse(
-            d.Id, d.Name, d.RoomId, room.Name, d.CommunicationType, d.Capabilities, null)).ToList();
+        var states = await _stateRepo.GetAllAsync();
+        var stateMap = states.ToDictionary(s => s.DeviceId);
+        var response = devices.Select(d =>
+        {
+            stateMap.TryGetValue(d.Id, out var state);
+            var stateDict = state?.States.ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value);
+            return new DeviceResponse(d.Id, d.Name, d.RoomId, room.Name, d.CommunicationType, d.Capabilities, stateDict);
+        }).ToList();
         return Ok(response);
     }
 }

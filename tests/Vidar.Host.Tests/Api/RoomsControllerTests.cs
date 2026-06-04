@@ -15,7 +15,7 @@ public class RoomsControllerTests
 
     public RoomsControllerTests()
     {
-        _sut = new RoomsController(_roomRepo, _deviceRepo);
+        _sut = new RoomsController(_roomRepo, _deviceRepo, Substitute.For<IDeviceStateRepository>());
     }
 
     [Fact]
