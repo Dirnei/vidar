@@ -49,6 +49,7 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
         });
 
         Receive<PollTick>(_ => PollAllDevices());
+        Receive<PollFailed>(HandlePollFailed);
 
         ReceiveAsync<DiscoverShellyDevice>(async msg =>
         {
@@ -274,6 +275,11 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
     {
         foreach (var u in updates)
             _shardProxy.Tell(new DeviceStateUpdate(deviceId, u.Capability, u.Value));
+    }
+
+    private void HandlePollFailed(PollFailed msg)
+    {
+        _log.Warning(msg.Exception, "Failed to poll Shelly device {NativeId}", msg.NativeId);
     }
 
     private sealed record PollFailed(string NativeId, Exception Exception);

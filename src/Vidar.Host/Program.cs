@@ -58,15 +58,18 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
                 Role = "host",
                 StateStoreMode = StateStoreMode.DData
             })
-        .WithActors(async (system, registry, resolver) =>
+        .WithActors((system, registry, resolver) =>
         {
             var discoveryManager = system.ActorOf(DiscoveryManagerActor.Props(discoveredRepo), "discovery-manager");
             registry.Register<DiscoveryManagerActor>(discoveryManager);
             var sseManager = system.ActorOf(SseManagerActor.Props(), "sse-manager");
             registry.Register<SseManagerActor>(sseManager);
+        })
+        .AddStartup(async (system, registry) =>
+        {
+            // Wait for cluster to form and Pub/Sub subscriptions to propagate
+            await Task.Delay(TimeSpan.FromSeconds(15));
 
-            // Publish registrations for all already-configured Shelly devices so
-            // the communication node starts polling them immediately on startup.
             var mediator = DistributedPubSub.Get(system).Mediator;
             var configuredDevices = await deviceRepo.GetAllAsync();
             foreach (var d in configuredDevices)
@@ -83,6 +86,10 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
                     d.Capabilities);
                 mediator.Tell(new Publish("register.shelly", msg));
             }
+
+            var count = configuredDevices.Count(d => d.CommunicationType == "shelly" && d.Settings.ContainsKey("host"));
+            if (count > 0)
+                Console.WriteLine($"[vidar] Published {count} Shelly device registration(s) to communication nodes");
         });
 });
 

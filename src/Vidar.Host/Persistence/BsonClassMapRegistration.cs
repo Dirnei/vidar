@@ -1,6 +1,8 @@
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization;
+using MongoDB.Bson.Serialization.Options;
 using MongoDB.Bson.Serialization.Serializers;
+using Vidar.Core.Capabilities;
 using Vidar.Core.Model;
 
 namespace Vidar.Host.Persistence;
@@ -38,10 +40,16 @@ public static class BsonClassMapRegistration
                 cm.MapIdProperty(d => d.Id);
             });
 
+            var statesDictSerializer = new DictionaryInterfaceImplementerSerializer<Dictionary<CapabilityType, object>>(
+                DictionaryRepresentation.Document,
+                new EnumSerializer<CapabilityType>(BsonType.String),
+                new ObjectSerializer(ObjectSerializer.AllAllowedTypes));
+
             BsonClassMap.RegisterClassMap<DeviceState>(cm =>
             {
                 cm.AutoMap();
                 cm.MapIdProperty(s => s.DeviceId);
+                cm.MapProperty(s => s.States).SetSerializer(statesDictSerializer);
             });
 
             _registered = true;
