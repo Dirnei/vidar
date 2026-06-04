@@ -11,8 +11,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const text = await res.text().catch(() => res.statusText);
     throw new Error(`${res.status} ${text}`);
   }
-  // 204 No Content / 202 Accepted (async, no body)
-  if (res.status === 204 || res.status === 202) return undefined as T;
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -78,7 +77,7 @@ export function configureDiscoveredDevice(id: string, payload: ConfigurePayload)
 
 // --- Discover ---
 
-export function discoverShellyDevice(host: string): Promise<void> {
+export function discoverShellyDevice(host: string): Promise<{ status: string; host: string; message?: string }> {
   return request('/discover/shelly', {
     method: 'POST',
     body: JSON.stringify({ host }),

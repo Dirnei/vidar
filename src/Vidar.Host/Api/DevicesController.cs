@@ -16,17 +16,20 @@ public sealed class DevicesController : ControllerBase
     private readonly IDeviceStateRepository _stateRepo;
     private readonly IRoomRepository _roomRepo;
     private readonly IRequiredActor<DeviceTwinRegion> _twinRegion;
+    private readonly ILogger<DevicesController> _logger;
 
     public DevicesController(
         IDeviceRepository deviceRepo,
         IDeviceStateRepository stateRepo,
         IRoomRepository roomRepo,
-        IRequiredActor<DeviceTwinRegion> twinRegion)
+        IRequiredActor<DeviceTwinRegion> twinRegion,
+        ILogger<DevicesController> logger)
     {
         _deviceRepo = deviceRepo;
         _stateRepo = stateRepo;
         _roomRepo = roomRepo;
         _twinRegion = twinRegion;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -73,6 +76,7 @@ public sealed class DevicesController : ControllerBase
         if (device == null) return NotFound();
 
         var command = new DeviceCommand(id, device.CommunicationType, device.NativeId, request.Capability, request.Value);
+        _logger.LogInformation("Sending command {Capability}={Value} to device {DeviceId}", request.Capability, request.Value, id);
         var region = _twinRegion.ActorRef;
         region.Tell(command);
         return Accepted();

@@ -10,6 +10,7 @@ export function DiscoveredPage() {
   const [configuring, setConfiguring] = useState<DiscoveredDevice | null>(null);
   const [shellyHost, setShellyHost] = useState('');
   const [probing, setProbing] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const loadData = useCallback(async () => {
     const [devs, roomList] = await Promise.all([getDiscoveredDevices(), getRooms()]);
@@ -33,16 +34,21 @@ export function DiscoveredPage() {
     const host = shellyHost.trim();
     if (!host) return;
     setProbing(true);
+    setFeedback(null);
     try {
-      await discoverShellyDevice(host);
-    } catch {
-      // ignore — 202 may appear as non-JSON which throws in our client
-    }
-    setTimeout(async () => {
+      const result = await discoverShellyDevice(host);
+      if (result.status === 'discovered') {
+        setFeedback({ type: 'success', message: `Device found at ${host}` });
+        setShellyHost('');
+      } else {
+        setFeedback({ type: 'error', message: result.message ?? `No device found at ${host}` });
+      }
       await loadData();
+    } catch (err) {
+      setFeedback({ type: 'error', message: `Failed to reach ${host}: ${err instanceof Error ? err.message : 'unknown error'}` });
+    } finally {
       setProbing(false);
-      setShellyHost('');
-    }, 3000);
+    }
   }
 
   const pageTitle: React.CSSProperties = {
@@ -183,6 +189,19 @@ export function DiscoveredPage() {
             {probing ? 'Probing…' : 'Discover'}
           </button>
         </div>
+        {feedback && (
+          <div style={{
+            marginTop: 10,
+            padding: '8px 12px',
+            borderRadius: 6,
+            fontSize: 13,
+            backgroundColor: feedback.type === 'success' ? 'rgba(52, 211, 153, 0.1)' : 'rgba(248, 113, 113, 0.1)',
+            border: `1px solid ${feedback.type === 'success' ? 'var(--accent-green)' : 'var(--accent-red)'}`,
+            color: feedback.type === 'success' ? 'var(--accent-green)' : 'var(--accent-red)',
+          }}>
+            {feedback.message}
+          </div>
+        )}
       </div>
 
       {discovered.length === 0 ? (
