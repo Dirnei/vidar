@@ -11,12 +11,11 @@ interface Props {
 }
 
 export function SliderControl({ value, min = 0, max = 100, className, accentColor, trackColor = 'var(--bg-hover)', onCommit }: Props) {
-  const [dragging, setDragging] = useState(false);
   const [localValue, setLocalValue] = useState(value);
-  const commitRef = useRef(onCommit);
-  commitRef.current = onCommit;
+  const isDragging = useRef(false);
+  const pendingValue = useRef(value);
 
-  const displayValue = dragging ? localValue : value;
+  const displayValue = isDragging.current ? localValue : value;
   const pct = ((displayValue - min) / (max - min)) * 100;
 
   return (
@@ -30,20 +29,18 @@ export function SliderControl({ value, min = 0, max = 100, className, accentColo
         width: '100%',
         background: `linear-gradient(to right, ${accentColor} ${pct}%, ${trackColor} ${pct}%)`,
       }}
+      onPointerDown={() => {
+        isDragging.current = true;
+      }}
       onChange={(e) => {
-        setDragging(true);
-        setLocalValue(Number(e.target.value));
+        const v = Number(e.target.value);
+        pendingValue.current = v;
+        setLocalValue(v);
       }}
-      onMouseUp={() => {
-        if (dragging) {
-          commitRef.current(localValue);
-          setDragging(false);
-        }
-      }}
-      onTouchEnd={() => {
-        if (dragging) {
-          commitRef.current(localValue);
-          setDragging(false);
+      onPointerUp={() => {
+        if (isDragging.current) {
+          isDragging.current = false;
+          onCommit(pendingValue.current);
         }
       }}
     />
