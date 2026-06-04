@@ -11,15 +11,18 @@ namespace Vidar.Host.Api;
 public sealed class DiscoverController : ControllerBase
 {
     private readonly IDiscoveredDeviceRepository _discoveredRepo;
+    private readonly IDeviceRepository _deviceRepo;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<DiscoverController> _logger;
 
     public DiscoverController(
         IDiscoveredDeviceRepository discoveredRepo,
+        IDeviceRepository deviceRepo,
         IHttpClientFactory httpClientFactory,
         ILogger<DiscoverController> logger)
     {
         _discoveredRepo = discoveredRepo;
+        _deviceRepo = deviceRepo;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
@@ -147,6 +150,13 @@ public sealed class DiscoverController : ControllerBase
                 if (root.TryGetProperty("hum", out _))
                     capabilities.Add(CapabilityType.Humidity);
             }
+        }
+
+        var allConfigured = await _deviceRepo.GetAllAsync();
+        if (allConfigured.Any(d => d.NativeId == nativeId))
+        {
+            _logger.LogInformation("Shelly device {NativeId} at {Host} is already configured", nativeId, host);
+            return Ok(new { status = "already_configured", host, nativeId, message = $"Device {nativeId} is already configured." });
         }
 
         var existing = await _discoveredRepo.GetByNativeIdAsync("shelly", nativeId);

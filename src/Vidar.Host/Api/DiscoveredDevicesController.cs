@@ -21,9 +21,15 @@ public sealed class DiscoveredDevicesController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
-        var devices = await _discoveredRepo.GetAllAsync();
-        var response = devices.Select(d => new DiscoveredDeviceResponse(
-            d.Id, d.CommunicationType, d.NativeId, d.Capabilities, d.Metadata, d.DiscoveredAt)).ToList();
+        var discovered = await _discoveredRepo.GetAllAsync();
+        var configured = await _deviceRepo.GetAllAsync();
+        var configuredNativeIds = configured.Select(d => d.NativeId).ToHashSet();
+
+        var response = discovered
+            .Where(d => !configuredNativeIds.Contains(d.NativeId))
+            .Select(d => new DiscoveredDeviceResponse(
+                d.Id, d.CommunicationType, d.NativeId, d.Capabilities, d.Metadata, d.DiscoveredAt))
+            .ToList();
         return Ok(response);
     }
 
