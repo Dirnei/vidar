@@ -5,6 +5,7 @@ import { sendCommand } from '../api/client';
 import { ToggleSwitch } from './ToggleSwitch';
 import { ProgressBar } from './ProgressBar';
 import { StatusDot } from './StatusDot';
+import { SliderControl } from './SliderControl';
 
 interface Props {
   device: Device;
@@ -57,18 +58,8 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange }: Pr
     if (device.capabilities.includes('Dimmer')) {
       const level = typeof state['Dimmer'] === 'number' ? (state['Dimmer'] as number) : 0;
       items.push(
-        <div key="dimmer" style={{ display: 'flex', alignItems: 'center', gap: 6, width: 110 }}>
-          <input
-            type="range"
-            className="slider-dimmer"
-            min={0}
-            max={100}
-            value={level}
-            style={{
-              background: `linear-gradient(to right, var(--accent-primary) ${level}%, var(--bg-hover) ${level}%)`,
-            }}
-            onChange={(e) => handleDimmer(Number(e.target.value))}
-          />
+        <div key="dimmer" style={{ width: 110 }}>
+          <SliderControl value={level} className="slider-dimmer" accentColor="var(--accent-primary)" onCommit={handleDimmer} />
         </div>
       );
     }
@@ -76,18 +67,8 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange }: Pr
     if (device.capabilities.includes('Cover')) {
       const pos = typeof state['Cover'] === 'number' ? (state['Cover'] as number) : 0;
       items.push(
-        <div key="cover" style={{ display: 'flex', alignItems: 'center', gap: 6, width: 110 }}>
-          <input
-            type="range"
-            className="slider-cover"
-            min={0}
-            max={100}
-            value={pos}
-            style={{
-              background: `linear-gradient(to right, var(--accent-teal) ${pos}%, var(--bg-hover) ${pos}%)`,
-            }}
-            onChange={(e) => handleCover(Number(e.target.value))}
-          />
+        <div key="cover" style={{ width: 110 }}>
+          <SliderControl value={pos} className="slider-cover" accentColor="var(--accent-teal)" onCommit={handleCover} />
         </div>
       );
     }

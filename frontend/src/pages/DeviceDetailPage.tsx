@@ -6,6 +6,7 @@ import { subscribeDeviceState } from '../api/sse';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { ProgressBar } from '../components/ProgressBar';
 import { StatusDot } from '../components/StatusDot';
+import { SliderControl } from '../components/SliderControl';
 
 export function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -143,17 +144,11 @@ export function DeviceDetailPage() {
             <div style={labelStyle}>Dimmer</div>
             <div style={valueStyle('var(--accent-primary)')}>{Math.round(level)}%</div>
             <div style={{ marginTop: 12 }}>
-              <input
-                type="range"
-                className="slider-dimmer"
-                min={0}
-                max={100}
+              <SliderControl
                 value={level}
-                style={{
-                  width: '100%',
-                  background: `linear-gradient(to right, var(--accent-primary) ${level}%, var(--bg-hover) ${level}%)`,
-                }}
-                onChange={(e) => cmd('Dimmer', Number(e.target.value))}
+                className="slider-dimmer"
+                accentColor="var(--accent-primary)"
+                onCommit={(v) => cmd('Dimmer', v)}
               />
             </div>
           </div>
@@ -206,17 +201,11 @@ export function DeviceDetailPage() {
               </button>
             </div>
             <div style={{ marginTop: 12 }}>
-              <input
-                type="range"
-                className="slider-cover"
-                min={0}
-                max={100}
+              <SliderControl
                 value={pos}
-                style={{
-                  width: '100%',
-                  background: `linear-gradient(to right, var(--accent-teal) ${pos}%, var(--bg-hover) ${pos}%)`,
-                }}
-                onChange={(e) => cmd('Cover', Number(e.target.value))}
+                className="slider-cover"
+                accentColor="var(--accent-teal)"
+                onCommit={(v) => cmd('Cover', v)}
               />
             </div>
           </div>
