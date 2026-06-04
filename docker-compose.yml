@@ -1,0 +1,56 @@
+services:
+  vidar-host:
+    build:
+      context: .
+      dockerfile: src/Vidar.Host/Dockerfile
+    ports:
+      - "5280:8080"
+    depends_on:
+      - mongodb
+      - emqx
+    environment:
+      - VIDAR_CLUSTER_SEED=vidar-host:4053
+      - VIDAR_HOSTNAME=vidar-host
+      - VIDAR_MONGO_CONNECTION=mongodb://mongodb:27017
+      - VIDAR_MONGO_DATABASE=vidar
+
+  vidar-comm-shelly:
+    build:
+      context: .
+      dockerfile: src/Vidar.Communication.Shelly/Dockerfile
+    network_mode: host
+    environment:
+      - VIDAR_CLUSTER_SEED=vidar-host:4053
+      - VIDAR_HOSTNAME=0.0.0.0
+      - VIDAR_AKKA_PORT=4054
+
+  vidar-comm-zigbee2mqtt:
+    build:
+      context: .
+      dockerfile: src/Vidar.Communication.Zigbee2Mqtt/Dockerfile
+    depends_on:
+      - emqx
+    environment:
+      - VIDAR_CLUSTER_SEED=vidar-host:4053
+      - VIDAR_HOSTNAME=vidar-comm-zigbee2mqtt
+      - VIDAR_AKKA_PORT=4055
+      - VIDAR_MQTT_BROKER=emqx:1883
+
+  mongodb:
+    image: mongo:8
+    volumes:
+      - vidar-mongo-data:/data/db
+    ports:
+      - "5281:27017"
+
+  emqx:
+    image: emqx/emqx:5
+    volumes:
+      - vidar-emqx-data:/opt/emqx/data
+    ports:
+      - "5282:1883"
+      - "5283:18083"
+
+volumes:
+  vidar-mongo-data:
+  vidar-emqx-data:
