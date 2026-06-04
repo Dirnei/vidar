@@ -213,6 +213,9 @@ export function DiscoveredPage() {
           {discovered.map((d) => (
             <div key={d.id} style={card}>
               <div style={cardMain}>
+                {d.metadata?.name && (
+                  <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2 }}>{d.metadata.name}</div>
+                )}
                 <div style={nativeId}>{d.nativeId}</div>
                 <div style={commType}>{d.communicationType}</div>
                 <div>
@@ -240,6 +243,7 @@ export function DiscoveredPage() {
       {configuring && rooms.length > 0 && (
         <ConfigureDeviceModal
           rooms={rooms}
+          defaultName={configuring.metadata?.name}
           onConfirm={handleConfigure}
           onCancel={() => setConfiguring(null)}
         />

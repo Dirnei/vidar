@@ -3,12 +3,13 @@ import type { Room } from '../types';
 
 interface Props {
   rooms: Room[];
+  defaultName?: string;
   onConfirm: (name: string, roomId: string) => Promise<void>;
   onCancel: () => void;
 }
 
-export function ConfigureDeviceModal({ rooms, onConfirm, onCancel }: Props) {
-  const [name, setName] = useState('');
+export function ConfigureDeviceModal({ rooms, defaultName, onConfirm, onCancel }: Props) {
+  const [name, setName] = useState(defaultName ?? '');
   const [roomId, setRoomId] = useState(rooms[0]?.id ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

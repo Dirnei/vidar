@@ -83,6 +83,32 @@ public sealed class DiscoverController : ControllerBase
         if (shellyRoot.TryGetProperty("fw", out var fwProp))
             metadata["firmware"] = fwProp.GetString() ?? "";
 
+        // Read device name — Gen1: /settings, Gen2: /rpc/Shelly.GetDeviceInfo
+        string? deviceName = null;
+        try
+        {
+            var nameUrl = generation >= 2
+                ? $"http://{host}/rpc/Shelly.GetDeviceInfo"
+                : $"http://{host}/settings";
+            var nameResponse = await http.GetAsync(nameUrl);
+            nameResponse.EnsureSuccessStatusCode();
+            var nameDoc = await JsonDocument.ParseAsync(await nameResponse.Content.ReadAsStreamAsync());
+            if (nameDoc.RootElement.TryGetProperty("name", out var nameProp) &&
+                nameProp.ValueKind == JsonValueKind.String)
+            {
+                var name = nameProp.GetString();
+                if (!string.IsNullOrWhiteSpace(name))
+                    deviceName = name;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not read device name from {Host}", host);
+        }
+
+        if (deviceName != null)
+            metadata["name"] = deviceName;
+
         if (generation >= 2 && statusDoc != null)
         {
             var root = statusDoc.RootElement;
