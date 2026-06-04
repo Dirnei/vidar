@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import type { DiscoveredDevice, Room } from '../types';
-import { getDiscoveredDevices, getRooms, configureDiscoveredDevice } from '../api/client';
+import { getDiscoveredDevices, getRooms, configureDiscoveredDevice, discoverShellyDevice } from '../api/client';
 import { ConfigureDeviceModal } from '../components/ConfigureDeviceModal';
 
 export function DiscoveredPage() {
@@ -8,6 +8,8 @@ export function DiscoveredPage() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [configuring, setConfiguring] = useState<DiscoveredDevice | null>(null);
+  const [shellyHost, setShellyHost] = useState('');
+  const [probing, setProbing] = useState(false);
 
   const loadData = useCallback(async () => {
     const [devs, roomList] = await Promise.all([getDiscoveredDevices(), getRooms()]);
@@ -25,6 +27,22 @@ export function DiscoveredPage() {
     await configureDiscoveredDevice(configuring.id, { name, roomId });
     setConfiguring(null);
     await loadData();
+  }
+
+  async function handleDiscoverShelly() {
+    const host = shellyHost.trim();
+    if (!host) return;
+    setProbing(true);
+    try {
+      await discoverShellyDevice(host);
+    } catch {
+      // ignore — 202 may appear as non-JSON which throws in our client
+    }
+    setTimeout(async () => {
+      await loadData();
+      setProbing(false);
+      setShellyHost('');
+    }, 3000);
   }
 
   const pageTitle: React.CSSProperties = {
@@ -96,6 +114,51 @@ export function DiscoveredPage() {
     marginTop: 4,
   };
 
+  const addCard: React.CSSProperties = {
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    padding: '14px 16px',
+    marginBottom: 20,
+  };
+
+  const addCardTitle: React.CSSProperties = {
+    fontSize: 13,
+    fontWeight: 600,
+    color: 'var(--text-secondary)',
+    marginBottom: 10,
+  };
+
+  const addRow: React.CSSProperties = {
+    display: 'flex',
+    gap: 8,
+    alignItems: 'center',
+  };
+
+  const addInput: React.CSSProperties = {
+    flex: 1,
+    padding: '7px 10px',
+    backgroundColor: 'var(--bg-row)',
+    border: '1px solid var(--border)',
+    borderRadius: 6,
+    color: 'var(--text-primary)',
+    fontSize: 13,
+    outline: 'none',
+  };
+
+  const addBtn: React.CSSProperties = {
+    padding: '7px 16px',
+    backgroundColor: probing ? 'var(--bg-row)' : 'var(--tab-active)',
+    color: probing ? 'var(--text-muted)' : '#fff',
+    borderRadius: 6,
+    fontSize: 13,
+    fontWeight: 500,
+    border: '1px solid var(--border)',
+    cursor: probing ? 'default' : 'pointer',
+    flexShrink: 0,
+    transition: 'background-color 0.15s',
+  };
+
   if (loading) {
     return <div style={{ color: 'var(--text-muted)', padding: 24 }}>Loading discovered devices…</div>;
   }
@@ -103,6 +166,24 @@ export function DiscoveredPage() {
   return (
     <div>
       <div style={pageTitle}>Discovered Devices</div>
+
+      <div style={addCard}>
+        <div style={addCardTitle}>Add Shelly Device by IP</div>
+        <div style={addRow}>
+          <input
+            style={addInput}
+            type="text"
+            placeholder="Shelly IP address (e.g. 192.168.1.42)"
+            value={shellyHost}
+            disabled={probing}
+            onChange={(e) => setShellyHost(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleDiscoverShelly(); }}
+          />
+          <button style={addBtn} disabled={probing} onClick={handleDiscoverShelly}>
+            {probing ? 'Probing…' : 'Discover'}
+          </button>
+        </div>
+      </div>
 
       {discovered.length === 0 ? (
         <div style={{ color: 'var(--text-dimmed)', fontSize: 14 }}>

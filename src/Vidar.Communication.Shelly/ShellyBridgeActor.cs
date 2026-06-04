@@ -34,6 +34,74 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
 
         Receive<PollTick>(_ => PollAllDevices());
 
+        ReceiveAsync<DiscoverShellyDevice>(async msg =>
+        {
+            _log.Info("Manual Shelly discovery requested for host {Host}", msg.Host);
+            try
+            {
+                var statusDoc = await _httpClient.GetStatusAsync(msg.Host);
+                var infoDoc = await _httpClient.GetDeviceInfoAsync(msg.Host);
+
+                if (statusDoc == null)
+                {
+                    _log.Warning("Could not reach Shelly device at {Host}", msg.Host);
+                    return;
+                }
+
+                var root = statusDoc.RootElement;
+                var capabilities = new List<CapabilityType>();
+
+                if (root.TryGetProperty("switch:0", out _))
+                {
+                    capabilities.Add(CapabilityType.Switch);
+                    capabilities.Add(CapabilityType.Power);
+                    capabilities.Add(CapabilityType.Energy);
+                }
+                if (root.TryGetProperty("cover:0", out _))
+                    capabilities.Add(CapabilityType.Cover);
+                if (root.TryGetProperty("temperature:0", out _))
+                    capabilities.Add(CapabilityType.Temperature);
+                if (root.TryGetProperty("humidity:0", out _))
+                    capabilities.Add(CapabilityType.Humidity);
+
+                var metadata = new Dictionary<string, string> { ["host"] = msg.Host };
+                string nativeId = msg.Host;
+
+                if (infoDoc != null)
+                {
+                    var info = infoDoc.RootElement;
+                    if (info.TryGetProperty("id", out var idProp))
+                        nativeId = idProp.GetString() ?? msg.Host;
+                    if (info.TryGetProperty("model", out var model))
+                        metadata["model"] = model.GetString() ?? string.Empty;
+                    if (info.TryGetProperty("fw_id", out var fw))
+                        metadata["firmware"] = fw.GetString() ?? string.Empty;
+                }
+
+                var deviceId = Guid.NewGuid();
+                var discovered = new DeviceDiscovered(deviceId, "shelly", nativeId, capabilities, metadata);
+
+                var mediator = DistributedPubSub.Get(Context.System).Mediator;
+                mediator.Tell(new Publish("device-discovered", discovered));
+
+                var device = new ShellyDevice
+                {
+                    NativeId = nativeId,
+                    Host = msg.Host,
+                    Capabilities = capabilities,
+                    VidarDeviceId = deviceId
+                };
+                Self.Tell(new RegisterShellyDevice(device));
+
+                _log.Info("Shelly device discovered at {Host}: NativeId={NativeId}, Capabilities={Caps}",
+                    msg.Host, nativeId, string.Join(",", capabilities));
+            }
+            catch (Exception ex)
+            {
+                _log.Warning(ex, "Failed to probe Shelly device at {Host}", msg.Host);
+            }
+        });
+
         ReceiveAsync<DeviceCommand>(async cmd =>
         {
             var device = _devices.Values.FirstOrDefault(d => d.VidarDeviceId == cmd.DeviceId);
@@ -62,6 +130,7 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
         base.PreStart();
         var mediator = DistributedPubSub.Get(Context.System).Mediator;
         mediator.Tell(new Subscribe("commands.shelly", Self));
+        mediator.Tell(new Subscribe("discover.shelly", Self));
         Timers.StartPeriodicTimer("poll", PollTick.Instance, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
     }
 

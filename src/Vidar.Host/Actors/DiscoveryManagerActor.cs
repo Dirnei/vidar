@@ -1,4 +1,5 @@
 using Akka.Actor;
+using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
 using Vidar.Core.Messages;
 using Vidar.Core.Model;
@@ -27,5 +28,12 @@ public sealed class DiscoveryManagerActor : ReceiveActor
             await repo.UpsertAsync(discovered);
             _log.Info("New device discovered: {CommunicationType}/{NativeId}", msg.CommunicationType, msg.NativeId);
         });
+    }
+
+    protected override void PreStart()
+    {
+        base.PreStart();
+        var mediator = DistributedPubSub.Get(Context.System).Mediator;
+        mediator.Tell(new Subscribe("device-discovered", Self));
     }
 }
