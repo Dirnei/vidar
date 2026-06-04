@@ -1,7 +1,7 @@
-using Akka.Actor;
-using Akka.Cluster.Tools.PublishSubscribe;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
-using Vidar.Core.Messages;
+using Vidar.Core.Capabilities;
+using Vidar.Core.Model;
 using Vidar.Host.Persistence;
 
 namespace Vidar.Host.Api;
@@ -10,14 +10,17 @@ namespace Vidar.Host.Api;
 [Route("api/discover")]
 public sealed class DiscoverController : ControllerBase
 {
-    private readonly ActorSystem _actorSystem;
     private readonly IDiscoveredDeviceRepository _discoveredRepo;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<DiscoverController> _logger;
 
-    public DiscoverController(ActorSystem actorSystem, IDiscoveredDeviceRepository discoveredRepo, ILogger<DiscoverController> logger)
+    public DiscoverController(
+        IDiscoveredDeviceRepository discoveredRepo,
+        IHttpClientFactory httpClientFactory,
+        ILogger<DiscoverController> logger)
     {
-        _actorSystem = actorSystem;
         _discoveredRepo = discoveredRepo;
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
@@ -27,26 +30,121 @@ public sealed class DiscoverController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Host))
             return BadRequest(new { error = "Host is required" });
 
-        _logger.LogInformation("Requesting Shelly discovery for host {Host}", request.Host);
+        var host = request.Host.Trim();
+        _logger.LogInformation("Probing Shelly device at {Host}", host);
 
-        var countBefore = (await _discoveredRepo.GetAllAsync()).Count;
-        var mediator = DistributedPubSub.Get(_actorSystem).Mediator;
-        mediator.Tell(new Publish("discover.shelly", new DiscoverShellyDevice(request.Host)));
+        var http = _httpClientFactory.CreateClient("shelly");
+        int generation;
+        JsonDocument shellyDoc;
+        JsonDocument? statusDoc;
 
-        // Wait for the communication node to probe and report back
-        for (var i = 0; i < 10; i++)
+        // Probe /shelly first — works on both Gen1 and Gen2
+        try
         {
-            await Task.Delay(500);
-            var countAfter = (await _discoveredRepo.GetAllAsync()).Count;
-            if (countAfter > countBefore)
+            var shellyResponse = await http.GetAsync($"http://{host}/shelly");
+            shellyResponse.EnsureSuccessStatusCode();
+            shellyDoc = await JsonDocument.ParseAsync(await shellyResponse.Content.ReadAsStreamAsync());
+            generation = shellyDoc.RootElement.TryGetProperty("gen", out var genProp) ? genProp.GetInt32() : 1;
+            _logger.LogInformation("Shelly device at {Host} is Gen{Gen}", host, generation);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to reach Shelly device at {Host}", host);
+            return Ok(new { status = "error", host, message = $"Cannot reach device at {host}. Check the IP address and ensure the device is powered on." });
+        }
+
+        // Get full status — different endpoint per generation
+        var statusUrl = generation >= 2
+            ? $"http://{host}/rpc/Shelly.GetStatus"
+            : $"http://{host}/status";
+        try
+        {
+            var statusResponse = await http.GetAsync(statusUrl);
+            statusResponse.EnsureSuccessStatusCode();
+            statusDoc = await JsonDocument.ParseAsync(await statusResponse.Content.ReadAsStreamAsync());
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get status from {Host}", host);
+            statusDoc = null;
+        }
+
+        var capabilities = new List<CapabilityType>();
+        var metadata = new Dictionary<string, string> { ["host"] = host, ["generation"] = generation.ToString() };
+        var nativeId = host;
+
+        var shellyRoot = shellyDoc.RootElement;
+        if (shellyRoot.TryGetProperty("mac", out var macProp))
+            nativeId = macProp.GetString() ?? host;
+        if (shellyRoot.TryGetProperty("type", out var typeProp))
+            metadata["type"] = typeProp.GetString() ?? "";
+        if (shellyRoot.TryGetProperty("model", out var modelProp))
+            metadata["model"] = modelProp.GetString() ?? "";
+        if (shellyRoot.TryGetProperty("fw", out var fwProp))
+            metadata["firmware"] = fwProp.GetString() ?? "";
+
+        if (generation >= 2 && statusDoc != null)
+        {
+            var root = statusDoc.RootElement;
+            if (root.TryGetProperty("switch:0", out _))
             {
-                _logger.LogInformation("Shelly device discovered at {Host}", request.Host);
-                return Ok(new { status = "discovered", host = request.Host });
+                capabilities.Add(CapabilityType.Switch);
+                capabilities.Add(CapabilityType.Power);
+                capabilities.Add(CapabilityType.Energy);
+            }
+            if (root.TryGetProperty("cover:0", out _))
+                capabilities.Add(CapabilityType.Cover);
+            if (root.TryGetProperty("temperature:0", out _))
+                capabilities.Add(CapabilityType.Temperature);
+            if (root.TryGetProperty("humidity:0", out _))
+                capabilities.Add(CapabilityType.Humidity);
+        }
+        else
+        {
+            // Gen1: detect from /shelly response and /status
+            if (shellyRoot.TryGetProperty("num_rollers", out var rollers) && rollers.GetInt32() > 0)
+                capabilities.Add(CapabilityType.Cover);
+            if (shellyRoot.TryGetProperty("num_outputs", out var outputs) && outputs.GetInt32() > 0 && !capabilities.Contains(CapabilityType.Cover))
+            {
+                capabilities.Add(CapabilityType.Switch);
+                capabilities.Add(CapabilityType.Power);
+                capabilities.Add(CapabilityType.Energy);
+            }
+            if (shellyRoot.TryGetProperty("num_meters", out var meters) && meters.GetInt32() > 0 && !capabilities.Contains(CapabilityType.Power))
+                capabilities.Add(CapabilityType.Power);
+
+            if (statusDoc != null)
+            {
+                var root = statusDoc.RootElement;
+                if (root.TryGetProperty("temperature", out _) || root.TryGetProperty("tmp", out _))
+                    capabilities.Add(CapabilityType.Temperature);
+                if (root.TryGetProperty("hum", out _))
+                    capabilities.Add(CapabilityType.Humidity);
             }
         }
 
-        _logger.LogWarning("Shelly device not found at {Host} after 5s timeout", request.Host);
-        return Ok(new { status = "timeout", host = request.Host, message = "Device not found. Check the IP address and ensure the device is reachable from the Shelly communication node." });
+        var existing = await _discoveredRepo.GetByNativeIdAsync("shelly", nativeId);
+        if (existing != null)
+        {
+            _logger.LogInformation("Shelly device {NativeId} at {Host} already discovered", nativeId, host);
+            return Ok(new { status = "already_exists", host, nativeId, message = $"Device {nativeId} is already in the discovered list." });
+        }
+
+        var discovered = new DiscoveredDevice
+        {
+            Id = Guid.NewGuid(),
+            CommunicationType = "shelly",
+            NativeId = nativeId,
+            Capabilities = capabilities,
+            Metadata = metadata,
+            DiscoveredAt = DateTime.UtcNow
+        };
+        await _discoveredRepo.UpsertAsync(discovered);
+
+        _logger.LogInformation("Shelly device discovered: {NativeId} at {Host} with capabilities [{Caps}]",
+            nativeId, host, string.Join(", ", capabilities));
+
+        return Ok(new { status = "discovered", host, nativeId, capabilities = capabilities.Select(c => c.ToString()).ToList() });
     }
 }
 

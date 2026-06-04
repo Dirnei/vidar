@@ -18,10 +18,9 @@ services:
     build:
       context: .
       dockerfile: src/Vidar.Communication.Shelly/Dockerfile
-    network_mode: host
     environment:
       - VIDAR_CLUSTER_SEED=vidar-host:4053
-      - VIDAR_HOSTNAME=0.0.0.0
+      - VIDAR_HOSTNAME=vidar-comm-shelly
       - VIDAR_AKKA_PORT=4054
 
   vidar-comm-zigbee2mqtt:

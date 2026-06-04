@@ -26,6 +26,10 @@ builder.Services.AddSingleton<IRoomRepository>(new MongoRoomRepository(database)
 builder.Services.AddSingleton<IDeviceRepository>(new MongoDeviceRepository(database));
 builder.Services.AddSingleton<IDiscoveredDeviceRepository>(new MongoDiscoveredDeviceRepository(database));
 builder.Services.AddSingleton<IDeviceStateRepository>(new MongoDeviceStateRepository(database));
+builder.Services.AddHttpClient("shelly", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(5);
+});
 builder.Services.AddControllers();
 
 builder.Services.AddAkka("vidar", (configBuilder, sp) =>
