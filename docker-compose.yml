@@ -1,4 +1,13 @@
 services:
+  lighthouse:
+    image: petabridge/lighthouse:latest
+    environment:
+      ACTORSYSTEM: vidar
+      CLUSTER_IP: lighthouse
+      CLUSTER_PORT: "4053"
+      CLUSTER_SEEDS: akka.tcp://vidar@lighthouse:4053
+    restart: unless-stopped
+
   vidar-host:
     build:
       context: .
@@ -8,8 +17,9 @@ services:
     depends_on:
       - mongodb
       - emqx
+      - lighthouse
     environment:
-      - VIDAR_CLUSTER_SEED=vidar-host:4053
+      - VIDAR_CLUSTER_SEED=lighthouse:4053
       - VIDAR_HOSTNAME=vidar-host
       - VIDAR_MONGO_CONNECTION=mongodb://mongodb:27017
       - VIDAR_MONGO_DATABASE=vidar
@@ -18,8 +28,10 @@ services:
     build:
       context: .
       dockerfile: src/Vidar.Communication.Shelly/Dockerfile
+    depends_on:
+      - lighthouse
     environment:
-      - VIDAR_CLUSTER_SEED=vidar-host:4053
+      - VIDAR_CLUSTER_SEED=lighthouse:4053
       - VIDAR_HOSTNAME=vidar-comm-shelly
       - VIDAR_AKKA_PORT=4054
 
@@ -29,8 +41,9 @@ services:
       dockerfile: src/Vidar.Communication.Zigbee2Mqtt/Dockerfile
     depends_on:
       - emqx
+      - lighthouse
     environment:
-      - VIDAR_CLUSTER_SEED=vidar-host:4053
+      - VIDAR_CLUSTER_SEED=lighthouse:4053
       - VIDAR_HOSTNAME=vidar-comm-zigbee2mqtt
       - VIDAR_AKKA_PORT=4055
       - VIDAR_MQTT_BROKER=emqx:1883
