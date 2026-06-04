@@ -65,31 +65,35 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
             var sseManager = system.ActorOf(SseManagerActor.Props(), "sse-manager");
             registry.Register<SseManagerActor>(sseManager);
         })
-        .AddStartup(async (system, registry) =>
+        .AddStartup((system, registry) =>
         {
-            // Wait for cluster to form and Pub/Sub subscriptions to propagate
-            await Task.Delay(TimeSpan.FromSeconds(15));
-
-            var mediator = DistributedPubSub.Get(system).Mediator;
-            var configuredDevices = await deviceRepo.GetAllAsync();
-            foreach (var d in configuredDevices)
+            // Re-broadcast device registrations every 30s so comm nodes that
+            // join late (or rejoin after a split) pick up their devices.
+            // The bridge actor is idempotent — duplicate registrations are harmless.
+            async Task BroadcastRegistrations()
             {
-                if (d.CommunicationType != "shelly") continue;
-                if (!d.Settings.TryGetValue("host", out var host)) continue;
-                int.TryParse(d.Settings.GetValueOrDefault("generation", "2"), out var generation);
-                var msg = new RegisterDeviceForPolling(
-                    d.Id,
-                    d.CommunicationType,
-                    d.NativeId,
-                    host,
-                    generation,
-                    d.Capabilities);
-                mediator.Tell(new Publish("register.shelly", msg));
+                var mediator = DistributedPubSub.Get(system).Mediator;
+                var devices = await deviceRepo.GetAllAsync();
+                foreach (var d in devices)
+                {
+                    if (d.CommunicationType != "shelly") continue;
+                    if (!d.Settings.TryGetValue("host", out var host)) continue;
+                    int.TryParse(d.Settings.GetValueOrDefault("generation", "2"), out var generation);
+                    mediator.Tell(new Publish("register.shelly", new RegisterDeviceForPolling(
+                        d.Id, d.CommunicationType, d.NativeId, host, generation, d.Capabilities)));
+                }
             }
 
-            var count = configuredDevices.Count(d => d.CommunicationType == "shelly" && d.Settings.ContainsKey("host"));
-            if (count > 0)
-                Console.WriteLine($"[vidar] Published {count} Shelly device registration(s) to communication nodes");
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(10));
+                while (true)
+                {
+                    try { await BroadcastRegistrations(); }
+                    catch { /* cluster not ready yet */ }
+                    await Task.Delay(TimeSpan.FromSeconds(30));
+                }
+            });
         });
 });
 
