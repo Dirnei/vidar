@@ -212,7 +212,7 @@ export function DeviceDetailPage() {
         return (
           <div key={cap} style={capCard}>
             <div style={capLabel}>Temperature</div>
-            <div style={valueText(temp != null ? 'var(--text-primary)' : 'var(--text-dimmed)')}>
+            <div style={valueText(temp != null ? 'var(--accent-red)' : 'var(--text-dimmed)')}>
               {temp != null ? `${Number(temp).toFixed(1)} °C` : '— °C'}
             </div>
           </div>
@@ -234,7 +234,7 @@ export function DeviceDetailPage() {
         return (
           <div key={cap} style={capCard}>
             <div style={capLabel}>Power</div>
-            <div style={valueText(power != null ? 'var(--text-primary)' : 'var(--text-dimmed)')}>
+            <div style={valueText(power != null ? 'var(--accent-blue)' : 'var(--text-dimmed)')}>
               {power != null ? `${Number(power).toFixed(1)} W` : '— W'}
             </div>
           </div>
@@ -245,7 +245,7 @@ export function DeviceDetailPage() {
         return (
           <div key={cap} style={capCard}>
             <div style={capLabel}>Energy</div>
-            <div style={valueText(energy != null ? 'var(--text-primary)' : 'var(--text-dimmed)')}>
+            <div style={valueText(energy != null ? 'var(--accent-green)' : 'var(--text-dimmed)')}>
               {energy != null ? `${Number(energy).toFixed(2)} kWh` : '— kWh'}
             </div>
           </div>
