@@ -161,11 +161,50 @@ export function DeviceDetailPage() {
       }
       case 'Cover': {
         const pos = typeof state['Cover'] === 'number' ? (state['Cover'] as number) : 0;
+        const btnStyle: React.CSSProperties = {
+          flex: 1,
+          padding: '10px 0',
+          borderRadius: 'var(--radius-sm)',
+          border: '1px solid var(--border-default)',
+          background: 'var(--bg-hover)',
+          color: 'var(--text-primary)',
+          fontFamily: 'var(--font-body)',
+          fontSize: 14,
+          fontWeight: 600,
+          cursor: 'pointer',
+          transition: 'all 0.15s',
+        };
         return (
           <div key={cap} style={cardStyle}>
             <div style={indicator} />
             <div style={labelStyle}>Cover</div>
             <div style={valueStyle('var(--accent-teal)')}>{Math.round(pos)}%</div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+              <button
+                style={btnStyle}
+                onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent-teal-dim)'; e.currentTarget.style.borderColor = 'var(--accent-teal)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.borderColor = 'var(--border-default)'; }}
+                onClick={() => cmd('Cover', 0)}
+              >
+                Close
+              </button>
+              <button
+                style={btnStyle}
+                onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent-teal-dim)'; e.currentTarget.style.borderColor = 'var(--accent-teal)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.borderColor = 'var(--border-default)'; }}
+                onClick={() => cmd('Cover', 50)}
+              >
+                50%
+              </button>
+              <button
+                style={btnStyle}
+                onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent-teal-dim)'; e.currentTarget.style.borderColor = 'var(--accent-teal)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.borderColor = 'var(--border-default)'; }}
+                onClick={() => cmd('Cover', 100)}
+              >
+                Open
+              </button>
+            </div>
             <div style={{ marginTop: 12 }}>
               <input
                 type="range"
