@@ -12,6 +12,11 @@ var hostname = Environment.GetEnvironmentVariable("VIDAR_HOSTNAME") ?? "localhos
 var port = int.Parse(Environment.GetEnvironmentVariable("VIDAR_AKKA_PORT") ?? "4055");
 var mqttHost = Environment.GetEnvironmentVariable("VIDAR_MQTT_HOST") ?? "localhost";
 var mqttPort = int.Parse(Environment.GetEnvironmentVariable("VIDAR_MQTT_PORT") ?? "1883");
+var mqttUser = Environment.GetEnvironmentVariable("VIDAR_MQTT_USER");
+var mqttPassword = Environment.GetEnvironmentVariable("VIDAR_MQTT_PASSWORD");
+var baseTopic = Environment.GetEnvironmentVariable("VIDAR_Z2M_BASE_TOPIC") ?? "zigbee2mqtt";
+
+var mqttConfig = new Zigbee2MqttConfig(mqttHost, mqttPort, mqttUser, mqttPassword, baseTopic);
 
 builder.Services.AddAkka("vidar", (configBuilder, sp) =>
 {
@@ -27,7 +32,7 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
         .WithActors((system, registry, resolver) =>
         {
             var shardProxy = registry.Get<DeviceTwinRegion>();
-            var bridge = system.ActorOf(Zigbee2MqttBridgeActor.Props(mqttHost, mqttPort, shardProxy), "zigbee2mqtt-bridge");
+            var bridge = system.ActorOf(Zigbee2MqttBridgeActor.Props(mqttConfig, shardProxy), "zigbee2mqtt-bridge");
         });
 });
 

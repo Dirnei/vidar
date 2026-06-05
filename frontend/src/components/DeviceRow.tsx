@@ -6,6 +6,7 @@ import { ToggleSwitch } from './ToggleSwitch';
 import { ProgressBar } from './ProgressBar';
 import { StatusDot } from './StatusDot';
 import { SliderControl } from './SliderControl';
+import { CapabilityIcon, primaryCapabilityIcon } from './CapabilityIcon';
 
 interface Props {
   device: Device;
@@ -119,12 +120,26 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange }: Pr
     return items;
   }
 
+  const isOffline = device.online === false;
+
+  const primaryCap = primaryCapabilityIcon(device.capabilities);
+
   return (
     <div className="device-row">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: isOffline ? 0.6 : 1 }}>
+        <CapabilityIcon capability={primaryCap} size={20} color={isOffline ? 'var(--text-muted)' : undefined} />
+      </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <Link to={`/devices/${device.id}`} className="device-name-link">
-          {device.name}
-        </Link>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Link to={`/devices/${device.id}`} className="device-name-link">
+            {device.name}
+          </Link>
+          {isOffline && (
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent-red)', letterSpacing: '0.04em' }}>
+              Offline
+            </span>
+          )}
+        </div>
         {roomName && (
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{roomName}</div>
         )}
@@ -134,7 +149,7 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange }: Pr
           </div>
         )}
       </div>
-      <div style={controls}>{renderControls()}</div>
+      <div style={{ ...controls, opacity: isOffline ? 0.5 : 1 }}>{renderControls()}</div>
     </div>
   );
 }

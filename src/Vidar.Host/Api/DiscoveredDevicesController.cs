@@ -64,23 +64,23 @@ public sealed class DiscoveredDevicesController : ControllerBase
         await _discoveredRepo.DeleteAsync(id);
 
         // Publish registration so the appropriate communication node can start polling
+        var mediator = DistributedPubSub.Get(_actorSystem).Mediator;
         if (discovered.CommunicationType == "shelly" &&
             discovered.Metadata.TryGetValue("host", out var host))
         {
             int.TryParse(discovered.Metadata.GetValueOrDefault("generation", "2"), out var generation);
-            var msg = new RegisterDeviceForPolling(
-                device.Id,
-                device.CommunicationType,
-                device.NativeId,
-                host,
-                generation,
-                device.Capabilities);
-            var mediator = DistributedPubSub.Get(_actorSystem).Mediator;
-            mediator.Tell(new Publish("register.shelly", msg));
+            mediator.Tell(new Publish("register.shelly", new RegisterDeviceForPolling(
+                device.Id, device.CommunicationType, device.NativeId, host, generation, device.Capabilities)));
+        }
+        else if (discovered.CommunicationType == "zigbee2mqtt")
+        {
+            var friendlyName = discovered.Metadata.GetValueOrDefault("friendly_name", device.NativeId);
+            mediator.Tell(new Publish("register.zigbee2mqtt", new RegisterDeviceForPolling(
+                device.Id, device.CommunicationType, device.NativeId, friendlyName, 0, device.Capabilities)));
         }
 
         return Created($"/api/devices/{device.Id}", new DeviceResponse(
             device.Id, device.Name, device.RoomId, null,
-            device.CommunicationType, device.Capabilities, null));
+            device.CommunicationType, device.Capabilities, null, true, device.Settings));
     }
 }

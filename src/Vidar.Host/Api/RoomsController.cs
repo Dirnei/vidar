@@ -73,7 +73,7 @@ public sealed class RoomsController : ControllerBase
         {
             stateMap.TryGetValue(d.Id, out var state);
             var stateDict = state?.States.ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value);
-            return new DeviceResponse(d.Id, d.Name, d.RoomId, room.Name, d.CommunicationType, d.Capabilities, stateDict);
+            return new DeviceResponse(d.Id, d.Name, d.RoomId, room.Name, d.CommunicationType, d.Capabilities, stateDict, state?.Online, d.Settings);
         }).ToList();
         return Ok(response);
     }

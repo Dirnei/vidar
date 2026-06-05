@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import type { DiscoveredDevice, Room } from '../types';
 import { getDiscoveredDevices, getRooms, configureDiscoveredDevice, discoverShellyDevice } from '../api/client';
 import { ConfigureDeviceModal } from '../components/ConfigureDeviceModal';
+import { CapabilityIcon, primaryCapabilityIcon } from '../components/CapabilityIcon';
 
 export function DiscoveredPage() {
   const [discovered, setDiscovered] = useState<DiscoveredDevice[]>([]);
@@ -143,58 +144,56 @@ export function DiscoveredPage() {
         <div>
           {discovered.map((d) => (
             <div key={d.id} className="discovery-card">
+              {/* Large icon */}
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 52, height: 52, borderRadius: 'var(--radius-sm)', flexShrink: 0,
+                background: 'var(--bg-hover)', border: '1px solid var(--border-subtle)',
+              }}>
+                <CapabilityIcon capability={primaryCapabilityIcon(d.capabilities)} size={28} />
+              </div>
+              {/* Info */}
               <div style={{ flex: 1, minWidth: 0 }}>
-                {d.metadata?.name && (
-                  <div
-                    style={{
-                      fontFamily: 'var(--font-heading)',
-                      fontSize: 15,
-                      fontWeight: 600,
-                      color: 'var(--text-primary)',
-                      marginBottom: 2,
-                    }}
-                  >
-                    {d.metadata.name}
-                  </div>
-                )}
-                <div
-                  style={{
-                    fontWeight: 600,
-                    fontSize: 14,
-                    color: d.metadata?.name ? 'var(--text-secondary)' : 'var(--text-primary)',
-                    marginBottom: 4,
-                  }}
-                >
-                  {d.nativeId}
+                <div style={{
+                  fontFamily: 'var(--font-heading)', fontSize: 15, fontWeight: 600,
+                  color: 'var(--text-primary)', marginBottom: 2,
+                }}>
+                  {d.metadata?.name ?? d.metadata?.friendly_name ?? d.nativeId}
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--accent-teal)', marginBottom: 8 }}>
-                  {d.communicationType}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  {(d.metadata?.name || d.metadata?.friendly_name) && (
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{d.nativeId}</span>
+                  )}
+                  <span style={{
+                    fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const,
+                    letterSpacing: '0.05em', padding: '1px 7px', borderRadius: 3,
+                    background: d.communicationType === 'shelly'
+                      ? 'color-mix(in srgb, var(--accent-primary) 15%, transparent)'
+                      : 'color-mix(in srgb, var(--accent-teal) 15%, transparent)',
+                    color: d.communicationType === 'shelly' ? 'var(--accent-primary)' : 'var(--accent-teal)',
+                  }}>
+                    {d.communicationType}
+                  </span>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                   {d.capabilities.map((cap) => (
                     <span
                       key={cap}
                       style={{
-                        display: 'inline-block',
-                        padding: '2px 9px',
-                        borderRadius: 4,
-                        fontSize: 11,
-                        fontWeight: 500,
-                        backgroundColor: 'var(--bg-hover)',
-                        color: 'var(--text-muted)',
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                        padding: '2px 9px', borderRadius: 4, fontSize: 11, fontWeight: 500,
+                        backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)',
                         border: '1px solid var(--border-subtle)',
                       }}
                     >
+                      <CapabilityIcon capability={cap} size={11} />
                       {cap}
                     </span>
                   ))}
                 </div>
-                {d.metadata && Object.keys(d.metadata).length > 0 && (
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
-                    {Object.entries(d.metadata)
-                      .slice(0, 4)
-                      .map(([k, v]) => `${k}: ${v}`)
-                      .join(' · ')}
+                {d.metadata?.vendor && (
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                    {[d.metadata.vendor, d.metadata.model].filter(Boolean).join(' · ')}
                   </div>
                 )}
               </div>
@@ -213,7 +212,7 @@ export function DiscoveredPage() {
       {configuring && rooms.length > 0 && (
         <ConfigureDeviceModal
           rooms={rooms}
-          defaultName={configuring.metadata?.name}
+          defaultName={configuring.metadata?.name ?? configuring.metadata?.friendly_name}
           onConfirm={handleConfigure}
           onCancel={() => setConfiguring(null)}
         />

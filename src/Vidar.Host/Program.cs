@@ -76,11 +76,19 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
                 var devices = await deviceRepo.GetAllAsync();
                 foreach (var d in devices)
                 {
-                    if (d.CommunicationType != "shelly") continue;
-                    if (!d.Settings.TryGetValue("host", out var host)) continue;
-                    int.TryParse(d.Settings.GetValueOrDefault("generation", "2"), out var generation);
-                    mediator.Tell(new Publish("register.shelly", new RegisterDeviceForPolling(
-                        d.Id, d.CommunicationType, d.NativeId, host, generation, d.Capabilities)));
+                    if (d.CommunicationType == "shelly")
+                    {
+                        if (!d.Settings.TryGetValue("host", out var host)) continue;
+                        int.TryParse(d.Settings.GetValueOrDefault("generation", "2"), out var generation);
+                        mediator.Tell(new Publish("register.shelly", new RegisterDeviceForPolling(
+                            d.Id, d.CommunicationType, d.NativeId, host, generation, d.Capabilities)));
+                    }
+                    else if (d.CommunicationType == "zigbee2mqtt")
+                    {
+                        var friendlyName = d.Settings.GetValueOrDefault("friendly_name", d.NativeId);
+                        mediator.Tell(new Publish("register.zigbee2mqtt", new RegisterDeviceForPolling(
+                            d.Id, d.CommunicationType, d.NativeId, friendlyName, 0, d.Capabilities)));
+                    }
                 }
             }
 

@@ -228,6 +228,11 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
                         updates = ShellyStateMapper.MapSwitchStatus(sw);
                         SendUpdates(deviceId, updates);
                     }
+                    else if (root.TryGetProperty("pm1:0", out var pm))
+                    {
+                        updates = ShellyStateMapper.MapSwitchStatus(pm);
+                        SendUpdates(deviceId, updates);
+                    }
                     break;
                 case CapabilityType.Cover:
                     if (root.TryGetProperty("cover:0", out var cover))
@@ -290,6 +295,10 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
     private void HandlePollFailed(PollFailed msg)
     {
         _log.Warning(msg.Exception, "Failed to poll Shelly device {NativeId}", msg.NativeId);
+        if (_devices.TryGetValue(msg.NativeId, out var device) && device.VidarDeviceId.HasValue)
+        {
+            _shardProxy.Tell(new DeviceOffline(device.VidarDeviceId.Value));
+        }
     }
 
     private static int? CoerceToInt(object value) => value switch

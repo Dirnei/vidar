@@ -121,6 +121,11 @@ public sealed class DiscoverController : ControllerBase
                 capabilities.Add(CapabilityType.Power);
                 capabilities.Add(CapabilityType.Energy);
             }
+            if (root.TryGetProperty("pm1:0", out _) && !capabilities.Contains(CapabilityType.Power))
+            {
+                capabilities.Add(CapabilityType.Power);
+                capabilities.Add(CapabilityType.Energy);
+            }
             if (root.TryGetProperty("cover:0", out _))
                 capabilities.Add(CapabilityType.Cover);
             if (root.TryGetProperty("temperature:0", out _))

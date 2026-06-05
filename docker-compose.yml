@@ -40,13 +40,18 @@ services:
       context: .
       dockerfile: src/Vidar.Communication.Zigbee2Mqtt/Dockerfile
     depends_on:
-      - emqx
       - lighthouse
+    env_file:
+      - .env
     environment:
       - VIDAR_CLUSTER_SEED=lighthouse:4053
       - VIDAR_HOSTNAME=vidar-comm-zigbee2mqtt
       - VIDAR_AKKA_PORT=4055
-      - VIDAR_MQTT_BROKER=emqx:1883
+      - VIDAR_MQTT_HOST=10.220.220.10
+      - VIDAR_MQTT_PORT=2884
+      - VIDAR_MQTT_USER=${MQTT_USER}
+      - VIDAR_MQTT_PASSWORD=${MQTT_PASSWORD}
+      - VIDAR_Z2M_BASE_TOPIC=smarthome/z2m
 
   mongodb:
     image: mongo:8

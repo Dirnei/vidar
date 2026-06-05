@@ -5,4 +5,5 @@ public sealed class DeviceState
     public Guid DeviceId { get; init; }
     public Dictionary<CapabilityType, object> States { get; init; } = new();
     public DateTime LastUpdated { get; set; }
+    public bool Online { get; set; } = true;
 }

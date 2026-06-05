@@ -22,7 +22,7 @@ public static class ShellyStateMapper
         if (element.TryGetProperty("aenergy", out var aenergy) && aenergy.ValueKind == JsonValueKind.Object)
         {
             if (aenergy.TryGetProperty("total", out var total) && total.ValueKind == JsonValueKind.Number)
-                results.Add(new ShellyCapabilityValue(CapabilityType.Energy, total.GetDouble()));
+                results.Add(new ShellyCapabilityValue(CapabilityType.Energy, total.GetDouble() / 1000.0));
         }
 
         return results;

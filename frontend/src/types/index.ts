@@ -11,6 +11,8 @@ export interface Device {
   capabilities: string[];
   state: Record<string, unknown>;
   metadata: Record<string, string>;
+  online?: boolean;
+  settings?: Record<string, string>;
 }
 
 export interface DiscoveredDevice {

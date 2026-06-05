@@ -9,4 +9,6 @@ public sealed record DeviceResponse(
     string? RoomName,
     string CommunicationType,
     List<CapabilityType> Capabilities,
-    Dictionary<string, object>? State);
+    Dictionary<string, object>? State,
+    bool? Online,
+    Dictionary<string, string>? Settings);

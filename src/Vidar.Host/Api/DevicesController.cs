@@ -1,4 +1,5 @@
 using Akka.Actor;
+using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Vidar.Core.Messages;
@@ -16,6 +17,7 @@ public sealed class DevicesController : ControllerBase
     private readonly IDeviceStateRepository _stateRepo;
     private readonly IRoomRepository _roomRepo;
     private readonly IRequiredActor<DeviceTwinRegion> _twinRegion;
+    private readonly ActorSystem _actorSystem;
     private readonly ILogger<DevicesController> _logger;
 
     public DevicesController(
@@ -23,12 +25,14 @@ public sealed class DevicesController : ControllerBase
         IDeviceStateRepository stateRepo,
         IRoomRepository roomRepo,
         IRequiredActor<DeviceTwinRegion> twinRegion,
+        ActorSystem actorSystem,
         ILogger<DevicesController> logger)
     {
         _deviceRepo = deviceRepo;
         _stateRepo = stateRepo;
         _roomRepo = roomRepo;
         _twinRegion = twinRegion;
+        _actorSystem = actorSystem;
         _logger = logger;
     }
 
@@ -48,7 +52,7 @@ public sealed class DevicesController : ControllerBase
             var stateDict = state?.States.ToDictionary(
                 kvp => kvp.Key.ToString(),
                 kvp => kvp.Value);
-            return new DeviceResponse(d.Id, d.Name, d.RoomId, roomName, d.CommunicationType, d.Capabilities, stateDict);
+            return new DeviceResponse(d.Id, d.Name, d.RoomId, roomName, d.CommunicationType, d.Capabilities, stateDict, state?.Online, d.Settings);
         }).ToList();
 
         return Ok(response);
@@ -66,7 +70,7 @@ public sealed class DevicesController : ControllerBase
 
         return Ok(new DeviceResponse(
             device.Id, device.Name, device.RoomId, room?.Name,
-            device.CommunicationType, device.Capabilities, stateDict));
+            device.CommunicationType, device.Capabilities, stateDict, state?.Online, device.Settings));
     }
 
     [HttpPost("{id:guid}/command")]
@@ -106,6 +110,38 @@ public sealed class DevicesController : ControllerBase
         device.Name = request.Name;
         device.RoomId = request.RoomId;
         await _deviceRepo.UpdateAsync(device);
+        return NoContent();
+    }
+
+    [HttpPut("{id:guid}/settings")]
+    public async Task<IActionResult> UpdateSettings(Guid id, [FromBody] UpdateDeviceSettingsRequest request)
+    {
+        var device = await _deviceRepo.GetByIdAsync(id);
+        if (device == null) return NotFound();
+
+        var oldHost = device.Settings.GetValueOrDefault("host");
+
+        foreach (var kvp in request.Settings)
+            device.Settings[kvp.Key] = kvp.Value;
+
+        await _deviceRepo.UpdateAsync(device);
+
+        var newHost = device.Settings.GetValueOrDefault("host");
+        if (newHost != null && newHost != oldHost && device.CommunicationType == "shelly")
+        {
+            int.TryParse(device.Settings.GetValueOrDefault("generation", "2"), out var generation);
+            var msg = new RegisterDeviceForPolling(
+                device.Id,
+                device.CommunicationType,
+                device.NativeId,
+                newHost,
+                generation,
+                device.Capabilities);
+            var mediator = DistributedPubSub.Get(_actorSystem).Mediator;
+            mediator.Tell(new Publish("register.shelly", msg));
+            _logger.LogInformation("Republished RegisterDeviceForPolling for device {DeviceId} with new host {Host}", id, newHost);
+        }
+
         return NoContent();
     }
 

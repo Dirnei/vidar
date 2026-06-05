@@ -75,6 +75,10 @@ export function configureDiscoveredDevice(id: string, payload: ConfigurePayload)
   });
 }
 
+export function updateDeviceSettings(id: string, settings: Record<string, string>): Promise<void> {
+  return request(`/devices/${id}/settings`, { method: 'PUT', body: JSON.stringify({ settings }) });
+}
+
 // --- Discover ---
 
 export function discoverShellyDevice(host: string): Promise<{ status: string; host: string; message?: string }> {

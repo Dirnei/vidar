@@ -28,6 +28,7 @@ public sealed class DeviceTwinActor : ReceiveActor
 
         ReceiveAsync<DeviceStateUpdate>(HandleStateUpdate);
         ReceiveAsync<DeviceCommand>(HandleCommand);
+        ReceiveAsync<DeviceOffline>(HandleDeviceOffline);
     }
 
     protected override void PreStart()
@@ -57,13 +58,31 @@ public sealed class DeviceTwinActor : ReceiveActor
         {
             DeviceId = update.DeviceId,
             States = new Dictionary<CapabilityType, object>(_states),
-            LastUpdated = DateTime.UtcNow
+            LastUpdated = DateTime.UtcNow,
+            Online = true
         };
         try { await _stateRepo.UpsertAsync(state); }
         catch (Exception ex) { _log.Warning(ex, "Failed to persist state for device {DeviceId}", update.DeviceId); }
 
         var mediator = DistributedPubSub.Get(Context.System).Mediator;
         mediator.Tell(new Publish("device-state-changes", new DeviceStateChanged(update.DeviceId, update.Capability, update.Value, DateTime.UtcNow)));
+    }
+
+    private async Task HandleDeviceOffline(DeviceOffline msg)
+    {
+        _log.Info("Device {DeviceId} is offline", msg.DeviceId);
+        var state = new DeviceState
+        {
+            DeviceId = msg.DeviceId,
+            States = new Dictionary<CapabilityType, object>(_states),
+            LastUpdated = DateTime.UtcNow,
+            Online = false
+        };
+        try { await _stateRepo.UpsertAsync(state); }
+        catch (Exception ex) { _log.Warning(ex, "Failed to persist offline state for device {DeviceId}", msg.DeviceId); }
+
+        var mediator = DistributedPubSub.Get(Context.System).Mediator;
+        mediator.Tell(new Publish("device-state-changes", new DeviceStateChanged(msg.DeviceId, CapabilityType.Switch, false, DateTime.UtcNow)));
     }
 
     private async Task HandleCommand(DeviceCommand command)
