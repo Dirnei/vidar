@@ -2,12 +2,13 @@ namespace Vidar.Core.Capabilities;
 
 public enum CapabilityType
 {
-    Switch,
-    Dimmer,
-    Cover,
-    Temperature,
-    Motion,
-    Power,
-    Energy,
-    Humidity
+    Switch = 0,
+    Dimmer = 1,
+    Cover = 2,
+    Temperature = 3,
+    Motion = 4,
+    Power = 5,
+    Energy = 6,
+    Humidity = 7,
+    Light = 8
 }

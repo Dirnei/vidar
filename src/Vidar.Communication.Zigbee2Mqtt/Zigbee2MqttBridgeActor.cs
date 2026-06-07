@@ -54,6 +54,7 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
                 device.VidarDeviceId = msg.DeviceId;
                 _log.Info("Z2M device {FriendlyName} ({IeeeAddress}) mapped to configured ID {DeviceId}",
                     device.FriendlyName, msg.NativeId, msg.DeviceId);
+                RequestDeviceState(device);
             }
             else
             {
@@ -224,11 +225,13 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
                     continue;
 
                 var capabilities = new List<CapabilityType>();
+                var lightFeatures = new HashSet<string>();
                 if (deviceEl.TryGetProperty("definition", out var definition) &&
                     definition.ValueKind != JsonValueKind.Null &&
                     definition.TryGetProperty("exposes", out var exposes))
                 {
                     capabilities = ExposesMapper.MapCapabilities(exposes);
+                    lightFeatures = ExposesMapper.ExtractLightFeatures(exposes);
                 }
 
                 if (capabilities.Count == 0)
@@ -249,6 +252,8 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
                         metadata["description"] = desc.GetString()!;
                 }
                 metadata["friendly_name"] = friendlyName;
+                if (lightFeatures.Count > 0)
+                    metadata["light_features"] = string.Join(",", lightFeatures);
 
                 if (_devicesByIeeeAddress.TryGetValue(ieeeAddress, out var existing))
                 {
@@ -297,15 +302,38 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
         }
     }
 
+    private void RequestDeviceState(Zigbee2MqttDevice device)
+    {
+        if (_mqttClient == null || !_mqttClient.IsConnected()) return;
+        var topic = $"{_config.BaseTopic}/{device.FriendlyName}/get";
+        _ = _mqttClient.PublishAsync(topic, "{\"state\":\"\"}", QualityOfService.AtMostOnceDelivery);
+    }
+
     private static string? BuildCommandPayload(CapabilityType capability, object value)
     {
         return capability switch
         {
             CapabilityType.Switch => JsonSerializer.Serialize(new { state = CoerceToBool(value) == true ? "ON" : "OFF" }),
-            CapabilityType.Dimmer => CoerceToNumber(value) is { } b ? JsonSerializer.Serialize(new { brightness = (int)b }) : null,
+            CapabilityType.Dimmer => CoerceToNumber(value) is { } b ? JsonSerializer.Serialize(new { brightness = (int)(b / 100.0 * 254.0) }) : null,
+            CapabilityType.Light => BuildLightPayload(value),
             CapabilityType.Cover => CoerceToNumber(value) is { } p ? JsonSerializer.Serialize(new { position = (int)p }) : null,
             _ => null
         };
+    }
+
+    private static string? BuildLightPayload(object value)
+    {
+        if (CoerceToBool(value) is { } on)
+            return JsonSerializer.Serialize(new { state = on ? "ON" : "OFF" });
+        if (CoerceToNumber(value) is { } brightness)
+            return JsonSerializer.Serialize(new { brightness = (int)(brightness / 100.0 * 254.0) });
+        if (value is JsonElement el && el.ValueKind == JsonValueKind.Object)
+            return el.GetRawText();
+        if (value is Dictionary<string, object> dict)
+            return JsonSerializer.Serialize(dict);
+        if (value is string s)
+            return s;
+        return null;
     }
 
     private static double? CoerceToNumber(object value) => value switch

@@ -49,14 +49,22 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange }: Pr
   function renderControls() {
     const items: React.ReactNode[] = [];
 
-    if (device.capabilities.includes('Switch')) {
+    if (device.capabilities.includes('Light')) {
+      const lightState = state['Light'] as Record<string, unknown> | undefined;
+      const isOn = lightState?.on === true;
+      items.push(
+        <ToggleSwitch key="light" checked={isOn} onChange={v => sendCommand(device.id, { capability: 'Light', value: v }).then(() => onStateChange?.())} />
+      );
+    }
+
+    if (device.capabilities.includes('Switch') && !device.capabilities.includes('Light')) {
       const isOn = Boolean(state['Switch']);
       items.push(
         <ToggleSwitch key="switch" checked={isOn} onChange={handleSwitch} />
       );
     }
 
-    if (device.capabilities.includes('Dimmer')) {
+    if (device.capabilities.includes('Dimmer') && !device.capabilities.includes('Light')) {
       const level = typeof state['Dimmer'] === 'number' ? (state['Dimmer'] as number) : 0;
       items.push(
         <div key="dimmer" style={{ width: 110 }}>

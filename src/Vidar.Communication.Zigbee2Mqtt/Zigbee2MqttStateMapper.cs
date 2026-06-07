@@ -25,10 +25,49 @@ public static class Zigbee2MqttStateMapper
         var knownSet = new HashSet<CapabilityType>(knownCapabilities);
 
         using var doc = JsonDocument.Parse(json);
-        foreach (var prop in doc.RootElement.EnumerateObject())
+        var root = doc.RootElement;
+
+        // Light is composite: combines state + brightness + color into one value
+        if (knownSet.Contains(CapabilityType.Light))
+        {
+            var lightState = new Dictionary<string, object>();
+
+            if (root.TryGetProperty("state", out var stateProp))
+            {
+                var on = MapSwitchValue(stateProp) as bool?;
+                if (on.HasValue) lightState["on"] = on.Value;
+            }
+            if (root.TryGetProperty("brightness", out var brProp) && brProp.ValueKind == JsonValueKind.Number)
+                lightState["brightness"] = Math.Round(brProp.GetDouble() / 254.0 * 100.0);
+            if (root.TryGetProperty("color_temp", out var ctProp) && ctProp.ValueKind == JsonValueKind.Number)
+                lightState["color_temp"] = ctProp.GetInt32();
+            if (root.TryGetProperty("color", out var colorProp) && colorProp.ValueKind == JsonValueKind.Object)
+            {
+                if (colorProp.TryGetProperty("x", out var cx) && colorProp.TryGetProperty("y", out var cy))
+                {
+                    lightState["color_x"] = cx.GetDouble();
+                    lightState["color_y"] = cy.GetDouble();
+                }
+                if (colorProp.TryGetProperty("hue", out var hue) && colorProp.TryGetProperty("saturation", out var sat))
+                {
+                    lightState["color_h"] = hue.GetDouble();
+                    lightState["color_s"] = sat.GetDouble();
+                }
+            }
+            if (root.TryGetProperty("color_mode", out var modeProp) && modeProp.ValueKind == JsonValueKind.String)
+                lightState["color_mode"] = modeProp.GetString()!;
+
+            if (lightState.Count > 0)
+                result.Add(new Zigbee2MqttCapabilityValue(CapabilityType.Light, lightState));
+        }
+
+        foreach (var prop in root.EnumerateObject())
         {
             if (!NameMap.TryGetValue(prop.Name, out var cap)) continue;
             if (!knownSet.Contains(cap)) continue;
+            // Skip state/brightness if we already handled them as Light
+            if (knownSet.Contains(CapabilityType.Light) && (cap == CapabilityType.Switch || cap == CapabilityType.Dimmer))
+                continue;
 
             object? value = cap switch
             {

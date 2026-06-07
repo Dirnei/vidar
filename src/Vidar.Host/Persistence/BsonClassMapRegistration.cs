@@ -19,7 +19,6 @@ public static class BsonClassMapRegistration
         {
             if (_registered) return;
 
-            // Use standard string-based GUIDs for MongoDB
             BsonSerializer.RegisterSerializer(new GuidSerializer(GuidRepresentation.Standard));
 
             BsonClassMap.RegisterClassMap<RoomConfiguration>(cm =>

@@ -6,6 +6,7 @@ public static class CapabilityMetadata
     {
         [CapabilityType.Switch] = (true, ""),
         [CapabilityType.Dimmer] = (true, "%"),
+        [CapabilityType.Light] = (true, "%"),
         [CapabilityType.Cover] = (true, "%"),
         [CapabilityType.Temperature] = (false, "°C"),
         [CapabilityType.Motion] = (false, ""),

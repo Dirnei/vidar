@@ -8,6 +8,7 @@ import { ProgressBar } from '../components/ProgressBar';
 import { StatusDot } from '../components/StatusDot';
 import { SliderControl } from '../components/SliderControl';
 import { CapabilityIcon, primaryCapabilityIcon } from '../components/CapabilityIcon';
+import { ColorWheel, ColorTempSlider } from '../components/ColorPicker';
 
 export function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -302,7 +303,7 @@ function handleBlur(e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) {
 
 function capAccentColor(cap: string): string {
   switch (cap) {
-    case 'Switch': case 'Dimmer': return 'var(--accent-primary)';
+    case 'Switch': case 'Dimmer': case 'Light': return 'var(--accent-primary)';
     case 'Cover': return 'var(--accent-teal)';
     case 'Temperature': return 'var(--accent-red)';
     case 'Motion': return 'var(--accent-green)';
@@ -373,6 +374,57 @@ function renderCapabilityCard(
           <div style={capValueStyle('var(--accent-primary)')}>{Math.round(level)}%</div>
           <div style={{ marginTop: 12 }}>
             <SliderControl value={level} className="slider-dimmer" accentColor="var(--accent-primary)" onCommit={v => cmd('Dimmer', v)} />
+          </div>
+        </div>
+      );
+    }
+    case 'Light': {
+      const lightState = state['Light'] as Record<string, unknown> | undefined;
+      const isOn = lightState?.on === true;
+      const brightness = typeof lightState?.brightness === 'number' ? (lightState.brightness as number) : 0;
+      const hasBrightness = lightState?.brightness !== undefined;
+      const colorTemp = typeof lightState?.color_temp === 'number' ? (lightState.color_temp as number) : 0;
+      const hasColorTemp = lightState?.color_temp !== undefined;
+      const colorH = typeof lightState?.color_h === 'number' ? (lightState.color_h as number) : 0;
+      const colorS = typeof lightState?.color_s === 'number' ? (lightState.color_s as number) : 0;
+      const hasColor = lightState?.color_x !== undefined || lightState?.color_h !== undefined;
+      const colorMode = lightState?.color_mode as string | undefined;
+      return (
+        <div key={cap} style={{ ...capCardStyle, gridColumn: (hasColor || hasColorTemp) ? 'span 2' : undefined }}>
+          <Indicator color={accent} />
+          <div style={capLabelStyle}><CapabilityIcon capability="Light" size={13} />Light</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 6 }}>
+            <ToggleSwitch checked={isOn} onChange={v => cmd('Light', v)} />
+            <span style={{ fontSize: 14, fontWeight: 500, color: isOn ? 'var(--accent-primary)' : 'var(--text-muted)' }}>
+              {isOn ? (hasBrightness ? `${Math.round(brightness)}%` : 'On') : 'Off'}
+            </span>
+          </div>
+          {hasBrightness && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 6 }}>Brightness</div>
+              <SliderControl value={brightness} className="slider-dimmer" accentColor="var(--accent-primary)" onCommit={v => cmd('Light', v)} />
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 20, marginTop: 16, flexWrap: 'wrap' }}>
+            {hasColor && (
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.06em', color: colorMode === 'xy' || colorMode === 'hs' ? 'var(--accent-primary)' : 'var(--text-muted)', marginBottom: 8 }}>Color</div>
+                <ColorWheel
+                  hue={colorH}
+                  saturation={colorS}
+                  onCommit={(h, s) => cmd('Light', JSON.stringify({ color: { hue: h, saturation: s } }))}
+                />
+              </div>
+            )}
+            {hasColorTemp && (
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.06em', color: colorMode === 'color_temp' ? 'var(--accent-primary)' : 'var(--text-muted)', marginBottom: 8 }}>Color Temperature</div>
+                <ColorTempSlider
+                  value={colorTemp}
+                  onCommit={v => cmd('Light', JSON.stringify({ color_temp: v }))}
+                />
+              </div>
+            )}
           </div>
         </div>
       );

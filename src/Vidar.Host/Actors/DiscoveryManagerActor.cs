@@ -19,14 +19,16 @@ public sealed class DiscoveryManagerActor : ReceiveActor
         ReceiveAsync<DeviceDiscovered>(async msg =>
         {
             var existing = await repo.GetByNativeIdAsync(msg.CommunicationType, msg.NativeId);
-            if (existing != null) { _log.Debug("Device already discovered: {NativeId}", msg.NativeId); return; }
             var discovered = new DiscoveredDevice
             {
-                Id = msg.DeviceId, CommunicationType = msg.CommunicationType, NativeId = msg.NativeId,
-                Capabilities = msg.Capabilities.ToList(), Metadata = msg.Metadata, DiscoveredAt = DateTime.UtcNow
+                Id = existing?.Id ?? msg.DeviceId,
+                CommunicationType = msg.CommunicationType,
+                NativeId = msg.NativeId,
+                Capabilities = msg.Capabilities.ToList(),
+                Metadata = msg.Metadata,
+                DiscoveredAt = existing?.DiscoveredAt ?? DateTime.UtcNow
             };
             await repo.UpsertAsync(discovered);
-            _log.Info("New device discovered: {CommunicationType}/{NativeId}", msg.CommunicationType, msg.NativeId);
         });
     }
 

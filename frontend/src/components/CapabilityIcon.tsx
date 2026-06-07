@@ -39,6 +39,14 @@ export function CapabilityIcon({ capability, size = 16, color }: Props) {
           <line x1="17.66" y1="6.34" x2="19.78" y2="4.22" />
         </svg>
       );
+    case 'Light':
+      return (
+        <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 18h6" />
+          <path d="M10 22h4" />
+          <path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14" />
+        </svg>
+      );
     case 'Temperature':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -87,7 +95,7 @@ export function CapabilityIcon({ capability, size = 16, color }: Props) {
 
 function accentFor(cap: string): string {
   switch (cap) {
-    case 'Switch': case 'Dimmer': return 'var(--accent-primary)';
+    case 'Switch': case 'Dimmer': case 'Light': return 'var(--accent-primary)';
     case 'Cover': return 'var(--accent-teal)';
     case 'Temperature': return 'var(--accent-red)';
     case 'Motion': return 'var(--accent-green)';
@@ -99,7 +107,7 @@ function accentFor(cap: string): string {
 }
 
 export function primaryCapabilityIcon(capabilities: string[]): string {
-  const priority = ['Cover', 'Switch', 'Dimmer', 'Motion', 'Temperature', 'Humidity', 'Power', 'Energy'];
+  const priority = ['Light', 'Cover', 'Switch', 'Dimmer', 'Motion', 'Temperature', 'Humidity', 'Power', 'Energy'];
   for (const p of priority) {
     if (capabilities.includes(p)) return p;
   }
