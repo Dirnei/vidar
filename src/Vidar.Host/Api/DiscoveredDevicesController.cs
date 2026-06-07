@@ -81,6 +81,7 @@ public sealed class DiscoveredDevicesController : ControllerBase
 
         return Created($"/api/devices/{device.Id}", new DeviceResponse(
             device.Id, device.Name, device.RoomId, null,
-            device.CommunicationType, device.Capabilities, null, true, device.Settings));
+            device.CommunicationType, device.Capabilities, null, true, device.Settings,
+            null, null));
     }
 }

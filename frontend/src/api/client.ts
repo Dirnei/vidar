@@ -1,4 +1,4 @@
-import type { Room, Device, DiscoveredDevice, CommandPayload, ConfigurePayload } from '../types';
+import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload } from '../types';
 
 const BASE = '/api';
 
@@ -77,6 +77,36 @@ export function configureDiscoveredDevice(id: string, payload: ConfigurePayload)
 
 export function updateDeviceSettings(id: string, settings: Record<string, string>): Promise<void> {
   return request(`/devices/${id}/settings`, { method: 'PUT', body: JSON.stringify({ settings }) });
+}
+
+// --- Groups ---
+
+export function getGroups(): Promise<DeviceGroup[]> {
+  return request('/groups');
+}
+
+export function getGroup(id: string): Promise<DeviceGroup> {
+  return request(`/groups/${id}`);
+}
+
+export function createGroup(data: { name: string; roomId: string; deviceIds: string[] }): Promise<DeviceGroup> {
+  return request('/groups', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function updateGroup(id: string, data: { name: string; roomId: string; deviceIds: string[] }): Promise<void> {
+  return request(`/groups/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+
+export function deleteGroup(id: string): Promise<void> {
+  return request(`/groups/${id}`, { method: 'DELETE' });
+}
+
+export function sendGroupCommand(id: string, payload: CommandPayload): Promise<void> {
+  return request(`/groups/${id}/command`, { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export function getRoomGroups(roomId: string): Promise<DeviceGroup[]> {
+  return request(`/rooms/${roomId}/groups`);
 }
 
 // --- Discover ---

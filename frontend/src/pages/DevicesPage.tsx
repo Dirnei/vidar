@@ -78,6 +78,7 @@ export function DevicesPage() {
               showRoom
               rooms={rooms}
               onStateChange={loadData}
+              groupLabel={d.groupName ? `Group: ${d.groupName}` : undefined}
             />
           ))}
         </div>

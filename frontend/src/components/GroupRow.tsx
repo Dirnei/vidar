@@ -1,42 +1,34 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import type { Device } from '../types';
-import { sendCommand } from '../api/client';
+import type { DeviceGroup } from '../types';
+import { sendGroupCommand } from '../api/client';
 import { ToggleSwitch } from './ToggleSwitch';
-import { ProgressBar } from './ProgressBar';
-import { StatusDot } from './StatusDot';
 import { SliderControl } from './SliderControl';
-import { CapabilityIcon, primaryCapabilityIcon } from './CapabilityIcon';
+import { StatusDot } from './StatusDot';
+import { ProgressBar } from './ProgressBar';
 
 interface Props {
-  device: Device;
-  showRoom?: boolean;
-  rooms?: { id: string; name: string }[];
+  group: DeviceGroup;
   onStateChange?: () => void;
-  groupLabel?: string;
 }
 
-export function DeviceRow({ device, showRoom = false, rooms, onStateChange, groupLabel }: Props) {
-  const state = device.state ?? {};
+function GroupIcon() {
+  return (
+    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" strokeWidth="2">
+      <rect x="3" y="3" width="14" height="14" rx="2" />
+      <rect x="7" y="7" width="14" height="14" rx="2" />
+    </svg>
+  );
+}
 
-  async function handleSwitch(value: boolean) {
-    await sendCommand(device.id, { capability: 'Switch', value });
+export function GroupRow({ group, onStateChange }: Props) {
+  const state = group.state ?? {};
+  const capabilities = group.capabilities ?? [];
+
+  async function handleGroupCommand(capability: string, value: unknown) {
+    await sendGroupCommand(group.id, { capability, value });
     onStateChange?.();
   }
-
-  async function handleDimmer(value: number) {
-    await sendCommand(device.id, { capability: 'Dimmer', value });
-    onStateChange?.();
-  }
-
-  async function handleCover(value: number) {
-    await sendCommand(device.id, { capability: 'Cover', value });
-    onStateChange?.();
-  }
-
-  const roomName = showRoom && rooms
-    ? (rooms.find((r) => r.id === device.roomId)?.name ?? 'Unassigned')
-    : null;
 
   const controls: React.CSSProperties = {
     display: 'flex',
@@ -50,47 +42,65 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
   function renderControls() {
     const items: React.ReactNode[] = [];
 
-    if (device.capabilities.includes('Light')) {
+    if (capabilities.includes('Light')) {
       const lightState = state['Light'] as Record<string, unknown> | undefined;
       const isOn = lightState?.on === true;
       items.push(
-        <ToggleSwitch key="light" checked={isOn} onChange={v => sendCommand(device.id, { capability: 'Light', value: v }).then(() => onStateChange?.())} />
+        <ToggleSwitch
+          key="light"
+          checked={isOn}
+          onChange={v => handleGroupCommand('Light', v)}
+        />
       );
     }
 
-    if (device.capabilities.includes('Switch') && !device.capabilities.includes('Light')) {
+    if (capabilities.includes('Switch') && !capabilities.includes('Light')) {
       const isOn = Boolean(state['Switch']);
       items.push(
-        <ToggleSwitch key="switch" checked={isOn} onChange={handleSwitch} />
+        <ToggleSwitch
+          key="switch"
+          checked={isOn}
+          onChange={v => handleGroupCommand('Switch', v)}
+        />
       );
     }
 
-    if (device.capabilities.includes('Dimmer') && !device.capabilities.includes('Light')) {
+    if (capabilities.includes('Dimmer') && !capabilities.includes('Light')) {
       const level = typeof state['Dimmer'] === 'number' ? (state['Dimmer'] as number) : 0;
       items.push(
         <div key="dimmer" style={{ width: 110 }}>
-          <SliderControl value={level} className="slider-dimmer" accentColor="var(--accent-primary)" onCommit={handleDimmer} />
+          <SliderControl
+            value={level}
+            className="slider-dimmer"
+            accentColor="var(--accent-primary)"
+            onCommit={v => handleGroupCommand('Dimmer', v)}
+          />
         </div>
       );
     }
 
-    if (device.capabilities.includes('Cover')) {
+    if (capabilities.includes('Cover')) {
       const pos = typeof state['Cover'] === 'number' ? (state['Cover'] as number) : 0;
       items.push(
         <div key="cover" style={{ width: 110 }}>
-          <SliderControl value={pos} className="slider-cover" accentColor="var(--accent-teal)" onCommit={handleCover} />
+          <SliderControl
+            value={pos}
+            className="slider-cover"
+            accentColor="var(--accent-teal)"
+            onCommit={v => handleGroupCommand('Cover', v)}
+          />
         </div>
       );
     }
 
-    if (device.capabilities.includes('Motion')) {
+    if (capabilities.includes('Motion')) {
       const detected = Boolean(state['Motion']);
       items.push(
         <StatusDot key="motion" active={detected} label={detected ? 'Detected' : 'Clear'} />
       );
     }
 
-    if (device.capabilities.includes('Temperature')) {
+    if (capabilities.includes('Temperature')) {
       const temp = state['Temperature'];
       items.push(
         <span key="temp" style={{ fontSize: 13, color: temp != null ? 'var(--accent-red)' : 'var(--text-muted)' }}>
@@ -99,7 +109,7 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
       );
     }
 
-    if (device.capabilities.includes('Power')) {
+    if (capabilities.includes('Power')) {
       const power = state['Power'];
       items.push(
         <span key="power" style={{ fontSize: 13, color: power != null ? 'var(--accent-blue)' : 'var(--text-muted)' }}>
@@ -108,7 +118,7 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
       );
     }
 
-    if (device.capabilities.includes('Energy')) {
+    if (capabilities.includes('Energy')) {
       const energy = state['Energy'];
       items.push(
         <span key="energy" style={{ fontSize: 13, color: energy != null ? 'var(--accent-green)' : 'var(--text-muted)' }}>
@@ -117,7 +127,7 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
       );
     }
 
-    if (device.capabilities.includes('Humidity')) {
+    if (capabilities.includes('Humidity')) {
       const hum = typeof state['Humidity'] === 'number' ? (state['Humidity'] as number) : 0;
       items.push(
         <div key="hum" style={{ width: 80 }}>
@@ -129,19 +139,17 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
     return items;
   }
 
-  const isOffline = device.online === false;
-
-  const primaryCap = primaryCapabilityIcon(device.capabilities);
+  const isOffline = group.online === false;
 
   return (
     <div className="device-row">
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, opacity: isOffline ? 0.6 : 1 }}>
-        <CapabilityIcon capability={primaryCap} size={20} color={isOffline ? 'var(--text-muted)' : undefined} />
+        <GroupIcon />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Link to={`/devices/${device.id}`} className="device-name-link">
-            {device.name}
+          <Link to={`/groups/${group.id}`} className="device-name-link">
+            {group.name}
           </Link>
           {isOffline && (
             <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent-red)', letterSpacing: '0.04em' }}>
@@ -149,15 +157,12 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
             </span>
           )}
         </div>
-        {roomName && (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{roomName}</div>
-        )}
-        {groupLabel && (
-          <div style={{ fontSize: 11, color: 'var(--accent-primary)', marginTop: 1, fontWeight: 500 }}>{groupLabel}</div>
-        )}
-        {device.capabilities.length > 0 && (
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+          {group.deviceIds.length} device{group.deviceIds.length !== 1 ? 's' : ''}
+        </div>
+        {capabilities.length > 0 && (
           <div className="device-caps">
-            {device.capabilities.join(' · ')}
+            {capabilities.join(' · ')}
           </div>
         )}
       </div>

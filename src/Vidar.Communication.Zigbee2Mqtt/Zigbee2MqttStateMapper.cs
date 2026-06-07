@@ -17,6 +17,9 @@ public static class Zigbee2MqttStateMapper
         ["power"] = CapabilityType.Power,
         ["energy"] = CapabilityType.Energy,
         ["humidity"] = CapabilityType.Humidity,
+        ["contact"] = CapabilityType.Contact,
+        ["action"] = CapabilityType.Action,
+        ["battery"] = CapabilityType.Battery,
     };
 
     public static List<Zigbee2MqttCapabilityValue> MapState(string json, IReadOnlyList<CapabilityType> knownCapabilities)
@@ -81,6 +84,11 @@ public static class Zigbee2MqttStateMapper
                 CapabilityType.Power => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
                 CapabilityType.Energy => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
                 CapabilityType.Humidity => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
+                CapabilityType.Contact => prop.Value.ValueKind == JsonValueKind.True || prop.Value.ValueKind == JsonValueKind.False
+                    ? prop.Value.GetBoolean()
+                    : null,
+                CapabilityType.Action => prop.Value.ValueKind == JsonValueKind.String ? prop.Value.GetString() : null,
+                CapabilityType.Battery => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
                 _ => null
             };
 

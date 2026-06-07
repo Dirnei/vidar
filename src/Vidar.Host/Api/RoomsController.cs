@@ -12,12 +12,14 @@ public sealed class RoomsController : ControllerBase
     private readonly IRoomRepository _roomRepo;
     private readonly IDeviceRepository _deviceRepo;
     private readonly IDeviceStateRepository _stateRepo;
+    private readonly IGroupRepository _groupRepo;
 
-    public RoomsController(IRoomRepository roomRepo, IDeviceRepository deviceRepo, IDeviceStateRepository stateRepo)
+    public RoomsController(IRoomRepository roomRepo, IDeviceRepository deviceRepo, IDeviceStateRepository stateRepo, IGroupRepository groupRepo)
     {
         _roomRepo = roomRepo;
         _deviceRepo = deviceRepo;
         _stateRepo = stateRepo;
+        _groupRepo = groupRepo;
     }
 
     [HttpGet]
@@ -67,14 +69,79 @@ public sealed class RoomsController : ControllerBase
         var room = await _roomRepo.GetByIdAsync(id);
         if (room == null) return NotFound();
         var devices = await _deviceRepo.GetByRoomIdAsync(id);
+        var groups = await _groupRepo.GetByRoomIdAsync(id);
+        // Exclude devices that belong to a group in this room
+        var groupedDeviceIds = groups.SelectMany(g => g.DeviceIds).ToHashSet();
+        devices = devices.Where(d => !groupedDeviceIds.Contains(d.Id)).ToList();
         var states = await _stateRepo.GetAllAsync();
         var stateMap = states.ToDictionary(s => s.DeviceId);
         var response = devices.Select(d =>
         {
             stateMap.TryGetValue(d.Id, out var state);
             var stateDict = state?.States.ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value);
-            return new DeviceResponse(d.Id, d.Name, d.RoomId, room.Name, d.CommunicationType, d.Capabilities, stateDict, state?.Online, d.Settings);
+            return new DeviceResponse(d.Id, d.Name, d.RoomId, room.Name, d.CommunicationType, d.Capabilities, stateDict, state?.Online, d.Settings, null, null);
         }).ToList();
         return Ok(response);
+    }
+
+    [HttpGet("{id:guid}/groups")]
+    public async Task<IActionResult> GetGroups(Guid id)
+    {
+        var room = await _roomRepo.GetByIdAsync(id);
+        if (room == null) return NotFound();
+        var groups = await _groupRepo.GetByRoomIdAsync(id);
+        var allDevices = await _deviceRepo.GetAllAsync();
+        var allStates = await _stateRepo.GetAllAsync();
+        var deviceMap = allDevices.ToDictionary(d => d.Id);
+        var stateMap = allStates.ToDictionary(s => s.DeviceId);
+        var response = groups.Select(g => BuildGroupResponse(g, room.Name, deviceMap, stateMap)).ToList();
+        return Ok(response);
+    }
+
+    private static GroupResponse BuildGroupResponse(
+        Vidar.Core.Model.GroupConfiguration group,
+        string? roomName,
+        Dictionary<Guid, Vidar.Core.Model.DeviceConfiguration> deviceMap,
+        Dictionary<Guid, Vidar.Core.Model.DeviceState> stateMap)
+    {
+        var members = group.DeviceIds
+            .Select(id => deviceMap.TryGetValue(id, out var d) ? d : null)
+            .Where(d => d != null)
+            .Select(d => d!)
+            .ToList();
+
+        // Capabilities = intersection of all member capabilities
+        List<string> capabilities;
+        if (members.Count == 0)
+        {
+            capabilities = [];
+        }
+        else
+        {
+            var capSets = members.Select(d => d.Capabilities.Select(c => c.ToString()).ToHashSet()).ToList();
+            var intersection = capSets[0];
+            for (var i = 1; i < capSets.Count; i++)
+                intersection = intersection.Intersect(capSets[i]).ToHashSet();
+            capabilities = [.. intersection];
+        }
+
+        // Leader = first member with a state, fallback to first member
+        var leader = members.FirstOrDefault(d => stateMap.ContainsKey(d.Id)) ?? members.FirstOrDefault();
+        Dictionary<string, object>? state = null;
+        bool? online = null;
+        if (leader != null)
+        {
+            stateMap.TryGetValue(leader.Id, out var leaderState);
+            online = leaderState?.Online;
+            if (leaderState != null)
+            {
+                var capSet = new HashSet<string>(capabilities);
+                state = leaderState.States
+                    .Where(kvp => capSet.Contains(kvp.Key.ToString()))
+                    .ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value);
+            }
+        }
+
+        return new GroupResponse(group.Id, group.Name, group.RoomId, roomName, group.DeviceIds, capabilities, state, online);
     }
 }

@@ -1,14 +1,16 @@
 import React from 'react';
-import type { Room, Device } from '../types';
+import type { Room, Device, DeviceGroup } from '../types';
 import { DeviceRow } from './DeviceRow';
+import { GroupRow } from './GroupRow';
 
 interface Props {
   room: Room;
   devices: Device[];
+  groups?: DeviceGroup[];
   onDeviceStateChange: () => void;
 }
 
-export function RoomCard({ room, devices, onDeviceStateChange }: Props) {
+export function RoomCard({ room, devices, groups = [], onDeviceStateChange }: Props) {
   const card: React.CSSProperties = {
     background: 'var(--bg-elevated)',
     border: '1px solid var(--border-subtle)',
@@ -69,19 +71,28 @@ export function RoomCard({ room, devices, onDeviceStateChange }: Props) {
     >
       <div style={header}>
         <span style={title}>{room.name}</span>
-        <span style={badge}>{devices.length} device{devices.length !== 1 ? 's' : ''}</span>
+        <span style={badge}>{groups.length + devices.length} item{groups.length + devices.length !== 1 ? 's' : ''}</span>
       </div>
       <div>
-        {devices.length === 0 ? (
+        {groups.length === 0 && devices.length === 0 ? (
           <div style={empty}>No devices</div>
         ) : (
-          devices.map((d) => (
-            <DeviceRow
-              key={d.id}
-              device={d}
-              onStateChange={onDeviceStateChange}
-            />
-          ))
+          <>
+            {groups.map((g) => (
+              <GroupRow
+                key={g.id}
+                group={g}
+                onStateChange={onDeviceStateChange}
+              />
+            ))}
+            {devices.map((d) => (
+              <DeviceRow
+                key={d.id}
+                device={d}
+                onStateChange={onDeviceStateChange}
+              />
+            ))}
+          </>
         )}
       </div>
     </div>

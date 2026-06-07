@@ -83,6 +83,27 @@ export function CapabilityIcon({ capability, size = 16, color }: Props) {
           <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
         </svg>
       );
+    case 'Contact':
+      return (
+        <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="3" y="3" width="7" height="18" rx="1" />
+          <rect x="14" y="3" width="7" height="18" rx="1" />
+        </svg>
+      );
+    case 'Action':
+      return (
+        <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <circle cx="12" cy="12" r="3" fill={c} />
+        </svg>
+      );
+    case 'Battery':
+      return (
+        <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <rect x="1" y="6" width="18" height="12" rx="2" />
+          <line x1="23" y1="10" x2="23" y2="14" />
+        </svg>
+      );
     default:
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round">
@@ -102,12 +123,15 @@ function accentFor(cap: string): string {
     case 'Power': return 'var(--accent-blue)';
     case 'Energy': return 'var(--accent-green)';
     case 'Humidity': return 'var(--accent-blue)';
+    case 'Contact': return 'var(--accent-teal)';
+    case 'Action': return 'var(--accent-primary)';
+    case 'Battery': return 'var(--accent-green)';
     default: return 'var(--text-muted)';
   }
 }
 
 export function primaryCapabilityIcon(capabilities: string[]): string {
-  const priority = ['Light', 'Cover', 'Switch', 'Dimmer', 'Motion', 'Temperature', 'Humidity', 'Power', 'Energy'];
+  const priority = ['Light', 'Cover', 'Switch', 'Dimmer', 'Contact', 'Motion', 'Temperature', 'Humidity', 'Power', 'Energy', 'Action', 'Battery'];
   for (const p of priority) {
     if (capabilities.includes(p)) return p;
   }

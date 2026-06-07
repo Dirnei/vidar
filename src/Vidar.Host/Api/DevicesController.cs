@@ -16,6 +16,7 @@ public sealed class DevicesController : ControllerBase
     private readonly IDeviceRepository _deviceRepo;
     private readonly IDeviceStateRepository _stateRepo;
     private readonly IRoomRepository _roomRepo;
+    private readonly IGroupRepository _groupRepo;
     private readonly IRequiredActor<DeviceTwinRegion> _twinRegion;
     private readonly ActorSystem _actorSystem;
     private readonly ILogger<DevicesController> _logger;
@@ -24,6 +25,7 @@ public sealed class DevicesController : ControllerBase
         IDeviceRepository deviceRepo,
         IDeviceStateRepository stateRepo,
         IRoomRepository roomRepo,
+        IGroupRepository groupRepo,
         IRequiredActor<DeviceTwinRegion> twinRegion,
         ActorSystem actorSystem,
         ILogger<DevicesController> logger)
@@ -31,6 +33,7 @@ public sealed class DevicesController : ControllerBase
         _deviceRepo = deviceRepo;
         _stateRepo = stateRepo;
         _roomRepo = roomRepo;
+        _groupRepo = groupRepo;
         _twinRegion = twinRegion;
         _actorSystem = actorSystem;
         _logger = logger;
@@ -42,17 +45,28 @@ public sealed class DevicesController : ControllerBase
         var devices = await _deviceRepo.GetAllAsync();
         var states = await _stateRepo.GetAllAsync();
         var rooms = await _roomRepo.GetAllAsync();
+        var groups = await _groupRepo.GetAllAsync();
         var stateMap = states.ToDictionary(s => s.DeviceId);
         var roomMap = rooms.ToDictionary(r => r.Id, r => r.Name);
+        // Build deviceId -> (groupId, groupName) lookup
+        var deviceGroupMap = new Dictionary<Guid, (Guid GroupId, string GroupName)>();
+        foreach (var g in groups)
+        {
+            foreach (var deviceId in g.DeviceIds)
+                deviceGroupMap[deviceId] = (g.Id, g.Name);
+        }
 
         var response = devices.Select(d =>
         {
             stateMap.TryGetValue(d.Id, out var state);
             roomMap.TryGetValue(d.RoomId, out var roomName);
+            deviceGroupMap.TryGetValue(d.Id, out var groupInfo);
             var stateDict = state?.States.ToDictionary(
                 kvp => kvp.Key.ToString(),
                 kvp => kvp.Value);
-            return new DeviceResponse(d.Id, d.Name, d.RoomId, roomName, d.CommunicationType, d.Capabilities, stateDict, state?.Online, d.Settings);
+            return new DeviceResponse(d.Id, d.Name, d.RoomId, roomName, d.CommunicationType, d.Capabilities, stateDict, state?.Online, d.Settings,
+                groupInfo.GroupId == Guid.Empty ? null : groupInfo.GroupId,
+                groupInfo.GroupName);
         }).ToList();
 
         return Ok(response);
@@ -68,9 +82,13 @@ public sealed class DevicesController : ControllerBase
         var room = await _roomRepo.GetByIdAsync(device.RoomId);
         var stateDict = state?.States.ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value);
 
+        var groups = await _groupRepo.GetAllAsync();
+        var group = groups.FirstOrDefault(g => g.DeviceIds.Contains(id));
+
         return Ok(new DeviceResponse(
             device.Id, device.Name, device.RoomId, room?.Name,
-            device.CommunicationType, device.Capabilities, stateDict, state?.Online, device.Settings));
+            device.CommunicationType, device.Capabilities, stateDict, state?.Online, device.Settings,
+            group?.Id, group?.Name));
     }
 
     [HttpPost("{id:guid}/command")]

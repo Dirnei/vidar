@@ -13,6 +13,19 @@ export interface Device {
   metadata: Record<string, string>;
   online?: boolean;
   settings?: Record<string, string>;
+  groupId?: string;
+  groupName?: string;
+}
+
+export interface DeviceGroup {
+  id: string;
+  name: string;
+  roomId: string;
+  roomName: string | null;
+  deviceIds: string[];
+  capabilities: string[];
+  state: Record<string, unknown> | null;
+  online: boolean | null;
 }
 
 export interface DiscoveredDevice {

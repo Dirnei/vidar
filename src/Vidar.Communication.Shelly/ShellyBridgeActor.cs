@@ -17,6 +17,7 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
     public ITimerScheduler Timers { get; set; } = null!;
 
     private sealed class PollTick { public static readonly PollTick Instance = new(); }
+    private sealed class FetchRegistrations { public static readonly FetchRegistrations Instance = new(); }
 
     public static Props Props(ShellyHttpClient httpClient, IActorRef shardProxy) =>
         Akka.Actor.Props.Create(() => new ShellyBridgeActor(httpClient, shardProxy));
@@ -46,6 +47,19 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
             _devices[device.NativeId] = device;
             _log.Info("Registered configured Shelly device: {NativeId} at {Host} (Gen{Gen})",
                 msg.NativeId, msg.Host, msg.Generation);
+        });
+
+        Receive<FetchRegistrations>(_ =>
+        {
+            var mediator = DistributedPubSub.Get(Context.System).Mediator;
+            mediator.Tell(new Send("/user/device-registrar", new RequestRegistrations("shelly"), localAffinity: false));
+        });
+
+        Receive<RegistrationResponse>(msg =>
+        {
+            foreach (var reg in msg.Devices)
+                Self.Tell(reg);
+            _log.Info("Received {Count} device registrations from Host", msg.Devices.Count);
         });
 
         Receive<PollTick>(_ => PollAllDevices());
@@ -183,6 +197,7 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
         mediator.Tell(new Subscribe("discover.shelly", Self));
         mediator.Tell(new Subscribe("register.shelly", Self));
         Timers.StartPeriodicTimer("poll", PollTick.Instance, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
+        Timers.StartSingleTimer("fetch-registrations", FetchRegistrations.Instance, TimeSpan.FromSeconds(10));
     }
 
     private void PollAllDevices()

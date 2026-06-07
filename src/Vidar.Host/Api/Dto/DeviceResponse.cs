@@ -11,4 +11,6 @@ public sealed record DeviceResponse(
     List<CapabilityType> Capabilities,
     Dictionary<string, object>? State,
     bool? Online,
-    Dictionary<string, string>? Settings);
+    Dictionary<string, string>? Settings,
+    Guid? GroupId,
+    string? GroupName);

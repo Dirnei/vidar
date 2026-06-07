@@ -13,6 +13,9 @@ public static class CapabilityMetadata
         [CapabilityType.Power] = (false, "W"),
         [CapabilityType.Energy] = (false, "kWh"),
         [CapabilityType.Humidity] = (false, "%"),
+        [CapabilityType.Contact] = (false, ""),
+        [CapabilityType.Action] = (false, ""),
+        [CapabilityType.Battery] = (false, "%"),
     };
 
     public static bool IsControllable(CapabilityType type) => Metadata[type].Controllable;

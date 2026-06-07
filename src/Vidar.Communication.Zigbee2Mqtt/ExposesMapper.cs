@@ -15,6 +15,9 @@ public static class ExposesMapper
         ["power"] = CapabilityType.Power,
         ["energy"] = CapabilityType.Energy,
         ["humidity"] = CapabilityType.Humidity,
+        ["contact"] = CapabilityType.Contact,
+        ["action"] = CapabilityType.Action,
+        ["battery"] = CapabilityType.Battery,
     };
 
     public static List<CapabilityType> MapCapabilities(JsonElement exposesArray)

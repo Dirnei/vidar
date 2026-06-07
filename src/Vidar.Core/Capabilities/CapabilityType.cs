@@ -10,5 +10,8 @@ public enum CapabilityType
     Power = 5,
     Energy = 6,
     Humidity = 7,
-    Light = 8
+    Light = 8,
+    Contact = 9,
+    Action = 10,
+    Battery = 11
 }

@@ -4,6 +4,7 @@ import { RoomsPage } from './pages/RoomsPage';
 import { DevicesPage } from './pages/DevicesPage';
 import { DiscoveredPage } from './pages/DiscoveredPage';
 import { DeviceDetailPage } from './pages/DeviceDetailPage';
+import { GroupDetailPage } from './pages/GroupDetailPage';
 
 export default function App() {
   return (
@@ -13,6 +14,7 @@ export default function App() {
           <Route index element={<RoomsPage />} />
           <Route path="devices" element={<DevicesPage />} />
           <Route path="devices/:id" element={<DeviceDetailPage />} />
+          <Route path="groups/:id" element={<GroupDetailPage />} />
           <Route path="discovered" element={<DiscoveredPage />} />
         </Route>
       </Routes>

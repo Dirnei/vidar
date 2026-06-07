@@ -39,6 +39,12 @@ public static class BsonClassMapRegistration
                 cm.MapIdProperty(d => d.Id);
             });
 
+            BsonClassMap.RegisterClassMap<GroupConfiguration>(cm =>
+            {
+                cm.AutoMap();
+                cm.MapIdProperty(g => g.Id);
+            });
+
             var statesDictSerializer = new DictionaryInterfaceImplementerSerializer<Dictionary<CapabilityType, object>>(
                 DictionaryRepresentation.Document,
                 new EnumSerializer<CapabilityType>(BsonType.String),

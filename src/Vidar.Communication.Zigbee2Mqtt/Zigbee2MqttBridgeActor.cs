@@ -25,6 +25,7 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
     private sealed record MqttMessageReceived(string Topic, string Payload);
     private sealed class ConnectToBroker { public static readonly ConnectToBroker Instance = new(); }
     private sealed class CheckConnection { public static readonly CheckConnection Instance = new(); }
+    private sealed class FetchRegistrations { public static readonly FetchRegistrations Instance = new(); }
 
     public static Props Props(Zigbee2MqttConfig config, IActorRef shardProxy) =>
         Akka.Actor.Props.Create(() => new Zigbee2MqttBridgeActor(config, shardProxy));
@@ -48,18 +49,30 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
         Receive<RegisterDeviceForPolling>(msg =>
         {
             if (msg.CommunicationType != "zigbee2mqtt") return;
-            // NativeId = IEEE address, Host = friendly_name (overloaded field)
             if (_devicesByIeeeAddress.TryGetValue(msg.NativeId, out var device))
             {
+                var isNewMapping = device.VidarDeviceId != msg.DeviceId;
                 device.VidarDeviceId = msg.DeviceId;
-                _log.Info("Z2M device {FriendlyName} ({IeeeAddress}) mapped to configured ID {DeviceId}",
-                    device.FriendlyName, msg.NativeId, msg.DeviceId);
-                RequestDeviceState(device);
+                if (isNewMapping)
+                {
+                    _log.Info("Z2M device {FriendlyName} ({IeeeAddress}) mapped to configured ID {DeviceId}",
+                        device.FriendlyName, msg.NativeId, msg.DeviceId);
+                    RequestDeviceState(device);
+                }
             }
-            else
-            {
-                _log.Info("Z2M registration for unknown IEEE {IeeeAddress}, will map when device list arrives", msg.NativeId);
-            }
+        });
+
+        Receive<FetchRegistrations>(_ =>
+        {
+            var mediator = DistributedPubSub.Get(Context.System).Mediator;
+            mediator.Tell(new Send("/user/device-registrar", new RequestRegistrations("zigbee2mqtt"), localAffinity: false));
+        });
+
+        Receive<RegistrationResponse>(msg =>
+        {
+            foreach (var reg in msg.Devices)
+                Self.Tell(reg);
+            _log.Info("Received {Count} device registrations from Host", msg.Devices.Count);
         });
 
         Receive<RepublishDiscoveries>(_ =>
@@ -170,6 +183,8 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
 
             _log.Info("Connected to MQTT broker at {Host}:{Port}, subscribed to {BaseTopic}/#",
                 _config.MqttHost, _config.MqttPort, _config.BaseTopic);
+
+            Timers.StartSingleTimer("fetch-registrations", FetchRegistrations.Instance, TimeSpan.FromSeconds(5));
         }
         catch (Exception ex)
         {
@@ -234,8 +249,6 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
                     lightFeatures = ExposesMapper.ExtractLightFeatures(exposes);
                 }
 
-                if (capabilities.Count == 0)
-                    continue;
 
                 var metadata = new Dictionary<string, string>();
                 if (deviceEl.TryGetProperty("manufacturer", out var mfr) && mfr.GetString() != null)
@@ -305,6 +318,10 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
     private void RequestDeviceState(Zigbee2MqttDevice device)
     {
         if (_mqttClient == null || !_mqttClient.IsConnected()) return;
+        if (!device.Capabilities.Contains(CapabilityType.Light) &&
+            !device.Capabilities.Contains(CapabilityType.Switch) &&
+            !device.Capabilities.Contains(CapabilityType.Cover))
+            return;
         var topic = $"{_config.BaseTopic}/{device.FriendlyName}/get";
         _ = _mqttClient.PublishAsync(topic, "{\"state\":\"\"}", QualityOfService.AtMostOnceDelivery);
     }
