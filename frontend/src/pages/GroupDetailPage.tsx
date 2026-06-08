@@ -132,14 +132,16 @@ export function GroupDetailPage() {
   }
 
   if (loading) {
-    return <div style={{ color: 'var(--text-muted)', padding: 24, fontFamily: 'var(--font-body)' }}>Loading group…</div>;
+    return <div className="main-inner"><div style={{ color: 'var(--text-muted)', padding: 24, fontFamily: 'var(--font-body)' }}>Loading group…</div></div>;
   }
 
   if (error || !group) {
     return (
+      <div className="main-inner">
       <div className="page-content">
         <button style={backBtnStyle} onClick={() => navigate(-1)}>← Rooms</button>
         <div style={{ color: 'var(--accent-red)' }}>{error ?? 'Group not found'}</div>
+      </div>
       </div>
     );
   }
@@ -148,6 +150,7 @@ export function GroupDetailPage() {
   const isOffline = group.online === false;
 
   return (
+    <div className="main-inner">
     <div className="page-content">
       <button
         style={backBtnStyle}
@@ -355,6 +358,7 @@ export function GroupDetailPage() {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }

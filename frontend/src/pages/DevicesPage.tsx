@@ -38,10 +38,11 @@ export function DevicesPage() {
       : devices.filter((d) => d.capabilities.includes(filter));
 
   if (loading) {
-    return <div style={{ color: 'var(--text-muted)', padding: 24, fontFamily: 'var(--font-body)' }}>Loading devices…</div>;
+    return <div className="main-inner"><div style={{ color: 'var(--text-muted)', padding: 24, fontFamily: 'var(--font-body)' }}>Loading devices…</div></div>;
   }
 
   return (
+    <div className="main-inner">
     <div className="page-content">
       <div className="page-title">All Devices</div>
 
@@ -83,6 +84,7 @@ export function DevicesPage() {
           ))}
         </div>
       )}
+    </div>
     </div>
   );
 }

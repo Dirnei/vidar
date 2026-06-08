@@ -57,10 +57,11 @@ export function RoomsPage() {
   }
 
   if (loading) {
-    return <div style={{ color: 'var(--text-muted)', padding: 24, fontFamily: 'var(--font-body)' }}>Loading rooms…</div>;
+    return <div className="main-inner"><div style={{ color: 'var(--text-muted)', padding: 24, fontFamily: 'var(--font-body)' }}>Loading rooms…</div></div>;
   }
 
   return (
+    <div className="main-inner">
     <div className="page-content">
       <div className="page-title">Rooms</div>
 
@@ -126,6 +127,7 @@ export function RoomsPage() {
           ))}
         </div>
       )}
+    </div>
     </div>
   );
 }

@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import type { DiscoveredDevice, Room } from '../types';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import type { DiscoveredDevice, Room, ActiveFilters, FilterSection } from '../types';
 import { getDiscoveredDevices, getRooms, configureDiscoveredDevice, discoverShellyDevice } from '../api/client';
 import { ConfigureDeviceModal } from '../components/ConfigureDeviceModal';
 import { CapabilityIcon, primaryCapabilityIcon } from '../components/CapabilityIcon';
+import { FilterPanel, MobileFilterDrawer } from '../components/FilterPanel';
+import { deriveDeviceType } from '../utils/deviceType';
 
 export function DiscoveredPage() {
   const [discovered, setDiscovered] = useState<DiscoveredDevice[]>([]);
@@ -13,7 +15,8 @@ export function DiscoveredPage() {
   const [probing, setProbing] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<string>('');
+  const [filters, setFilters] = useState<ActiveFilters>({ protocol: new Set(), deviceType: new Set(), capability: new Set() });
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const loadData = useCallback(async () => {
     const [devs, roomList] = await Promise.all([getDiscoveredDevices(), getRooms()]);
@@ -54,6 +57,105 @@ export function DiscoveredPage() {
     }
   }
 
+  // Derive device type for each discovered device
+  const devicesWithType = useMemo(
+    () => discovered.map(d => ({ ...d, deviceType: deriveDeviceType(d.capabilities, d.metadata) })),
+    [discovered],
+  );
+
+  // Search filter
+  const searchFiltered = useMemo(() => {
+    if (!search) return devicesWithType;
+    const q = search.toLowerCase();
+    return devicesWithType.filter(d => {
+      const name = (d.metadata?.name ?? d.metadata?.friendly_name ?? d.nativeId).toLowerCase();
+      const nid = d.nativeId.toLowerCase();
+      const caps = d.capabilities.join(' ').toLowerCase();
+      return name.includes(q) || nid.includes(q) || caps.includes(q) ||
+        Object.values(d.metadata || {}).some(v => v.toLowerCase().includes(q));
+    });
+  }, [devicesWithType, search]);
+
+  // Apply all filters
+  const filtered = useMemo(() => {
+    return searchFiltered.filter(d => {
+      if (filters.protocol.size > 0 && !filters.protocol.has(d.communicationType)) return false;
+      if (filters.deviceType.size > 0 && !filters.deviceType.has(d.deviceType)) return false;
+      if (filters.capability.size > 0 && !d.capabilities.some(c => filters.capability.has(c))) return false;
+      return true;
+    });
+  }, [searchFiltered, filters]);
+
+  // Faceted filter sections: each section's counts reflect items passing ALL OTHER filters
+  const filterSections = useMemo((): FilterSection[] => {
+    // Items passing protocol + capability filters (for device type counts)
+    const forDeviceType = searchFiltered.filter(d => {
+      if (filters.protocol.size > 0 && !filters.protocol.has(d.communicationType)) return false;
+      if (filters.capability.size > 0 && !d.capabilities.some(c => filters.capability.has(c))) return false;
+      return true;
+    });
+
+    // Items passing deviceType + capability filters (for protocol counts)
+    const forProtocol = searchFiltered.filter(d => {
+      if (filters.deviceType.size > 0 && !filters.deviceType.has(d.deviceType)) return false;
+      if (filters.capability.size > 0 && !d.capabilities.some(c => filters.capability.has(c))) return false;
+      return true;
+    });
+
+    // Items passing protocol + deviceType filters (for capability counts)
+    const forCapability = searchFiltered.filter(d => {
+      if (filters.protocol.size > 0 && !filters.protocol.has(d.communicationType)) return false;
+      if (filters.deviceType.size > 0 && !filters.deviceType.has(d.deviceType)) return false;
+      return true;
+    });
+
+    // Protocol counts
+    const protocolCounts = new Map<string, number>();
+    for (const d of forProtocol) {
+      protocolCounts.set(d.communicationType, (protocolCounts.get(d.communicationType) ?? 0) + 1);
+    }
+
+    // Device type counts
+    const deviceTypeCounts = new Map<string, number>();
+    for (const d of forDeviceType) {
+      deviceTypeCounts.set(d.deviceType, (deviceTypeCounts.get(d.deviceType) ?? 0) + 1);
+    }
+
+    // Capability counts
+    const capabilityCounts = new Map<string, number>();
+    for (const d of forCapability) {
+      for (const cap of d.capabilities) {
+        capabilityCounts.set(cap, (capabilityCounts.get(cap) ?? 0) + 1);
+      }
+    }
+
+    return [
+      {
+        key: 'protocol',
+        label: 'Protocol',
+        options: [...protocolCounts.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([value, count]) => ({ value, label: value, count })),
+      },
+      {
+        key: 'deviceType',
+        label: 'Device Type',
+        options: [...deviceTypeCounts.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([value, count]) => ({ value, label: value, count })),
+      },
+      {
+        key: 'capability',
+        label: 'Capabilities',
+        options: [...capabilityCounts.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([value, count]) => ({ value, label: value, count })),
+      },
+    ];
+  }, [searchFiltered, filters]);
+
+  const hasActiveFilters = Object.values(filters).some(s => s.size > 0);
+
   const inputStyle: React.CSSProperties = {
     flex: 1,
     minWidth: 0,
@@ -79,205 +181,203 @@ export function DiscoveredPage() {
   }
 
   if (loading) {
-    return <div style={{ color: 'var(--text-muted)', padding: 24, fontFamily: 'var(--font-body)' }}>Loading discovered devices…</div>;
+    return <div className="main-inner"><div style={{ color: 'var(--text-muted)', padding: 24, fontFamily: 'var(--font-body)' }}>Loading discovered devices…</div></div>;
   }
 
+  const filterPanelEl = (
+    <FilterPanel
+      sections={filterSections}
+      activeFilters={filters}
+      onFilterChange={setFilters}
+      search={search}
+      onSearchChange={setSearch}
+      searchPlaceholder="Search devices..."
+    />
+  );
+
   return (
-    <div className="page-content">
-      <div className="page-title">Setup</div>
-
-      {/* Add Shelly device card */}
-      <div
-        style={{
-          background: 'var(--bg-elevated)',
-          border: '1px solid var(--border-subtle)',
-          borderRadius: 'var(--radius-lg)',
-          padding: '20px 22px',
-          marginBottom: 28,
-          boxShadow: 'var(--shadow-card)',
-        }}
-      >
-        <div
-          style={{
-            fontFamily: 'var(--font-heading)',
-            fontSize: 14,
-            fontWeight: 600,
-            color: 'var(--text-secondary)',
-            marginBottom: 14,
-            letterSpacing: '-0.01em',
-          }}
-        >
-          Add Shelly Device by IP
-        </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input
-            style={inputStyle}
-            type="text"
-            placeholder="Shelly IP address (e.g. 192.168.1.42)"
-            value={shellyHost}
-            disabled={probing}
-            onChange={(e) => setShellyHost(e.target.value)}
-            onFocus={handleInputFocus}
-            onBlur={handleInputBlur}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleDiscoverShelly(); }}
-          />
-          <button
-            className="btn-primary"
-            style={{ flexShrink: 0, opacity: probing ? 0.5 : 1 }}
-            disabled={probing}
-            onClick={handleDiscoverShelly}
-          >
-            {probing ? 'Probing…' : 'Discover'}
-          </button>
-        </div>
-        {feedback && (
-          <div className={`feedback-banner ${feedback.type}`}>
-            <span>{feedback.type === 'success' ? '✓' : '✕'}</span>
-            {feedback.message}
-          </div>
-        )}
-      </div>
-
-      {/* Search and filter */}
-      {discovered.length > 0 && (
-        <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-          <input
-            type="text"
-            placeholder="Search devices..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{
-              flex: 1, minWidth: 200, padding: '8px 12px',
-              backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-default)',
-              borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
-              fontSize: 13, fontFamily: 'var(--font-body)', outline: 'none',
-            }}
-          />
-          {['', ...new Set(discovered.map(d => d.communicationType))].map(t => (
+    <div className="content-with-filters">
+      {filterPanelEl}
+      <MobileFilterDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)}>
+        {filterPanelEl}
+      </MobileFilterDrawer>
+      <div className="main-inner">
+        <div className="page-content">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+            <div className="page-title" style={{ marginBottom: 0 }}>Setup</div>
             <button
-              key={t || 'all'}
-              className={`filter-pill${typeFilter === t ? ' active' : ''}`}
-              onClick={() => setTypeFilter(t)}
+              className="btn-secondary filter-toggle-btn"
+              onClick={() => setDrawerOpen(true)}
+              style={{ fontSize: 12, padding: '5px 12px' }}
             >
-              {t || 'All'}
+              Filters{hasActiveFilters ? ' *' : ''}
             </button>
-          ))}
-        </div>
-      )}
+          </div>
 
-      {/* Discovered devices list */}
-      {(() => {
-        const filtered = discovered.filter(d => {
-          if (typeFilter && d.communicationType !== typeFilter) return false;
-          if (search) {
-            const q = search.toLowerCase();
-            const name = (d.metadata?.name ?? d.metadata?.friendly_name ?? d.nativeId).toLowerCase();
-            const nid = d.nativeId.toLowerCase();
-            const caps = d.capabilities.join(' ').toLowerCase();
-            return name.includes(q) || nid.includes(q) || caps.includes(q) ||
-              Object.values(d.metadata || {}).some(v => v.toLowerCase().includes(q));
-          }
-          return true;
-        });
-        return filtered.length === 0 ? (
-        <div style={{ color: 'var(--text-muted)', fontSize: 14 }}>
-          {discovered.length === 0 ? 'No unconfigured devices found.' : 'No devices match your filter.'}
-        </div>
-      ) : (
-        <div>
-          {filtered.map((d) => (
-            <div key={d.id} className="discovery-card">
-              {/* Large icon */}
-              <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                width: 52, height: 52, borderRadius: 'var(--radius-sm)', flexShrink: 0,
-                background: 'var(--bg-hover)', border: '1px solid var(--border-subtle)',
-              }}>
-                <CapabilityIcon capability={primaryCapabilityIcon(d.capabilities)} size={28} />
-              </div>
-              {/* Info */}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  fontFamily: 'var(--font-heading)', fontSize: 15, fontWeight: 600,
-                  color: 'var(--text-primary)', marginBottom: 2,
-                }}>
-                  {d.metadata?.name ?? d.metadata?.friendly_name ?? d.nativeId}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  {(d.metadata?.name || d.metadata?.friendly_name) && (
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{d.nativeId}</span>
-                  )}
-                  <span style={{
-                    fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const,
-                    letterSpacing: '0.05em', padding: '1px 7px', borderRadius: 3,
-                    background: d.communicationType === 'shelly'
-                      ? 'color-mix(in srgb, var(--accent-primary) 15%, transparent)'
-                      : 'color-mix(in srgb, var(--accent-teal) 15%, transparent)',
-                    color: d.communicationType === 'shelly' ? 'var(--accent-primary)' : 'var(--accent-teal)',
-                  }}>
-                    {d.communicationType}
-                  </span>
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                  {d.capabilities.map((cap) => (
-                    <span
-                      key={cap}
-                      style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 4,
-                        padding: '2px 9px', borderRadius: 4, fontSize: 11, fontWeight: 500,
-                        backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)',
-                        border: '1px solid var(--border-subtle)',
-                      }}
-                    >
-                      <CapabilityIcon capability={cap} size={11} />
-                      {cap}
-                    </span>
-                  ))}
-                </div>
-                {d.metadata?.vendor && (
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-                    {[d.metadata.vendor, d.metadata.model].filter(Boolean).join(' · ')}
-                  </div>
-                )}
-              </div>
+          <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 24 }}>
+            {filtered.length} of {discovered.length} device{discovered.length !== 1 ? 's' : ''}
+          </div>
+
+          {/* Add Shelly device card */}
+          <div
+            style={{
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-lg)',
+              padding: '20px 22px',
+              marginBottom: 28,
+              boxShadow: 'var(--shadow-card)',
+            }}
+          >
+            <div
+              style={{
+                fontFamily: 'var(--font-heading)',
+                fontSize: 14,
+                fontWeight: 600,
+                color: 'var(--text-secondary)',
+                marginBottom: 14,
+                letterSpacing: '-0.01em',
+              }}
+            >
+              Add Shelly Device by IP
+            </div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                style={inputStyle}
+                type="text"
+                placeholder="Shelly IP address (e.g. 192.168.1.42)"
+                value={shellyHost}
+                disabled={probing}
+                onChange={(e) => setShellyHost(e.target.value)}
+                onFocus={handleInputFocus}
+                onBlur={handleInputBlur}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleDiscoverShelly(); }}
+              />
               <button
                 className="btn-primary"
-                style={{ flexShrink: 0, alignSelf: 'center', fontSize: 13, padding: '7px 16px' }}
-                onClick={() => setConfiguring(d)}
+                style={{ flexShrink: 0, opacity: probing ? 0.5 : 1 }}
+                disabled={probing}
+                onClick={handleDiscoverShelly}
               >
-                Configure
+                {probing ? 'Probing…' : 'Discover'}
               </button>
             </div>
-          ))}
-        </div>
-      );
-      })()}
-
-      {configuring && rooms.length > 0 && (
-        <ConfigureDeviceModal
-          rooms={rooms}
-          defaultName={configuring.metadata?.name ?? configuring.metadata?.friendly_name}
-          defaultRoomId={configuring.capabilities.includes('Presence') ? rooms.find(r => r.isHome)?.id : undefined}
-          onConfirm={handleConfigure}
-          onCancel={() => setConfiguring(null)}
-        />
-      )}
-
-      {configuring && rooms.length === 0 && (
-        <div className="modal-overlay" onClick={() => setConfiguring(null)}>
-          <div className="modal-dialog" style={{ maxWidth: 320, textAlign: 'center' }}>
-            <div className="modal-title">No Rooms Available</div>
-            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>
-              Please create a room first before configuring devices.
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
-              <button className="btn-secondary" onClick={() => setConfiguring(null)}>
-                Close
-              </button>
-            </div>
+            {feedback && (
+              <div className={`feedback-banner ${feedback.type}`}>
+                <span>{feedback.type === 'success' ? '✓' : '✕'}</span>
+                {feedback.message}
+              </div>
+            )}
           </div>
+
+          {/* Discovered devices list */}
+          {filtered.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: 14 }}>
+              {discovered.length === 0 ? 'No unconfigured devices found.' : 'No devices match your filter.'}
+            </div>
+          ) : (
+            <div>
+              {filtered.map((d) => (
+                <div key={d.id} className="discovery-card">
+                  {/* Large icon */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: 52, height: 52, borderRadius: 'var(--radius-sm)', flexShrink: 0,
+                    background: 'var(--bg-hover)', border: '1px solid var(--border-subtle)',
+                  }}>
+                    <CapabilityIcon capability={primaryCapabilityIcon(d.capabilities)} size={28} />
+                  </div>
+                  {/* Info */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontFamily: 'var(--font-heading)', fontSize: 15, fontWeight: 600,
+                      color: 'var(--text-primary)', marginBottom: 2,
+                    }}>
+                      {d.metadata?.name ?? d.metadata?.friendly_name ?? d.nativeId}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      {(d.metadata?.name || d.metadata?.friendly_name) && (
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{d.nativeId}</span>
+                      )}
+                      <span style={{
+                        fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const,
+                        letterSpacing: '0.05em', padding: '1px 7px', borderRadius: 3,
+                        background: d.communicationType === 'shelly'
+                          ? 'color-mix(in srgb, var(--accent-primary) 15%, transparent)'
+                          : 'color-mix(in srgb, var(--accent-teal) 15%, transparent)',
+                        color: d.communicationType === 'shelly' ? 'var(--accent-primary)' : 'var(--accent-teal)',
+                      }}>
+                        {d.communicationType}
+                      </span>
+                      <span style={{
+                        fontSize: 10, fontWeight: 500, padding: '1px 7px', borderRadius: 3,
+                        background: 'var(--bg-hover)', color: 'var(--text-muted)',
+                        border: '1px solid var(--border-subtle)',
+                      }}>
+                        {d.deviceType}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {d.capabilities.map((cap) => (
+                        <span
+                          key={cap}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 4,
+                            padding: '2px 9px', borderRadius: 4, fontSize: 11, fontWeight: 500,
+                            backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)',
+                            border: '1px solid var(--border-subtle)',
+                          }}
+                        >
+                          <CapabilityIcon capability={cap} size={11} />
+                          {cap}
+                        </span>
+                      ))}
+                    </div>
+                    {d.metadata?.vendor && (
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+                        {[d.metadata.vendor, d.metadata.model].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
+                  </div>
+                  <button
+                    className="btn-primary"
+                    style={{ flexShrink: 0, alignSelf: 'center', fontSize: 13, padding: '7px 16px' }}
+                    onClick={() => setConfiguring(d)}
+                  >
+                    Configure
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {configuring && rooms.length > 0 && (
+            <ConfigureDeviceModal
+              rooms={rooms}
+              defaultName={configuring.metadata?.name ?? configuring.metadata?.friendly_name}
+              defaultRoomId={configuring.capabilities.includes('Presence') ? rooms.find(r => r.isHome)?.id : undefined}
+              onConfirm={handleConfigure}
+              onCancel={() => setConfiguring(null)}
+            />
+          )}
+
+          {configuring && rooms.length === 0 && (
+            <div className="modal-overlay" onClick={() => setConfiguring(null)}>
+              <div className="modal-dialog" style={{ maxWidth: 320, textAlign: 'center' }}>
+                <div className="modal-title">No Rooms Available</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 4 }}>
+                  Please create a room first before configuring devices.
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+                  <button className="btn-secondary" onClick={() => setConfiguring(null)}>
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

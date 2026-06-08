@@ -6,9 +6,7 @@ export function Layout() {
     <div className="app-shell">
       <SideNav />
       <div className="main-content">
-        <div className="main-inner">
-          <Outlet />
-        </div>
+        <Outlet />
       </div>
     </div>
   );

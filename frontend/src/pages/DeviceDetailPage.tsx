@@ -139,14 +139,16 @@ export function DeviceDetailPage() {
   }
 
   if (loading) {
-    return <div style={{ color: 'var(--text-muted)', padding: 24, fontFamily: 'var(--font-body)' }}>Loading device…</div>;
+    return <div className="main-inner"><div style={{ color: 'var(--text-muted)', padding: 24, fontFamily: 'var(--font-body)' }}>Loading device…</div></div>;
   }
 
   if (error || !device) {
     return (
+      <div className="main-inner">
       <div className="page-content">
         <button style={backBtnStyle} onClick={() => navigate(-1)}>← Back</button>
         <div style={{ color: 'var(--accent-red)' }}>{error ?? 'Device not found'}</div>
+      </div>
       </div>
     );
   }
@@ -154,6 +156,7 @@ export function DeviceDetailPage() {
   const state = device.state ?? {};
   const isOffline = device.online === false;
   return (
+    <div className="main-inner">
     <div className="page-content">
       <button
         style={backBtnStyle}
@@ -472,6 +475,7 @@ export function DeviceDetailPage() {
           </div>
         </div>
       )}
+    </div>
     </div>
   );
 }
