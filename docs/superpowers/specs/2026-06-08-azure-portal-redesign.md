@@ -1,12 +1,17 @@
-# Vidar UI Redesign — Azure Portal Style
+# Vidar UI Redesign — Azure Portal Style + Application Architecture
 
 ## Context
 
-The current UI was built incrementally — pages bolted on one by one. With 70+ devices across 3 protocols (Shelly, Zigbee2MQTT, UniFi), the flat lists and basic filters don't scale. The Setup page needs hierarchical filtering, and all three communication protocols need to be configurable as plugins from the Integrations page.
+The current UI was built incrementally — pages bolted on one by one. With 70+ devices across 3 protocols (Shelly, Zigbee2MQTT, UniFi), the flat lists and basic filters don't scale. More importantly, the "Communication Node" concept is too narrow. Vidar needs an **Application** model where:
+
+- **Provider Applications** produce devices (Shelly, Z2M, UniFi — the current comm nodes)
+- **Consumer Applications** react to device events (automations, rules, scenes, notifications — future)
+
+Each application has a lifecycle (enabled/disabled/configured/running), its own settings, and reports status. The current Integrations page becomes the **Applications** page. The current "discovered devices" become devices produced by a specific Provider Application.
 
 ## Design Direction
 
-Azure Portal-inspired: left filter/facet panel + main content area. The filter panel provides hierarchical faceted navigation (protocol → device type → capabilities). The main area shows a searchable, sortable list of items.
+Azure Portal-inspired: left filter/facet panel + main content area. The filter panel provides hierarchical faceted navigation (application → device type → capabilities). The main area shows a searchable, sortable list of items.
 
 ## Layout
 
@@ -81,7 +86,9 @@ Device types are derived from capabilities — no backend change needed:
 | Action | Remote |
 | Presence | Client |
 | Power or Energy (without Switch/Light/Cover) | Power Monitor |
-| Features: switching/routing/access-point (UniFi) | Network Device |
+| Network switch (UniFi) | Network Switch |
+| Network routing (UniFi) | Network Router |
+| Network access-point (UniFi) | Network AccessPoint |
 
 The derivation happens in the frontend from the device's capabilities and metadata.
 
@@ -105,32 +112,70 @@ The derivation happens in the frontend from the device's capabilities and metada
 - Or keep the grid cards and add a filter for room name search
 - This page might not need the filter panel — the grid already works
 
-### Integrations Page
+### Applications Page (replaces Integrations)
 
-All three protocols as configurable plugins:
+The central management page for all Vidar applications.
+
+#### Application Model
+
+```
+Application {
+  id: string              // "shelly", "zigbee2mqtt", "unifi", "automations"
+  name: string            // "Shelly", "Zigbee2MQTT", "UniFi Network", "Automations"
+  type: "provider" | "consumer"
+  enabled: boolean
+  status: "running" | "stopped" | "error" | "unconfigured"
+  settings: Record<string, string>
+  deviceCount?: number    // providers only
+  description: string
+}
+```
+
+#### Provider Applications (produce devices)
 
 **Shelly**
-- Enable/Disable toggle
-- No config needed (discovery is manual via IP)
+- Type: provider
+- Settings: none (discovery is manual via IP on Setup page)
 - Shows count of discovered/configured Shelly devices
 
 **Zigbee2MQTT**
-- Enable/Disable toggle
-- MQTT broker host/port
-- MQTT username/password
-- Base topic (default: zigbee2mqtt)
+- Type: provider
+- Settings: MQTT broker host/port, username/password, base topic
 - Shows connection status + device count
 
-**UniFi** (already implemented)
-- Enable/Disable toggle
-- Host, API Key, Site ID, Poll Interval
+**UniFi Network** (already implemented)
+- Type: provider
+- Settings: Host, API Key, Site ID, Poll Interval
 - Shows connection status + device count
 
-Each plugin card shows:
-- Protocol icon + name
-- Status badge (Connected / Disconnected / Disabled)
-- Device count
-- Expand for settings
+#### Consumer Applications (react to device events — future)
+
+**Automations** (future)
+- Type: consumer
+- Listens to device state changes, executes rules
+- "When motion detected in hallway AND it's dark → turn on lights"
+
+**Scenes** (future)
+- Type: consumer
+- Named state snapshots that can be activated
+- "Movie mode: dim living room to 20%, close covers, turn off kitchen"
+
+**Notifications** (future)
+- Type: consumer
+- Push/email/webhook when conditions are met
+- "Alert when garage door opens after 22:00"
+
+#### Card Layout
+
+Each application card shows:
+- Application icon + name
+- Type badge (Provider / Consumer)
+- Status indicator (green dot = running, red = error, gray = disabled)
+- Device count (providers) or rule count (consumers)
+- Expand arrow for settings
+- Enable/Disable toggle
+
+The Setup page only shows devices from **enabled Provider applications**.
 
 ### Device Detail Page
 
@@ -141,22 +186,36 @@ Each plugin card shows:
 
 ### Backend
 
-1. **Z2M as configurable plugin**: Move MQTT broker config from env vars to IntegrationConfig (like UniFi). The Z2M comm node reads config from the Integrations API on startup. Env vars become fallback defaults.
+1. **Rename IntegrationConfig → ApplicationConfig**: The model already works, just rename for clarity. The `type` field gets added ("provider" or "consumer").
 
-2. **Shelly as configurable plugin**: Simpler — just enable/disable. The Shelly node has no broker to configure (HTTP polling is device-specific). The integration config just tracks whether the node should be active.
+2. **ApplicationStatusActor** on the Host: Subscribes to `application-status.{id}` topic. Each comm node periodically publishes its status (running, device count, error info). The Host aggregates into a queryable state.
 
-3. **Plugin status API**: New endpoint `GET /api/integrations/status` that returns each plugin's connection state:
-```json
-[
-  { "id": "zigbee2mqtt", "enabled": true, "connected": true, "deviceCount": 17 },
-  { "id": "unifi", "enabled": true, "connected": true, "deviceCount": 69 },
-  { "id": "shelly", "enabled": true, "connected": true, "deviceCount": 8 }
-]
+3. **Applications API**:
+```
+GET    /api/applications              — list all applications with status
+GET    /api/applications/{id}         — single application with config + status
+PUT    /api/applications/{id}         — update config (enable/disable, settings)
+GET    /api/applications/{id}/devices — devices produced by this application
 ```
 
-The comm nodes periodically report status via Pub/Sub, the Host aggregates it.
+Status response:
+```json
+{
+  "id": "zigbee2mqtt",
+  "name": "Zigbee2MQTT",
+  "type": "provider",
+  "enabled": true,
+  "status": "running",
+  "deviceCount": 17,
+  "settings": { "mqttHost": "10.220.220.10", "baseTopic": "smarthome/z2m" }
+}
+```
 
-4. **Discovered devices API enhancement**: Add `deviceType` field to the response (derived server-side from capabilities for consistent filtering).
+4. **Z2M as configurable application**: Move MQTT broker config from env vars to ApplicationConfig. Env vars become fallback defaults.
+
+5. **Shelly as configurable application**: Enable/disable only. Device discovery stays manual (IP-based on Setup page).
+
+6. **Discovered devices API**: Add `deviceType` and `applicationId` fields to the response for filtering.
 
 ### Frontend
 
@@ -164,11 +223,13 @@ The comm nodes periodically report status via Pub/Sub, the Host aggregates it.
 
 2. **Layout update**: The `main-content` area splits into filter panel + content when the page provides filters.
 
-3. **Setup page rewrite**: Uses FilterPanel for protocol/type filtering. Virtual scrolling for large lists.
+3. **Setup page rewrite**: Uses FilterPanel for application/type filtering. Virtual scrolling for large lists.
 
-4. **Integrations page rewrite**: All three plugins as configurable cards with status badges.
+4. **Applications page** (replaces Integrations): Application cards for all providers and consumers. Settings, status, enable/disable.
 
-5. **Mobile**: Filter panel slides in as a drawer from the left (triggered by filter button).
+5. **Sidebar update**: "Integrations" → "Applications" (icon: grid or puzzle piece).
+
+6. **Mobile**: Filter panel slides in as a drawer from the left (triggered by filter button).
 
 ## Migration
 
@@ -176,8 +237,19 @@ The comm nodes periodically report status via Pub/Sub, the Host aggregates it.
 - Existing devices/state unaffected
 - The filter panel is additive — existing pages keep working, just gain the panel
 
-## Out of Scope
+## Implementation Order
 
-- WebSocket/real-time filter updates (polling is fine for now)
+1. **Application model + API** — rename IntegrationConfig, add type/status, new endpoints
+2. **Applications page** — replace Integrations page with provider/consumer cards
+3. **FilterPanel component** — reusable faceted filter with checkboxes and counts
+4. **Setup page rewrite** — filter panel + device list with application/type/capability filtering
+5. **All Devices page** — add filter panel with room/capability/application filters
+6. **Z2M configurable** — move broker config to ApplicationConfig
+7. **Mobile filter drawer** — slide-out panel for mobile
+
+## Out of Scope (for now)
+
+- Consumer applications (automations, scenes, notifications) — the model supports them but implementation is future work
+- WebSocket/real-time filter updates (polling is fine)
 - Drag-and-drop device organization
-- Dashboard/overview page (future)
+- Dashboard/overview page
