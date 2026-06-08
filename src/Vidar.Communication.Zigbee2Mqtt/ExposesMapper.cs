@@ -24,7 +24,8 @@ public static class ExposesMapper
     {
         var result = new HashSet<CapabilityType>();
         var lightFeatureNames = new HashSet<string>();
-        MapExposesArray(exposesArray, result, lightFeatureNames);
+        var actionValues = new List<string>();
+        MapExposesArray(exposesArray, result, lightFeatureNames, actionValues);
         return [.. result];
     }
 
@@ -32,17 +33,27 @@ public static class ExposesMapper
     {
         var result = new HashSet<CapabilityType>();
         var lightFeatureNames = new HashSet<string>();
-        MapExposesArray(exposesArray, result, lightFeatureNames);
+        var actionValues = new List<string>();
+        MapExposesArray(exposesArray, result, lightFeatureNames, actionValues);
         return lightFeatureNames;
     }
 
-    private static void MapExposesArray(JsonElement array, HashSet<CapabilityType> result, HashSet<string> lightFeatures)
+    public static List<string> ExtractActionValues(JsonElement exposesArray)
     {
-        foreach (var item in array.EnumerateArray())
-            MapExposesItem(item, result, lightFeatures);
+        var result = new HashSet<CapabilityType>();
+        var lightFeatureNames = new HashSet<string>();
+        var actionValues = new List<string>();
+        MapExposesArray(exposesArray, result, lightFeatureNames, actionValues);
+        return actionValues;
     }
 
-    private static void MapExposesItem(JsonElement item, HashSet<CapabilityType> result, HashSet<string> lightFeatures)
+    private static void MapExposesArray(JsonElement array, HashSet<CapabilityType> result, HashSet<string> lightFeatures, List<string> actionValues)
+    {
+        foreach (var item in array.EnumerateArray())
+            MapExposesItem(item, result, lightFeatures, actionValues);
+    }
+
+    private static void MapExposesItem(JsonElement item, HashSet<CapabilityType> result, HashSet<string> lightFeatures, List<string> actionValues)
     {
         var type = item.TryGetProperty("type", out var typeProp) ? typeProp.GetString() : null;
 
@@ -63,18 +74,30 @@ public static class ExposesMapper
             case "cover":
                 result.Add(CapabilityType.Cover);
                 if (item.TryGetProperty("features", out var coverFeatures))
-                    MapExposesArray(coverFeatures, result, lightFeatures);
+                    MapExposesArray(coverFeatures, result, lightFeatures, actionValues);
                 break;
 
             default:
                 if (item.TryGetProperty("features", out var features))
-                    MapExposesArray(features, result, lightFeatures);
+                    MapExposesArray(features, result, lightFeatures, actionValues);
 
                 if (item.TryGetProperty("name", out var nameProp))
                 {
                     var name = nameProp.GetString();
                     if (name != null && NameMap.TryGetValue(name, out var cap))
+                    {
                         result.Add(cap);
+                        if (cap == CapabilityType.Action &&
+                            item.TryGetProperty("values", out var vals) &&
+                            vals.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var v in vals.EnumerateArray())
+                            {
+                                var s = v.GetString();
+                                if (s != null) actionValues.Add(s);
+                            }
+                        }
+                    }
                 }
                 break;
         }

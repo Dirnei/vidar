@@ -52,7 +52,7 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
         Receive<FetchRegistrations>(_ =>
         {
             var mediator = DistributedPubSub.Get(Context.System).Mediator;
-            mediator.Tell(new Send("/user/device-registrar", new RequestRegistrations("shelly"), localAffinity: false));
+            mediator.Tell(new Publish("request-registrations", new RequestRegistrations("shelly")));
         });
 
         Receive<RegistrationResponse>(msg =>
@@ -196,6 +196,7 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
         mediator.Tell(new Subscribe("commands.shelly", Self));
         mediator.Tell(new Subscribe("discover.shelly", Self));
         mediator.Tell(new Subscribe("register.shelly", Self));
+        mediator.Tell(new Subscribe("registration-response.shelly", Self));
         Timers.StartPeriodicTimer("poll", PollTick.Instance, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
         Timers.StartSingleTimer("fetch-registrations", FetchRegistrations.Instance, TimeSpan.FromSeconds(10));
     }

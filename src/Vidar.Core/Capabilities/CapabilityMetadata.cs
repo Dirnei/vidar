@@ -16,6 +16,7 @@ public static class CapabilityMetadata
         [CapabilityType.Contact] = (false, ""),
         [CapabilityType.Action] = (false, ""),
         [CapabilityType.Battery] = (false, "%"),
+        [CapabilityType.Extras] = (false, ""),
     };
 
     public static bool IsControllable(CapabilityType type) => Metadata[type].Controllable;

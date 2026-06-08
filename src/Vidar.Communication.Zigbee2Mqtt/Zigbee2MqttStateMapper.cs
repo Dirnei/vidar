@@ -64,37 +64,53 @@ public static class Zigbee2MqttStateMapper
                 result.Add(new Zigbee2MqttCapabilityValue(CapabilityType.Light, lightState));
         }
 
+        var extras = new Dictionary<string, object>();
+
         foreach (var prop in root.EnumerateObject())
         {
-            if (!NameMap.TryGetValue(prop.Name, out var cap)) continue;
-            if (!knownSet.Contains(cap)) continue;
-            // Skip state/brightness if we already handled them as Light
-            if (knownSet.Contains(CapabilityType.Light) && (cap == CapabilityType.Switch || cap == CapabilityType.Dimmer))
-                continue;
-
-            object? value = cap switch
+            if (NameMap.TryGetValue(prop.Name, out var cap) && knownSet.Contains(cap))
             {
-                CapabilityType.Switch => MapSwitchValue(prop.Value),
-                CapabilityType.Dimmer => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
-                CapabilityType.Cover => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetInt32() : null,
-                CapabilityType.Temperature => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
-                CapabilityType.Motion => prop.Value.ValueKind == JsonValueKind.True || prop.Value.ValueKind == JsonValueKind.False
-                    ? prop.Value.GetBoolean()
-                    : null,
-                CapabilityType.Power => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
-                CapabilityType.Energy => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
-                CapabilityType.Humidity => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
-                CapabilityType.Contact => prop.Value.ValueKind == JsonValueKind.True || prop.Value.ValueKind == JsonValueKind.False
-                    ? prop.Value.GetBoolean()
-                    : null,
-                CapabilityType.Action => prop.Value.ValueKind == JsonValueKind.String ? prop.Value.GetString() : null,
-                CapabilityType.Battery => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
-                _ => null
-            };
+                if (knownSet.Contains(CapabilityType.Light) && (cap == CapabilityType.Switch || cap == CapabilityType.Dimmer))
+                    continue;
 
-            if (value != null)
-                result.Add(new Zigbee2MqttCapabilityValue(cap, value));
+                object? value = cap switch
+                {
+                    CapabilityType.Switch => MapSwitchValue(prop.Value),
+                    CapabilityType.Dimmer => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
+                    CapabilityType.Cover => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetInt32() : null,
+                    CapabilityType.Temperature => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
+                    CapabilityType.Motion => prop.Value.ValueKind == JsonValueKind.True || prop.Value.ValueKind == JsonValueKind.False
+                        ? prop.Value.GetBoolean() : null,
+                    CapabilityType.Power => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
+                    CapabilityType.Energy => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
+                    CapabilityType.Humidity => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
+                    CapabilityType.Contact => prop.Value.ValueKind == JsonValueKind.True || prop.Value.ValueKind == JsonValueKind.False
+                        ? prop.Value.GetBoolean() : null,
+                    CapabilityType.Action => prop.Value.ValueKind == JsonValueKind.String ? prop.Value.GetString() : null,
+                    CapabilityType.Battery => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
+                    _ => null
+                };
+
+                if (value != null)
+                    result.Add(new Zigbee2MqttCapabilityValue(cap, value));
+                continue;
+            }
+
+            // Capture unmapped properties as extras
+            extras[prop.Name] = prop.Value.ValueKind switch
+            {
+                JsonValueKind.Number => prop.Value.GetDouble(),
+                JsonValueKind.String => prop.Value.GetString()!,
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                JsonValueKind.Object => prop.Value.GetRawText(),
+                JsonValueKind.Array => prop.Value.GetRawText(),
+                _ => prop.Value.GetRawText()
+            };
         }
+
+        if (extras.Count > 0)
+            result.Add(new Zigbee2MqttCapabilityValue(CapabilityType.Extras, extras));
 
         return result;
     }

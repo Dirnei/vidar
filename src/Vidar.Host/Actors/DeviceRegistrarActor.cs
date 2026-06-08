@@ -39,15 +39,15 @@ public sealed class DeviceRegistrarActor : ReceiveActor
                 }
             }
 
-            Sender.Tell(new RegistrationResponse(registrations));
-            _log.Info("Sent {Count} {Type} registrations to {Sender}",
-                registrations.Count, msg.CommunicationType, Sender.Path);
+            var mediator = DistributedPubSub.Get(Context.System).Mediator;
+            mediator.Tell(new Publish($"registration-response.{msg.CommunicationType}", new RegistrationResponse(registrations)));
+            _log.Info("Published {Count} {Type} registrations", registrations.Count, msg.CommunicationType);
         });
     }
 
     protected override void PreStart()
     {
         var mediator = DistributedPubSub.Get(Context.System).Mediator;
-        mediator.Tell(new Put(Self));
+        mediator.Tell(new Subscribe("request-registrations", Self));
     }
 }

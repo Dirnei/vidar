@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import type { Device, Room } from '../types';
-import { getDevice, getRooms, sendCommand, updateDeviceSettings } from '../api/client';
+import { getDevice, getRooms, sendCommand, updateDeviceSettings, deleteDevice } from '../api/client';
 import { subscribeDeviceState } from '../api/sse';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { ProgressBar } from '../components/ProgressBar';
@@ -9,10 +9,12 @@ import { StatusDot } from '../components/StatusDot';
 import { SliderControl } from '../components/SliderControl';
 import { CapabilityIcon, primaryCapabilityIcon } from '../components/CapabilityIcon';
 import { ColorWheel, ColorTempSlider } from '../components/ColorPicker';
+import { useExpertMode } from '../components/ExpertMode';
 
 export function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { expert } = useExpertMode();
   const [device, setDevice] = useState<Device | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -238,6 +240,21 @@ export function DeviceDetailPage() {
                 {saving ? 'Saving…' : 'Save'}
               </button>
               <button className="btn-secondary" onClick={cancelEdit}>Cancel</button>
+              <button
+                style={{
+                  marginLeft: 'auto', padding: '8px 16px', borderRadius: 'var(--radius-sm)',
+                  fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  background: 'transparent', border: '1px solid var(--accent-red)',
+                  color: 'var(--accent-red)', fontFamily: 'var(--font-body)',
+                }}
+                onClick={async () => {
+                  if (!id || !confirm('Delete this device? It will need to be re-discovered and configured.')) return;
+                  await deleteDevice(id);
+                  navigate('/');
+                }}
+              >
+                Delete
+              </button>
             </div>
           </div>
         </div>
@@ -261,7 +278,70 @@ export function DeviceDetailPage() {
           display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
           gap: 14, marginBottom: 28,
         }}>
-          {device.capabilities.map(cap => renderCapabilityCard(cap, state, cmd))}
+          {device.capabilities.map(cap => renderCapabilityCard(cap, state, cmd, device.settings))}
+        </div>
+      )}
+
+      {/* Expert Mode: raw state, extras, settings */}
+      {expert && (
+        <div style={{
+          background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-md)', padding: '16px 18px', marginTop: 14,
+          boxShadow: 'var(--shadow-card)', fontFamily: 'monospace',
+        }}>
+          <div style={{
+            fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const,
+            letterSpacing: '0.08em', color: 'var(--accent-primary)', marginBottom: 14,
+          }}>
+            Expert View
+          </div>
+
+          {state['Extras'] != null && typeof state['Extras'] === 'object' && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: '0.06em', fontFamily: 'var(--font-body)' }}>
+                Raw Data
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {Object.entries(state['Extras'] as Record<string, unknown>).map(([k, v]) => (
+                  <div key={k} style={{ display: 'flex', gap: 10, fontSize: 12 }}>
+                    <span style={{ color: 'var(--text-muted)', minWidth: 180, flexShrink: 0 }}>{k}</span>
+                    <span style={{ color: 'var(--text-secondary)', wordBreak: 'break-all' }}>
+                      {typeof v === 'string' && (v.startsWith('{') || v.startsWith('[')) ? v : String(v)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: '0.06em', fontFamily: 'var(--font-body)' }}>
+              Capabilities
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              {device.capabilities.join(', ')}
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: '0.06em', fontFamily: 'var(--font-body)' }}>
+              Full State
+            </div>
+            <pre style={{ fontSize: 11, color: 'var(--text-secondary)', overflow: 'auto', margin: 0 }}>
+              {JSON.stringify(state, null, 2)}
+            </pre>
+          </div>
+
+          {device.settings && Object.keys(device.settings).length > 0 && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: '0.06em', fontFamily: 'var(--font-body)' }}>
+                Settings / Metadata
+              </div>
+              <pre style={{ fontSize: 11, color: 'var(--text-secondary)', overflow: 'auto', margin: 0 }}>
+                {JSON.stringify(device.settings, null, 2)}
+              </pre>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -346,6 +426,7 @@ function renderCapabilityCard(
   cap: string,
   state: Record<string, unknown>,
   cmd: (capability: string, value: unknown) => void,
+  settings?: Record<string, string>,
 ) {
   const accent = capAccentColor(cap);
 
@@ -511,6 +592,38 @@ function renderCapabilityCard(
           <div style={capLabelStyle}><CapabilityIcon capability="Humidity" size={13} />Humidity</div>
           <div style={{ ...capValueStyle('var(--accent-blue)'), marginBottom: 12 }}>{Math.round(hum)}%</div>
           <ProgressBar value={hum} color="var(--accent-blue)" />
+        </div>
+      );
+    }
+    case 'Action': {
+      const lastAction = state['Action'] as string | undefined;
+      const actionValues = settings?.action_values?.split(',').filter(Boolean) ?? [];
+      return (
+        <div key={cap} style={{ ...capCardStyle, gridColumn: actionValues.length > 5 ? 'span 2' : undefined }}>
+          <Indicator color={accent} />
+          <div style={capLabelStyle}><CapabilityIcon capability="Action" size={13} />Last Action</div>
+          <div style={capValueStyle(lastAction ? 'var(--accent-primary)' : 'var(--text-muted)')}>
+            {lastAction ?? '—'}
+          </div>
+          {actionValues.length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 8 }}>
+                Available Actions
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {actionValues.map(a => (
+                  <span key={a} style={{
+                    display: 'inline-block', padding: '3px 8px', borderRadius: 4, fontSize: 11, fontWeight: 500,
+                    backgroundColor: a === lastAction ? 'var(--accent-primary-dim)' : 'var(--bg-hover)',
+                    color: a === lastAction ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                    border: `1px solid ${a === lastAction ? 'var(--accent-primary)' : 'var(--border-subtle)'}`,
+                  }}>
+                    {a}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       );
     }

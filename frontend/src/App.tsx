@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { ExpertModeProvider } from './components/ExpertMode';
 import { Layout } from './components/Layout';
 import { RoomsPage } from './pages/RoomsPage';
 import { DevicesPage } from './pages/DevicesPage';
@@ -8,6 +9,7 @@ import { GroupDetailPage } from './pages/GroupDetailPage';
 
 export default function App() {
   return (
+    <ExpertModeProvider>
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Layout />}>
@@ -19,5 +21,6 @@ export default function App() {
         </Route>
       </Routes>
     </BrowserRouter>
+    </ExpertModeProvider>
   );
 }

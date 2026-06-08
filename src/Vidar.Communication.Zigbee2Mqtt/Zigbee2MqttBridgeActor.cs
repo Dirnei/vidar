@@ -1,8 +1,10 @@
+using System.Threading.Channels;
 using Akka.Actor;
 using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
+using Akka.Streams;
+using Akka.Streams.Dsl;
 using HiveMQtt.Client;
-using HiveMQtt.Client.Events;
 using HiveMQtt.MQTT5.Types;
 using System.Security;
 using System.Text.Json;
@@ -14,28 +16,43 @@ namespace Vidar.Communication.Zigbee2Mqtt;
 public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
 {
     public ITimerScheduler Timers { get; set; } = null!;
-    private sealed class RepublishDiscoveries { public static readonly RepublishDiscoveries Instance = new(); }
+
     private readonly ILoggingAdapter _log = Context.GetLogger();
+    private readonly IMaterializer _materializer;
     private readonly Zigbee2MqttConfig _config;
     private readonly IActorRef _shardProxy;
+
+    // Z2M device tracking
     private readonly Dictionary<string, Zigbee2MqttDevice> _devicesByFriendlyName = new();
     private readonly Dictionary<string, Zigbee2MqttDevice> _devicesByIeeeAddress = new();
+
+    // Config cache: ieeeAddress → configured device GUID
+    private readonly Dictionary<string, Guid> _configuredDevices = new();
+
+    // MQTT client
     private HiveMQClient? _mqttClient;
 
-    private sealed record MqttMessageReceived(string Topic, string Payload);
+    // Stream channels
+    private Channel<MqttMessage>? _inboundChannel;
+    private Channel<DeviceCommand>? _outboundChannel;
+
+    private sealed record MqttMessage(string Topic, string Payload);
     private sealed class ConnectToBroker { public static readonly ConnectToBroker Instance = new(); }
     private sealed class CheckConnection { public static readonly CheckConnection Instance = new(); }
-    private sealed class FetchRegistrations { public static readonly FetchRegistrations Instance = new(); }
+    private sealed class RepublishDiscoveries { public static readonly RepublishDiscoveries Instance = new(); }
+    private sealed class FetchRegistrations { }
 
     public static Props Props(Zigbee2MqttConfig config, IActorRef shardProxy) =>
         Akka.Actor.Props.Create(() => new Zigbee2MqttBridgeActor(config, shardProxy));
 
     public Zigbee2MqttBridgeActor(Zigbee2MqttConfig config, IActorRef shardProxy)
     {
+        _materializer = Context.Materializer();
         _config = config;
         _shardProxy = shardProxy;
 
         ReceiveAsync<ConnectToBroker>(_ => ConnectAsync());
+
         Receive<CheckConnection>(_ =>
         {
             if (_mqttClient == null || !_mqttClient.IsConnected())
@@ -44,70 +61,57 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
                 Self.Tell(ConnectToBroker.Instance);
             }
         });
-        Receive<MqttMessageReceived>(msg => HandleMqttMessage(msg.Topic, msg.Payload));
 
+        // Config cache update — from Host when a device is configured
         Receive<RegisterDeviceForPolling>(msg =>
         {
             if (msg.CommunicationType != "zigbee2mqtt") return;
-            if (_devicesByIeeeAddress.TryGetValue(msg.NativeId, out var device))
-            {
-                var isNewMapping = device.VidarDeviceId != msg.DeviceId;
-                device.VidarDeviceId = msg.DeviceId;
-                if (isNewMapping)
-                {
-                    _log.Info("Z2M device {FriendlyName} ({IeeeAddress}) mapped to configured ID {DeviceId}",
-                        device.FriendlyName, msg.NativeId, msg.DeviceId);
-                    RequestDeviceState(device);
-                }
-            }
-        });
+            var isNew = !_configuredDevices.TryGetValue(msg.NativeId, out var existing) || existing != msg.DeviceId;
+            _configuredDevices[msg.NativeId] = msg.DeviceId;
 
-        Receive<FetchRegistrations>(_ =>
-        {
-            var mediator = DistributedPubSub.Get(Context.System).Mediator;
-            mediator.Tell(new Send("/user/device-registrar", new RequestRegistrations("zigbee2mqtt"), localAffinity: false));
+            if (isNew)
+            {
+                _log.Info("Config cache updated: {NativeId} → {DeviceId}", msg.NativeId, msg.DeviceId);
+                if (_devicesByIeeeAddress.TryGetValue(msg.NativeId, out var device))
+                    RequestDeviceState(device);
+            }
         });
 
         Receive<RegistrationResponse>(msg =>
         {
             foreach (var reg in msg.Devices)
-                Self.Tell(reg);
-            _log.Info("Received {Count} device registrations from Host", msg.Devices.Count);
+            {
+                _configuredDevices[reg.NativeId] = reg.DeviceId;
+            }
+            _log.Info("Config cache loaded: {Count} devices", msg.Devices.Count);
+
+            foreach (var reg in msg.Devices)
+            {
+                if (_devicesByIeeeAddress.TryGetValue(reg.NativeId, out var device))
+                    RequestDeviceState(device);
+            }
         });
 
-        Receive<RepublishDiscoveries>(_ =>
+        // Device list from inbound stream
+        Receive<ProcessDeviceList>(msg => HandleDeviceList(msg.Payload));
+
+        // Fetch registrations from Host — retries until successful
+        Receive<FetchRegistrations>(_ =>
         {
-            if (_devicesByIeeeAddress.Count == 0) return;
+            if (_configuredDevices.Count > 0) return;
             var mediator = DistributedPubSub.Get(Context.System).Mediator;
-            foreach (var device in _devicesByIeeeAddress.Values)
-            {
-                if (device.VidarDeviceId == null) continue;
-                var discovered = new DeviceDiscovered(
-                    device.VidarDeviceId.Value, "zigbee2mqtt", device.IeeeAddress,
-                    device.Capabilities, device.Metadata);
-                mediator.Tell(new Publish("device-discovered", discovered));
-            }
+            mediator.Tell(new Publish("request-registrations", new RequestRegistrations("zigbee2mqtt")));
+            Timers.StartSingleTimer("fetch-registrations-retry", new FetchRegistrations(), TimeSpan.FromSeconds(5));
         });
 
-        ReceiveAsync<DeviceCommand>(async cmd =>
+        // Outbound: receive commands from Pub/Sub, write to outbound channel
+        Receive<DeviceCommand>(cmd =>
         {
-            var device = _devicesByFriendlyName.Values.FirstOrDefault(d => d.VidarDeviceId == cmd.DeviceId)
-                         ?? _devicesByIeeeAddress.Values.FirstOrDefault(d => d.VidarDeviceId == cmd.DeviceId);
-            if (device == null || _mqttClient == null)
-            {
-                _log.Warning("Cannot execute command for {DeviceId}: device={Found}, mqtt={Connected}",
-                    cmd.DeviceId, device != null, _mqttClient != null);
-                return;
-            }
-
-            var payload = BuildCommandPayload(cmd.Capability, cmd.Value);
-            if (payload != null)
-            {
-                var topic = $"{_config.BaseTopic}/{device.FriendlyName}/set";
-                await _mqttClient.PublishAsync(topic, payload, QualityOfService.AtMostOnceDelivery);
-                _log.Info("Sent command to {Topic}: {Payload}", topic, payload);
-            }
+            _outboundChannel?.Writer.TryWrite(cmd);
         });
+
+        // Discovery republish
+        Receive<RepublishDiscoveries>(_ => PublishDiscoveries());
     }
 
     protected override void PreStart()
@@ -116,6 +120,7 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
         var mediator = DistributedPubSub.Get(Context.System).Mediator;
         mediator.Tell(new Subscribe("commands.zigbee2mqtt", Self));
         mediator.Tell(new Subscribe("register.zigbee2mqtt", Self));
+        mediator.Tell(new Subscribe("registration-response.zigbee2mqtt", Self));
         Self.Tell(ConnectToBroker.Instance);
         Timers.StartPeriodicTimer("republish", RepublishDiscoveries.Instance,
             TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(30));
@@ -125,6 +130,8 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
 
     protected override void PostStop()
     {
+        _inboundChannel?.Writer.TryComplete();
+        _outboundChannel?.Writer.TryComplete();
         _mqttClient?.DisconnectAsync().GetAwaiter().GetResult();
         _mqttClient?.Dispose();
         base.PostStop();
@@ -140,6 +147,8 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
                 _mqttClient.Dispose();
                 _mqttClient = null;
             }
+            _inboundChannel?.Writer.TryComplete();
+            _outboundChannel?.Writer.TryComplete();
 
             var optionsBuilder = new HiveMQClientOptionsBuilder()
                 .WithBroker(_config.MqttHost)
@@ -156,35 +165,41 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
                 optionsBuilder.WithPassword(secure);
             }
 
+            // Create channels
+            _inboundChannel = Channel.CreateBounded<MqttMessage>(1000);
+            _outboundChannel = Channel.CreateBounded<DeviceCommand>(100);
+
+            // Connect MQTT
             _mqttClient = new HiveMQClient(optionsBuilder.Build());
-            var self = Self;
-            _mqttClient.OnMessageReceived += (sender, e) =>
+            var inbound = _inboundChannel;
+            _mqttClient.OnMessageReceived += (_, e) =>
             {
                 var topic = e.PublishMessage.Topic;
                 var payload = e.PublishMessage.PayloadAsString;
                 if (topic != null && payload != null)
-                {
-                    if (!topic.Contains("/bridge/"))
-                        Console.WriteLine($"[Z2M] Device msg: {topic} ({payload.Length}b)");
-                    self.Tell(new MqttMessageReceived(topic, payload));
-                }
+                    inbound.Writer.TryWrite(new MqttMessage(topic, payload));
             };
-            _mqttClient.OnDisconnectReceived += (sender, e) =>
+
+            var self = Self;
+            _mqttClient.OnDisconnectReceived += (_, _) =>
             {
-                Console.WriteLine($"[Z2M-MQTT] Disconnected from broker, will reconnect...");
+                _log.Warning("MQTT disconnected, will reconnect...");
                 self.Tell(ConnectToBroker.Instance);
             };
 
             var connectResult = await _mqttClient.ConnectAsync();
             _log.Info("MQTT connect result: {Result}", connectResult.ReasonCode);
 
-            var subResult = await _mqttClient.SubscribeAsync($"{_config.BaseTopic}/#", QualityOfService.AtLeastOnceDelivery);
-            _log.Info("MQTT subscribed to {Topic}/# ({Count} subscriptions) with QoS1", _config.BaseTopic, subResult.Subscriptions.Count);
-
+            await _mqttClient.SubscribeAsync($"{_config.BaseTopic}/#", QualityOfService.AtLeastOnceDelivery);
             _log.Info("Connected to MQTT broker at {Host}:{Port}, subscribed to {BaseTopic}/#",
                 _config.MqttHost, _config.MqttPort, _config.BaseTopic);
 
-            Timers.StartSingleTimer("fetch-registrations", FetchRegistrations.Instance, TimeSpan.FromSeconds(5));
+            // Start streams
+            StartInboundStream();
+            StartOutboundStream();
+
+            // Request registrations from Host (delayed to let cluster form)
+            Timers.StartSingleTimer("fetch-registrations", new FetchRegistrations(), TimeSpan.FromSeconds(10));
         }
         catch (Exception ex)
         {
@@ -192,35 +207,82 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
         }
     }
 
-    private void HandleMqttMessage(string topic, string payload)
+    private void StartInboundStream()
     {
         var prefix = _config.BaseTopic + "/";
+        var materializer = _materializer;
+        var bridgeActor = Self;
 
-        if (!topic.StartsWith(prefix))
-            return;
+        ChannelSource.FromReader<MqttMessage>(_inboundChannel!.Reader)
+            .Where(msg => msg.Topic.StartsWith(prefix))
+            .Select(msg => (Relative: msg.Topic[prefix.Length..], msg.Payload))
+            .Via(Flow.Create<(string Relative, string Payload)>()
+                .Select(t =>
+                {
+                    // Bridge messages: handle device list, skip the rest
+                    if (t.Relative == "bridge/devices")
+                    {
+                        bridgeActor.Tell(new ProcessDeviceList(t.Payload));
+                        return (Updates: (List<(Guid DeviceId, CapabilityType Cap, object Value)>?)null, t.Relative);
+                    }
+                    if (t.Relative.StartsWith("bridge/") || t.Relative.Contains("/set") ||
+                        t.Relative.Contains("/get") || t.Relative.Contains("/availability"))
+                        return (Updates: null, t.Relative);
 
-        var relative = topic[prefix.Length..];
-        _log.Info("MQTT msg: {Relative} ({Len} bytes)", relative, payload.Length);
+                    // Device state: parse, enrich with configured ID, produce updates
+                    if (!_devicesByFriendlyName.TryGetValue(t.Relative, out var device))
+                        return (Updates: null, t.Relative);
 
-        if (relative == "bridge/devices")
-        {
-            HandleDeviceList(payload);
-            return;
-        }
+                    var ieeeAddress = device.IeeeAddress;
+                    if (!_configuredDevices.TryGetValue(ieeeAddress, out var deviceId))
+                        return (Updates: null, t.Relative);
 
-        if (relative.StartsWith("bridge/"))
-            return;
-        if (relative.Contains("/set") || relative.Contains("/get") || relative.Contains("/availability"))
-            return;
-
-        if (_devicesByFriendlyName.TryGetValue(relative, out var device) && device.VidarDeviceId != null)
-        {
-            var updates = Zigbee2MqttStateMapper.MapState(payload, device.Capabilities);
-            foreach (var u in updates)
-                _shardProxy.Tell(new DeviceStateUpdate(device.VidarDeviceId.Value, u.Capability, u.Value));
-        }
+                    var mapped = Zigbee2MqttStateMapper.MapState(t.Payload, device.Capabilities);
+                    var updates = mapped.Select(u => (deviceId, u.Capability, u.Value)).ToList();
+                    return (Updates: (List<(Guid, CapabilityType, object)>?)updates, t.Relative);
+                })
+                .Where(t => t.Updates != null))
+            .SelectMany(t => t.Updates!)
+            .To(Sink.ForEach<(Guid DeviceId, CapabilityType Cap, object Value)>(u =>
+                _shardProxy.Tell(new DeviceStateUpdate(u.DeviceId, u.Cap, u.Value))))
+            .Run(materializer);
     }
 
+    private void StartOutboundStream()
+    {
+        var mqttClient = _mqttClient!;
+        var baseTopic = _config.BaseTopic;
+        var materializer = _materializer;
+
+        ChannelSource.FromReader<DeviceCommand>(_outboundChannel!.Reader)
+            .Select(cmd =>
+            {
+                // Find device by configured GUID
+                var device = _devicesByIeeeAddress.Values.FirstOrDefault(d =>
+                    _configuredDevices.TryGetValue(d.IeeeAddress, out var id) && id == cmd.DeviceId);
+                if (device == null) return (Topic: (string?)null, Payload: (string?)null);
+
+                var payload = BuildCommandPayload(cmd.Capability, cmd.Value);
+                if (payload == null) return (Topic: null, Payload: null);
+
+                return (Topic: (string?)$"{baseTopic}/{device.FriendlyName}/set", Payload: (string?)payload);
+            })
+            .Where(t => t.Topic != null)
+            .SelectAsync(1, async t =>
+            {
+                await mqttClient.PublishAsync(t.Topic!, t.Payload!, QualityOfService.AtMostOnceDelivery);
+                _log.Info("Sent command to {Topic}: {Payload}", t.Topic, t.Payload);
+                return t;
+            })
+            .To(Sink.Ignore<(string?, string?)>())
+            .Run(materializer);
+    }
+
+    // --- Device list handling (called from inbound stream via actor message) ---
+
+    private sealed record ProcessDeviceList(string Payload);
+
+    // Register handler in constructor — need to add this
     private void HandleDeviceList(string payload)
     {
         try
@@ -235,20 +297,20 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
                 var friendlyName = friendlyNameProp.GetString();
                 if (ieeeAddress == null || friendlyName == null) continue;
 
-                // Skip the coordinator
                 if (deviceEl.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "Coordinator")
                     continue;
 
                 var capabilities = new List<CapabilityType>();
                 var lightFeatures = new HashSet<string>();
+                var actionValues = new List<string>();
                 if (deviceEl.TryGetProperty("definition", out var definition) &&
                     definition.ValueKind != JsonValueKind.Null &&
                     definition.TryGetProperty("exposes", out var exposes))
                 {
                     capabilities = ExposesMapper.MapCapabilities(exposes);
                     lightFeatures = ExposesMapper.ExtractLightFeatures(exposes);
+                    actionValues = ExposesMapper.ExtractActionValues(exposes);
                 }
-
 
                 var metadata = new Dictionary<string, string>();
                 if (deviceEl.TryGetProperty("manufacturer", out var mfr) && mfr.GetString() != null)
@@ -267,11 +329,14 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
                 metadata["friendly_name"] = friendlyName;
                 if (lightFeatures.Count > 0)
                     metadata["light_features"] = string.Join(",", lightFeatures);
+                if (actionValues.Count > 0)
+                    metadata["action_values"] = string.Join(",", actionValues);
 
                 if (_devicesByIeeeAddress.TryGetValue(ieeeAddress, out var existing))
                 {
                     existing.Capabilities.Clear();
                     existing.Capabilities.AddRange(capabilities);
+                    existing.Metadata = metadata;
                     if (existing.FriendlyName != friendlyName)
                     {
                         _devicesByFriendlyName.Remove(existing.FriendlyName);
@@ -287,23 +352,9 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
                         FriendlyName = friendlyName,
                         Capabilities = capabilities,
                         Metadata = metadata,
-                        VidarDeviceId = Guid.NewGuid()
                     };
                     _devicesByIeeeAddress[ieeeAddress] = device;
                     _devicesByFriendlyName[friendlyName] = device;
-
-                    var discovered = new DeviceDiscovered(
-                        device.VidarDeviceId.Value,
-                        "zigbee2mqtt",
-                        ieeeAddress,
-                        capabilities,
-                        metadata);
-
-                    var mediator = DistributedPubSub.Get(Context.System).Mediator;
-                    mediator.Tell(new Publish("device-discovered", discovered));
-
-                    _log.Info("Discovered Z2M device: {FriendlyName} ({IeeeAddress}) caps=[{Caps}]",
-                        friendlyName, ieeeAddress, string.Join(",", capabilities));
                 }
             }
 
@@ -312,6 +363,19 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
         catch (Exception ex)
         {
             _log.Warning(ex, "Failed to parse Zigbee2MQTT device list");
+        }
+    }
+
+    private void PublishDiscoveries()
+    {
+        if (_devicesByIeeeAddress.Count == 0) return;
+        var mediator = DistributedPubSub.Get(Context.System).Mediator;
+        foreach (var device in _devicesByIeeeAddress.Values)
+        {
+            var id = _configuredDevices.GetValueOrDefault(device.IeeeAddress, Guid.NewGuid());
+            var discovered = new DeviceDiscovered(id, "zigbee2mqtt", device.IeeeAddress,
+                device.Capabilities, device.Metadata);
+            mediator.Tell(new Publish("device-discovered", discovered));
         }
     }
 

@@ -13,5 +13,6 @@ public enum CapabilityType
     Light = 8,
     Contact = 9,
     Action = 10,
-    Battery = 11
+    Battery = 11,
+    Extras = 99
 }
