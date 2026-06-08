@@ -147,6 +147,15 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
       }
     }
 
+    if (device.capabilities.includes('Presence')) {
+      const present = state['Presence'] === true;
+      items.push(
+        <span key="presence" style={{ fontSize: 12, fontWeight: 500, color: present ? 'var(--accent-green)' : 'var(--text-muted)' }}>
+          {present ? 'Home' : 'Away'}
+        </span>
+      );
+    }
+
     return items;
   }
 

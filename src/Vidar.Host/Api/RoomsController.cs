@@ -30,7 +30,7 @@ public sealed class RoomsController : ControllerBase
         foreach (var room in rooms)
         {
             var devices = await _deviceRepo.GetByRoomIdAsync(room.Id);
-            response.Add(new RoomResponse(room.Id, room.Name, devices.Count));
+            response.Add(new RoomResponse(room.Id, room.Name, devices.Count, room.IsHome));
         }
         return Ok(response);
     }
@@ -40,7 +40,7 @@ public sealed class RoomsController : ControllerBase
     {
         var room = new RoomConfiguration { Id = Guid.NewGuid(), Name = request.Name };
         await _roomRepo.CreateAsync(room);
-        var response = new RoomResponse(room.Id, room.Name, 0);
+        var response = new RoomResponse(room.Id, room.Name, 0, room.IsHome);
         return CreatedAtAction(nameof(GetAll), new { id = room.Id }, response);
     }
 

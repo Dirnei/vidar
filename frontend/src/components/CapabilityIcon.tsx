@@ -104,6 +104,13 @@ export function CapabilityIcon({ capability, size = 16, color }: Props) {
           <line x1="23" y1="10" x2="23" y2="14" />
         </svg>
       );
+    case 'Presence':
+      return (
+        <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="8" r="4" />
+          <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
+        </svg>
+      );
     default:
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round">
@@ -126,12 +133,13 @@ function accentFor(cap: string): string {
     case 'Contact': return 'var(--accent-teal)';
     case 'Action': return 'var(--accent-primary)';
     case 'Battery': return 'var(--accent-green)';
+    case 'Presence': return 'var(--accent-green)';
     default: return 'var(--text-muted)';
   }
 }
 
 export function primaryCapabilityIcon(capabilities: string[]): string {
-  const priority = ['Light', 'Cover', 'Switch', 'Dimmer', 'Contact', 'Motion', 'Temperature', 'Humidity', 'Power', 'Energy', 'Action', 'Battery'];
+  const priority = ['Light', 'Cover', 'Switch', 'Dimmer', 'Contact', 'Motion', 'Temperature', 'Humidity', 'Power', 'Energy', 'Action', 'Battery', 'Presence'];
   for (const p of priority) {
     if (capabilities.includes(p)) return p;
   }

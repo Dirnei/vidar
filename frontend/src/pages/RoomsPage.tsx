@@ -115,7 +115,7 @@ export function RoomsPage() {
             gap: 18,
           }}
         >
-          {rooms.map((room) => (
+          {[...rooms].sort((a, b) => (b.isHome ? 1 : 0) - (a.isHome ? 1 : 0)).map((room) => (
             <RoomCard
               key={room.id}
               room={room}

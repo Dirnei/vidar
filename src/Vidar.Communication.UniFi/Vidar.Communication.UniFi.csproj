@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-Vidar.Communication.UniFi-57e1a32f-d529-4854-9303-049297e27363</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Akka.Cluster.Hosting" Version="1.5.68" />
+    <PackageReference Include="Akka.Cluster.Tools" Version="1.5.68" />
+    <PackageReference Include="Akka.Hosting" Version="1.5.68" />
+    <PackageReference Include="Akka.Remote.Hosting" Version="1.5.68" />
+    <PackageReference Include="Akka.Streams" Version="1.5.68" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vidar.Core\Vidar.Core.csproj" />
+  </ItemGroup>
+</Project>

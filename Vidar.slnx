@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Vidar.Communication.Shelly/Vidar.Communication.Shelly.csproj" />
+    <Project Path="src/Vidar.Communication.UniFi/Vidar.Communication.UniFi.csproj" />
     <Project Path="src/Vidar.Communication.Zigbee2Mqtt/Vidar.Communication.Zigbee2Mqtt.csproj" />
     <Project Path="src/Vidar.Core/Vidar.Core.csproj" />
     <Project Path="src/Vidar.Host/Vidar.Host.csproj" />

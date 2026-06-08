@@ -10,10 +10,10 @@ public sealed class DeviceRegistrarActor : ReceiveActor
 {
     private readonly ILoggingAdapter _log = Context.GetLogger();
 
-    public static Props Props(IDeviceRepository deviceRepo) =>
-        Akka.Actor.Props.Create(() => new DeviceRegistrarActor(deviceRepo));
+    public static Props Props(IDeviceRepository deviceRepo, IIntegrationConfigRepository integrationRepo) =>
+        Akka.Actor.Props.Create(() => new DeviceRegistrarActor(deviceRepo, integrationRepo));
 
-    public DeviceRegistrarActor(IDeviceRepository deviceRepo)
+    public DeviceRegistrarActor(IDeviceRepository deviceRepo, IIntegrationConfigRepository integrationRepo)
     {
         ReceiveAsync<RequestRegistrations>(async msg =>
         {
@@ -37,11 +37,33 @@ public sealed class DeviceRegistrarActor : ReceiveActor
                     registrations.Add(new RegisterDeviceForPolling(
                         d.Id, d.CommunicationType, d.NativeId, friendlyName, 0, d.Capabilities));
                 }
+                else if (d.CommunicationType == "unifi")
+                {
+                    registrations.Add(new RegisterDeviceForPolling(
+                        d.Id, d.CommunicationType, d.NativeId, "", 0, d.Capabilities));
+                }
             }
 
             var mediator = DistributedPubSub.Get(Context.System).Mediator;
             mediator.Tell(new Publish($"registration-response.{msg.CommunicationType}", new RegistrationResponse(registrations)));
             _log.Info("Published {Count} {Type} registrations", registrations.Count, msg.CommunicationType);
+        });
+
+        ReceiveAsync<RequestIntegrationConfig>(async msg =>
+        {
+            var config = await integrationRepo.GetByIdAsync(msg.IntegrationId);
+            var mediator = DistributedPubSub.Get(Context.System).Mediator;
+
+            if (config != null)
+            {
+                var response = new IntegrationConfigChanged(config.Id, config.Enabled, config.Settings);
+                mediator.Tell(new Publish($"integration-config.{msg.IntegrationId}", response));
+                _log.Info("Replied with integration config for {Id}", msg.IntegrationId);
+            }
+            else
+            {
+                _log.Info("No integration config found for {Id}, not replying", msg.IntegrationId);
+            }
         });
     }
 
@@ -49,5 +71,6 @@ public sealed class DeviceRegistrarActor : ReceiveActor
     {
         var mediator = DistributedPubSub.Get(Context.System).Mediator;
         mediator.Tell(new Subscribe("request-registrations", Self));
+        mediator.Tell(new Subscribe("request-integration-config", Self));
     }
 }

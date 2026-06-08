@@ -12,6 +12,8 @@ export function DiscoveredPage() {
   const [shellyHost, setShellyHost] = useState('');
   const [probing, setProbing] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState<string>('');
 
   const loadData = useCallback(async () => {
     const [devs, roomList] = await Promise.all([getDiscoveredDevices(), getRooms()]);
@@ -136,14 +138,54 @@ export function DiscoveredPage() {
         )}
       </div>
 
+      {/* Search and filter */}
+      {discovered.length > 0 && (
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input
+            type="text"
+            placeholder="Search devices..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{
+              flex: 1, minWidth: 200, padding: '8px 12px',
+              backgroundColor: 'var(--bg-hover)', border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
+              fontSize: 13, fontFamily: 'var(--font-body)', outline: 'none',
+            }}
+          />
+          {['', ...new Set(discovered.map(d => d.communicationType))].map(t => (
+            <button
+              key={t || 'all'}
+              className={`filter-pill${typeFilter === t ? ' active' : ''}`}
+              onClick={() => setTypeFilter(t)}
+            >
+              {t || 'All'}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Discovered devices list */}
-      {discovered.length === 0 ? (
+      {(() => {
+        const filtered = discovered.filter(d => {
+          if (typeFilter && d.communicationType !== typeFilter) return false;
+          if (search) {
+            const q = search.toLowerCase();
+            const name = (d.metadata?.name ?? d.metadata?.friendly_name ?? d.nativeId).toLowerCase();
+            const nid = d.nativeId.toLowerCase();
+            const caps = d.capabilities.join(' ').toLowerCase();
+            return name.includes(q) || nid.includes(q) || caps.includes(q) ||
+              Object.values(d.metadata || {}).some(v => v.toLowerCase().includes(q));
+          }
+          return true;
+        });
+        return filtered.length === 0 ? (
         <div style={{ color: 'var(--text-muted)', fontSize: 14 }}>
-          No unconfigured devices found.
+          {discovered.length === 0 ? 'No unconfigured devices found.' : 'No devices match your filter.'}
         </div>
       ) : (
         <div>
-          {discovered.map((d) => (
+          {filtered.map((d) => (
             <div key={d.id} className="discovery-card">
               {/* Large icon */}
               <div style={{
@@ -208,12 +250,14 @@ export function DiscoveredPage() {
             </div>
           ))}
         </div>
-      )}
+      );
+      })()}
 
       {configuring && rooms.length > 0 && (
         <ConfigureDeviceModal
           rooms={rooms}
           defaultName={configuring.metadata?.name ?? configuring.metadata?.friendly_name}
+          defaultRoomId={configuring.capabilities.includes('Presence') ? rooms.find(r => r.isHome)?.id : undefined}
           onConfirm={handleConfigure}
           onCancel={() => setConfiguring(null)}
         />

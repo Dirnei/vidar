@@ -14,5 +14,6 @@ public enum CapabilityType
     Contact = 9,
     Action = 10,
     Battery = 11,
+    Presence = 12,
     Extras = 99
 }

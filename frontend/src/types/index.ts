@@ -1,6 +1,7 @@
 export interface Room {
   id: string;
   name: string;
+  isHome?: boolean;
 }
 
 export interface Device {

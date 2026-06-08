@@ -16,6 +16,7 @@ public static class CapabilityMetadata
         [CapabilityType.Contact] = (false, ""),
         [CapabilityType.Action] = (false, ""),
         [CapabilityType.Battery] = (false, "%"),
+        [CapabilityType.Presence] = (false, ""),
         [CapabilityType.Extras] = (false, ""),
     };
 

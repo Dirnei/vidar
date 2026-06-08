@@ -6,6 +6,7 @@ import { DevicesPage } from './pages/DevicesPage';
 import { DiscoveredPage } from './pages/DiscoveredPage';
 import { DeviceDetailPage } from './pages/DeviceDetailPage';
 import { GroupDetailPage } from './pages/GroupDetailPage';
+import { IntegrationsPage } from './pages/IntegrationsPage';
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
           <Route path="devices/:id" element={<DeviceDetailPage />} />
           <Route path="groups/:id" element={<GroupDetailPage />} />
           <Route path="discovered" element={<DiscoveredPage />} />
+          <Route path="integrations" element={<IntegrationsPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

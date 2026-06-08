@@ -78,6 +78,11 @@ public sealed class DiscoveredDevicesController : ControllerBase
             mediator.Tell(new Publish("register.zigbee2mqtt", new RegisterDeviceForPolling(
                 device.Id, device.CommunicationType, device.NativeId, friendlyName, 0, device.Capabilities)));
         }
+        else if (discovered.CommunicationType == "unifi")
+        {
+            mediator.Tell(new Publish("register.unifi", new RegisterDeviceForPolling(
+                device.Id, device.CommunicationType, device.NativeId, "", 0, device.Capabilities)));
+        }
 
         return Created($"/api/devices/{device.Id}", new DeviceResponse(
             device.Id, device.Name, device.RoomId, null,

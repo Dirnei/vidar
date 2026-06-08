@@ -127,3 +127,28 @@ export function getDeviceStateHistory(id: string, skip = 0, limit = 20): Promise
 export function getDeviceCommandHistory(id: string, skip = 0, limit = 20): Promise<CommandHistoryEntry[]> {
   return request(`/devices/${id}/history/commands?skip=${skip}&limit=${limit}`);
 }
+
+// --- Integrations ---
+
+export interface IntegrationConfig {
+  id: string;
+  type: string;
+  enabled: boolean;
+  settings: Record<string, string>;
+}
+
+export function getIntegrations(): Promise<IntegrationConfig[]> {
+  return request('/integrations');
+}
+
+export function getIntegration(id: string): Promise<IntegrationConfig> {
+  return request(`/integrations/${id}`);
+}
+
+export function saveIntegration(id: string, data: { enabled: boolean; settings: Record<string, string> }): Promise<void> {
+  return request(`/integrations/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+
+export function deleteIntegration(id: string): Promise<void> {
+  return request(`/integrations/${id}`, { method: 'DELETE' });
+}

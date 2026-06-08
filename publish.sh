@@ -8,6 +8,7 @@ IMAGES=(
   "vidar-host:src/Vidar.Host/Dockerfile"
   "vidar-comm-shelly:src/Vidar.Communication.Shelly/Dockerfile"
   "vidar-comm-zigbee2mqtt:src/Vidar.Communication.Zigbee2Mqtt/Dockerfile"
+  "vidar-comm-unifi:src/Vidar.Communication.UniFi/Dockerfile"
 )
 
 echo "Building and publishing to ${REGISTRY} with tag ${TAG}"

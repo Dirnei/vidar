@@ -3,6 +3,7 @@ using Akka.Cluster.Sharding;
 using Akka.Hosting;
 using Akka.Remote.Hosting;
 using MongoDB.Driver;
+using Vidar.Core.Model;
 using Vidar.Core.Sharding;
 using Vidar.Host.Actors;
 using Vidar.Host.Persistence;
@@ -26,6 +27,7 @@ builder.Services.AddSingleton<IDiscoveredDeviceRepository>(new MongoDiscoveredDe
 builder.Services.AddSingleton<IDeviceStateRepository>(new MongoDeviceStateRepository(database));
 builder.Services.AddSingleton<IGroupRepository>(new MongoGroupRepository(database));
 builder.Services.AddSingleton<IHistoryRepository>(new MongoHistoryRepository(database));
+builder.Services.AddSingleton<IIntegrationConfigRepository>(new MongoIntegrationConfigRepository(database));
 builder.Services.AddHttpClient("shelly", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(5);
@@ -39,6 +41,8 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
     var deviceRepo = sp.GetRequiredService<IDeviceRepository>();
     var discoveredRepo = sp.GetRequiredService<IDiscoveredDeviceRepository>();
     var historyRepo = sp.GetRequiredService<IHistoryRepository>();
+
+    var integrationRepo = sp.GetRequiredService<IIntegrationConfigRepository>();
 
     configBuilder
         .WithRemoting(hostname, 4053)
@@ -64,11 +68,18 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
             registry.Register<DiscoveryManagerActor>(discoveryManager);
             var sseManager = system.ActorOf(SseManagerActor.Props(), "sse-manager");
             registry.Register<SseManagerActor>(sseManager);
-            system.ActorOf(DeviceRegistrarActor.Props(deviceRepo), "device-registrar");
+            system.ActorOf(DeviceRegistrarActor.Props(deviceRepo, integrationRepo), "device-registrar");
         });
 });
 
 var app = builder.Build();
+
+// Ensure the "Home" room exists
+{
+    var roomRepo = app.Services.GetRequiredService<IRoomRepository>();
+    if (await roomRepo.GetByIdAsync(RoomConfiguration.HomeId) == null)
+        await roomRepo.CreateAsync(new RoomConfiguration { Id = RoomConfiguration.HomeId, Name = "Home", IsHome = true });
+}
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapControllers();

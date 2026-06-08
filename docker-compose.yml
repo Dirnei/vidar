@@ -53,6 +53,23 @@ services:
       - VIDAR_MQTT_PASSWORD=${MQTT_PASSWORD}
       - VIDAR_Z2M_BASE_TOPIC=smarthome/z2m
 
+  vidar-comm-unifi:
+    build:
+      context: .
+      dockerfile: src/Vidar.Communication.UniFi/Dockerfile
+    depends_on:
+      - lighthouse
+    env_file:
+      - .env
+    environment:
+      - VIDAR_CLUSTER_SEED=lighthouse:4053
+      - VIDAR_HOSTNAME=vidar-comm-unifi
+      - VIDAR_AKKA_PORT=4056
+      - VIDAR_UNIFI_HOST=${UNIFI_HOST}
+      - VIDAR_UNIFI_API_KEY=${UNIFI_API_KEY}
+      - VIDAR_UNIFI_SITE_ID=${UNIFI_SITE_ID:-default}
+      - VIDAR_UNIFI_POLL_INTERVAL=30
+
   mongodb:
     image: mongo:8
     volumes:
