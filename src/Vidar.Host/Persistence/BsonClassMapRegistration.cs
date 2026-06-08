@@ -74,6 +74,7 @@ public static class BsonClassMapRegistration
             BsonClassMap.RegisterClassMap<ApplicationConfig>(cm =>
             {
                 cm.AutoMap();
+                cm.SetIgnoreExtraElements(true);
                 cm.MapIdProperty(c => c.Id);
             });
 
