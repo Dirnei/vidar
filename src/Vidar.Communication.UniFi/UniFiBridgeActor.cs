@@ -394,10 +394,6 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         var caps = new List<CapabilityType>();
         var features = device.Features ?? [];
 
-        // Switching devices may have PoE ports — represent as Power capability
-        if (features.Contains("switching"))
-            caps.Add(CapabilityType.Power);
-
         // Always add Extras for network device stats
         caps.Add(CapabilityType.Extras);
 
