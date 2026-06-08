@@ -198,12 +198,15 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
             StartInboundStream();
             StartOutboundStream();
 
+            PublishStatus("running");
+
             // Request registrations from Host (delayed to let cluster form)
             Timers.StartSingleTimer("fetch-registrations", new FetchRegistrations(), TimeSpan.FromSeconds(10));
         }
         catch (Exception ex)
         {
             _log.Error(ex, "Failed to connect to MQTT broker at {Host}:{Port}", _config.MqttHost, _config.MqttPort);
+            PublishStatus("error", ex.Message);
         }
     }
 
@@ -359,6 +362,7 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
             }
 
             _log.Info("Z2M device list processed: {Count} devices tracked", _devicesByIeeeAddress.Count);
+            PublishStatus("running");
         }
         catch (Exception ex)
         {
@@ -388,6 +392,14 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
             return;
         var topic = $"{_config.BaseTopic}/{device.FriendlyName}/get";
         _ = _mqttClient.PublishAsync(topic, "{\"state\":\"\"}", QualityOfService.AtMostOnceDelivery);
+    }
+
+    private void PublishStatus(string status, string? error = null)
+    {
+        var deviceCount = _devicesByIeeeAddress.Count;
+        var mediator = DistributedPubSub.Get(Context.System).Mediator;
+        mediator.Tell(new Publish("application-status",
+            new ApplicationStatusUpdate("zigbee2mqtt", status, deviceCount, error)));
     }
 
     private static string? BuildCommandPayload(CapabilityType capability, object value)

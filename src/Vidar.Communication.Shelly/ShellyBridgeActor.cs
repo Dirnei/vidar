@@ -201,6 +201,13 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
         Timers.StartSingleTimer("fetch-registrations", FetchRegistrations.Instance, TimeSpan.FromSeconds(10));
     }
 
+    private void PublishStatus()
+    {
+        var mediator = DistributedPubSub.Get(Context.System).Mediator;
+        mediator.Tell(new Publish("application-status",
+            new ApplicationStatusUpdate("shelly", "running", _devices.Count)));
+    }
+
     private void PollAllDevices()
     {
         foreach (var device in _devices.Values)
@@ -208,6 +215,8 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
             if (device.VidarDeviceId == null) continue;
             PollDeviceAsync(device).PipeTo(Self, failure: ex => new PollFailed(device.NativeId, ex));
         }
+
+        PublishStatus();
     }
 
     private async Task PollDeviceAsync(ShellyDevice device)

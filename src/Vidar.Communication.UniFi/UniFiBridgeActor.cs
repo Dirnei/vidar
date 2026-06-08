@@ -115,6 +115,7 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         if (!enabled)
         {
             _log.Info("UniFi integration is disabled — polling stopped");
+            PublishStatus("stopped");
             return;
         }
 
@@ -188,6 +189,7 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         catch (Exception ex)
         {
             _log.Error(ex, "UniFi initial fetch failed, retrying in 30s");
+            PublishStatus("error", ex.Message);
             Timers.StartSingleTimer("initial-fetch-retry", InitialFetch.Instance, TimeSpan.FromSeconds(30));
         }
     }
@@ -210,10 +212,12 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         {
             await PollDevicesAsync();
             await PollClientsAsync();
+            PublishStatus("running");
         }
         catch (Exception ex)
         {
             _log.Error(ex, "UniFi poll failed");
+            PublishStatus("error", ex.Message);
         }
     }
 
@@ -410,6 +414,14 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         if (!string.IsNullOrEmpty(device.FirmwareVersion)) metadata["firmware"] = device.FirmwareVersion;
         if (device.Features?.Count > 0) metadata["features"] = string.Join(",", device.Features);
         return metadata;
+    }
+
+    private void PublishStatus(string status, string? error = null)
+    {
+        var deviceCount = _devicesByMac.Count + _clientsById.Count;
+        var mediator = DistributedPubSub.Get(Context.System).Mediator;
+        mediator.Tell(new Publish("application-status",
+            new ApplicationStatusUpdate("unifi", status, deviceCount, error)));
     }
 
     private static Dictionary<string, string> BuildClientMetadata(UniFiClient client)
