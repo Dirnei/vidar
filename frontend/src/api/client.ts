@@ -1,4 +1,4 @@
-import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry } from '../types';
+import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry, Application } from '../types';
 
 const BASE = '/api';
 
@@ -128,27 +128,16 @@ export function getDeviceCommandHistory(id: string, skip = 0, limit = 20): Promi
   return request(`/devices/${id}/history/commands?skip=${skip}&limit=${limit}`);
 }
 
-// --- Integrations ---
+// --- Applications ---
 
-export interface IntegrationConfig {
-  id: string;
-  type: string;
-  enabled: boolean;
-  settings: Record<string, string>;
+export function getApplications(): Promise<Application[]> {
+  return request('/applications');
 }
 
-export function getIntegrations(): Promise<IntegrationConfig[]> {
-  return request('/integrations');
+export function getApplication(id: string): Promise<Application> {
+  return request(`/applications/${id}`);
 }
 
-export function getIntegration(id: string): Promise<IntegrationConfig> {
-  return request(`/integrations/${id}`);
-}
-
-export function saveIntegration(id: string, data: { enabled: boolean; settings: Record<string, string> }): Promise<void> {
-  return request(`/integrations/${id}`, { method: 'PUT', body: JSON.stringify(data) });
-}
-
-export function deleteIntegration(id: string): Promise<void> {
-  return request(`/integrations/${id}`, { method: 'DELETE' });
+export function saveApplication(id: string, data: { enabled: boolean; settings: Record<string, string> }): Promise<void> {
+  return request(`/applications/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 }

@@ -55,7 +55,13 @@ export type Capability =
   | 'Motion'
   | 'Power'
   | 'Energy'
-  | 'Humidity';
+  | 'Humidity'
+  | 'Light'
+  | 'Contact'
+  | 'Action'
+  | 'Battery'
+  | 'Presence'
+  | 'Extras';
 
 export interface StateHistoryEntry {
   capability: string;
@@ -69,3 +75,28 @@ export interface CommandHistoryEntry {
   source: string | null;
   timestamp: string;
 }
+
+export interface Application {
+  id: string;
+  name: string;
+  type: 'provider' | 'consumer';
+  enabled: boolean;
+  status: 'running' | 'stopped' | 'error' | 'unconfigured';
+  deviceCount: number;
+  settings: Record<string, string>;
+  errorMessage: string | null;
+}
+
+export interface FilterSection {
+  key: string;
+  label: string;
+  options: FilterOption[];
+}
+
+export interface FilterOption {
+  value: string;
+  label: string;
+  count: number;
+}
+
+export type ActiveFilters = Record<string, Set<string>>;
