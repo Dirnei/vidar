@@ -5,7 +5,7 @@ const navItems = [
   { to: '/', label: 'Rooms', icon: '◻', end: true },
   { to: '/devices', label: 'All Devices', icon: '◈', end: false },
   { to: '/discovered', label: 'Setup', icon: '⊕', end: true },
-  { to: '/integrations', label: 'Integrations', icon: '⚡', end: true },
+  { to: '/applications', label: 'Applications', icon: '⧉', end: true },
 ];
 
 export function SideNav() {
