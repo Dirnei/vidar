@@ -149,11 +149,32 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
 
     if (device.capabilities.includes('Presence')) {
       const present = state['Presence'] === true;
+      const ip = device.settings?.ip;
       items.push(
         <span key="presence" style={{ fontSize: 12, fontWeight: 500, color: present ? 'var(--accent-green)' : 'var(--text-muted)' }}>
           {present ? 'Home' : 'Away'}
         </span>
       );
+      if (ip) {
+        items.push(
+          <span
+            key="ip"
+            role="button"
+            title="Click to copy"
+            onClick={e => { e.preventDefault(); navigator.clipboard.writeText(ip); }}
+            style={{
+              fontSize: 12, fontFamily: 'monospace', color: 'var(--text-secondary)',
+              cursor: 'pointer', padding: '1px 6px', borderRadius: 4,
+              background: 'var(--bg-hover)', border: '1px solid var(--border-subtle)',
+              transition: 'border-color 0.15s, color 0.15s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; e.currentTarget.style.color = 'var(--accent-primary)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+          >
+            {ip}
+          </span>
+        );
+      }
     }
 
     return items;
