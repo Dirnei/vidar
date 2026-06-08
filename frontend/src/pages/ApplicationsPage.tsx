@@ -453,7 +453,7 @@ export function ApplicationsPage() {
 
   if (loading) {
     return (
-      <div className="main-inner" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+      <div className="page-content" style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
         Loading applications...
       </div>
     );
@@ -463,7 +463,7 @@ export function ApplicationsPage() {
   const consumers = apps.filter(a => a.type === 'consumer');
 
   return (
-    <div className="main-inner" style={pageStyle}>
+    <div className="page-content" style={pageStyle}>
       <div style={headingStyle}>Applications</div>
       <div style={subtitleStyle}>Manage provider and consumer applications.</div>
 
