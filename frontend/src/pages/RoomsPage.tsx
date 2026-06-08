@@ -74,7 +74,7 @@ export function RoomsPage() {
           placeholder="New room name…"
           value={newRoomName}
           onChange={(e) => setNewRoomName(e.target.value)}
-          style={{ minWidth: 240, fontFamily: 'var(--font-body)', fontSize: 14 }}
+          style={{ minWidth: 180, flex: 1, fontFamily: 'var(--font-body)', fontSize: 14 }}
         />
         <button
           type="submit"
@@ -111,7 +111,7 @@ export function RoomsPage() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(min(360px, 100%), 1fr))',
             gap: 18,
           }}
         >

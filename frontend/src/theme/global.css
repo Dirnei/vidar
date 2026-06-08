@@ -291,6 +291,11 @@ input[type="range"]:not(.slider-dimmer):not(.slider-cover)::-moz-range-thumb {
   border: none;
 }
 
+/* Touch target improvements */
+button, [role="switch"] {
+  touch-action: manipulation;
+}
+
 /* Page fade-in animation */
 @keyframes fadeUp {
   from {
@@ -592,4 +597,141 @@ input[type="range"]:not(.slider-dimmer):not(.slider-cover)::-moz-range-thumb {
   color: var(--text-muted);
   margin-bottom: 6px;
   display: block;
+}
+
+/* =====================================================
+   RESPONSIVE — Mobile (≤768px)
+   Sidebar becomes a bottom tab bar (iOS/Android feel)
+   ===================================================== */
+@media (max-width: 768px) {
+  /* Shell: column direction so sidebar stacks below content */
+  .app-shell {
+    flex-direction: column;
+  }
+
+  /* Sidebar → fixed bottom bar */
+  .sidebar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    top: auto;
+    width: 100%;
+    height: auto;
+    min-height: auto;
+    flex-direction: row;
+    border-right: none;
+    border-top: 1px solid var(--border-subtle);
+    z-index: 100;
+    padding: 0;
+    overflow-y: visible;
+    /* Safe area for notched phones (iOS home bar) */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Hide the logo text in the bottom bar */
+  .sidebar-logo {
+    display: none;
+  }
+
+  /* Nav becomes a horizontal row of tabs */
+  .sidebar-nav {
+    flex-direction: row;
+    justify-content: space-around;
+    width: 100%;
+    padding: 0;
+    gap: 0;
+  }
+
+  /* Each tab item: icon on top, label below */
+  .sidebar-nav-item {
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px 4px;
+    font-size: 10px;
+    border-left: none !important;
+    border-bottom: 2px solid transparent;
+    flex: 1;
+    text-align: center;
+    justify-content: center;
+    min-height: 52px;
+  }
+
+  .sidebar-nav-item:hover {
+    background-color: var(--accent-primary-dim);
+  }
+
+  .sidebar-nav-item.active {
+    border-left: none !important;
+    border-bottom: 2px solid var(--accent-primary);
+    background-color: var(--accent-primary-dim);
+  }
+
+  /* Larger icons for touch */
+  .sidebar-nav-icon {
+    font-size: 20px;
+    width: auto;
+  }
+
+  /* Hide expert mode toggle — no room in bottom bar */
+  .sidebar > div:last-child {
+    display: none;
+  }
+
+  /* Main content: remove left offset, add bottom padding for the tab bar */
+  .main-content {
+    margin-left: 0;
+    padding-bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Tighter inner padding on small screens */
+  .main-inner {
+    padding: 16px;
+  }
+
+  /* Slightly smaller page title */
+  .page-title {
+    font-size: 20px;
+    margin-bottom: 16px;
+  }
+
+  .page-section-title {
+    font-size: 15px;
+  }
+
+  /* Device rows: let controls wrap below the name naturally */
+  .device-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Discovery cards: stack icon+info vertically and move button to its own row */
+  .discovery-card {
+    flex-wrap: wrap;
+  }
+
+  /* Modals: full-width on mobile */
+  .modal-dialog {
+    width: calc(100vw - 32px);
+    max-width: 100%;
+    padding: 20px 18px;
+  }
+
+  /* Toggle switch: scale up for touch target ≥44px */
+  [role="switch"] {
+    transform: scale(1.2);
+    transform-origin: center;
+  }
+
+  /* Dimmer slider thumb: larger on mobile */
+  input[type="range"].slider-dimmer::-webkit-slider-thumb {
+    width: 22px;
+    height: 22px;
+    margin-top: -9px;
+  }
+
+  input[type="range"].slider-dimmer::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+  }
 }

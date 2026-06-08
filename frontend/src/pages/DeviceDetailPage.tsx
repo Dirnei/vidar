@@ -167,7 +167,7 @@ export function DeviceDetailPage() {
       {/* Header — view or edit mode */}
       {!editing ? (
         <div style={{ marginBottom: isOffline ? 12 : 28 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
             <CapabilityIcon capability={primaryCapabilityIcon(device.capabilities)} size={28} />
             <div style={{
               fontFamily: 'var(--font-heading)', fontSize: 26, fontWeight: 700,
@@ -310,7 +310,7 @@ export function DeviceDetailPage() {
       {/* Capability cards */}
       {device.capabilities.length > 0 && (
         <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(220px, 100%), 1fr))',
           gap: 14, marginBottom: 28,
         }}>
           {device.capabilities.map(cap => renderCapabilityCard(cap, state, cmd, device.settings))}
@@ -520,7 +520,7 @@ const fieldInputStyle: React.CSSProperties = {
   borderRadius: 'var(--radius-sm)', padding: '9px 13px',
   color: 'var(--text-primary)', fontFamily: 'var(--font-body)',
   fontSize: 14, outline: 'none', transition: 'border-color 0.15s, box-shadow 0.15s',
-  maxWidth: 400,
+  width: '100%',
 };
 
 function handleFocus(e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) {

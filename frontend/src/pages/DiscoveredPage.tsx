@@ -54,6 +54,7 @@ export function DiscoveredPage() {
 
   const inputStyle: React.CSSProperties = {
     flex: 1,
+    minWidth: 0,
     padding: '9px 13px',
     backgroundColor: 'var(--bg-hover)',
     border: '1px solid var(--border-default)',
@@ -106,7 +107,7 @@ export function DiscoveredPage() {
         >
           Add Shelly Device by IP
         </div>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             style={inputStyle}
             type="text"
