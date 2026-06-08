@@ -126,6 +126,27 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
       );
     }
 
+    if (device.capabilities.includes('Contact')) {
+      const closed = state['Contact'] === true;
+      items.push(
+        <span key="contact" style={{ fontSize: 12, fontWeight: 500, color: closed ? 'var(--accent-teal)' : 'var(--accent-red)' }}>
+          {closed ? 'Closed' : 'Open'}
+        </span>
+      );
+    }
+
+    if (device.capabilities.includes('Battery')) {
+      const battery = state['Battery'];
+      if (battery != null) {
+        const level = Number(battery);
+        items.push(
+          <span key="battery" style={{ fontSize: 11, color: level < 20 ? 'var(--accent-red)' : 'var(--text-muted)' }}>
+            {Math.round(level)}%
+          </span>
+        );
+      }
+    }
+
     return items;
   }
 

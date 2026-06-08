@@ -57,6 +57,20 @@ public static class BsonClassMapRegistration
                 cm.MapProperty(s => s.States).SetSerializer(statesDictSerializer);
             });
 
+            BsonClassMap.RegisterClassMap<StateHistoryEntry>(cm =>
+            {
+                cm.AutoMap();
+                cm.SetIgnoreExtraElements(true);
+                cm.MapProperty(e => e.Value).SetSerializer(new ObjectSerializer(ObjectSerializer.AllAllowedTypes));
+            });
+
+            BsonClassMap.RegisterClassMap<CommandHistoryEntry>(cm =>
+            {
+                cm.AutoMap();
+                cm.SetIgnoreExtraElements(true);
+                cm.MapProperty(e => e.Value).SetSerializer(new ObjectSerializer(ObjectSerializer.AllAllowedTypes));
+            });
+
             _registered = true;
         }
     }

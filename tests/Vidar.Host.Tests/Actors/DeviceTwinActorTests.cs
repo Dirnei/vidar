@@ -48,13 +48,15 @@ public sealed class DeviceTwinActorTests : TestKit
         var deviceId = Guid.NewGuid();
         var stateRepo = Substitute.For<IDeviceStateRepository>();
         var deviceRepo = Substitute.For<IDeviceRepository>();
+        var historyRepo = Substitute.For<IHistoryRepository>();
 
         stateRepo.GetByDeviceIdAsync(deviceId).Returns((DeviceState?)null);
         deviceRepo.GetByIdAsync(deviceId).Returns((DeviceConfiguration?)null);
         stateRepo.UpsertAsync(Arg.Any<DeviceState>()).Returns(Task.CompletedTask);
+        historyRepo.AddStateEntryAsync(Arg.Any<StateHistoryEntry>()).Returns(Task.CompletedTask);
 
         var actor = Sys.ActorOf(
-            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo),
+            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo, historyRepo),
             $"device-twin-{deviceId}");
 
         var update = new DeviceStateUpdate(deviceId, CapabilityType.Switch, true);
@@ -101,8 +103,11 @@ public sealed class DeviceTwinActorTests : TestKit
         // Wait for subscription acknowledgement (requires cluster membership)
         probe.ExpectMsg<SubscribeAck>(TimeSpan.FromSeconds(5));
 
+        var historyRepo = Substitute.For<IHistoryRepository>();
+        historyRepo.AddStateEntryAsync(Arg.Any<StateHistoryEntry>()).Returns(Task.CompletedTask);
+
         var actor = Sys.ActorOf(
-            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo),
+            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo, historyRepo),
             $"device-twin-pubsub-{deviceId}");
 
         var update = new DeviceStateUpdate(deviceId, CapabilityType.Temperature, 21.5);

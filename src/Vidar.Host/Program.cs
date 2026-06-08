@@ -25,6 +25,7 @@ builder.Services.AddSingleton<IDeviceRepository>(new MongoDeviceRepository(datab
 builder.Services.AddSingleton<IDiscoveredDeviceRepository>(new MongoDiscoveredDeviceRepository(database));
 builder.Services.AddSingleton<IDeviceStateRepository>(new MongoDeviceStateRepository(database));
 builder.Services.AddSingleton<IGroupRepository>(new MongoGroupRepository(database));
+builder.Services.AddSingleton<IHistoryRepository>(new MongoHistoryRepository(database));
 builder.Services.AddHttpClient("shelly", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(5);
@@ -37,6 +38,7 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
     var stateRepo = sp.GetRequiredService<IDeviceStateRepository>();
     var deviceRepo = sp.GetRequiredService<IDeviceRepository>();
     var discoveredRepo = sp.GetRequiredService<IDiscoveredDeviceRepository>();
+    var historyRepo = sp.GetRequiredService<IHistoryRepository>();
 
     configBuilder
         .WithRemoting(hostname, 4053)
@@ -49,7 +51,7 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
         .WithShardRegion<DeviceTwinRegion>(
             "device-twin",
             (system, registry, resolver) => entityId =>
-                DeviceTwinActor.Props(entityId, stateRepo, deviceRepo),
+                DeviceTwinActor.Props(entityId, stateRepo, deviceRepo, historyRepo),
             new DeviceTwinMessageExtractor(100),
             new ShardOptions
             {

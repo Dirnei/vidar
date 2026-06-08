@@ -17,6 +17,7 @@ public sealed class DevicesController : ControllerBase
     private readonly IDeviceStateRepository _stateRepo;
     private readonly IRoomRepository _roomRepo;
     private readonly IGroupRepository _groupRepo;
+    private readonly IHistoryRepository _historyRepo;
     private readonly IRequiredActor<DeviceTwinRegion> _twinRegion;
     private readonly ActorSystem _actorSystem;
     private readonly ILogger<DevicesController> _logger;
@@ -26,6 +27,7 @@ public sealed class DevicesController : ControllerBase
         IDeviceStateRepository stateRepo,
         IRoomRepository roomRepo,
         IGroupRepository groupRepo,
+        IHistoryRepository historyRepo,
         IRequiredActor<DeviceTwinRegion> twinRegion,
         ActorSystem actorSystem,
         ILogger<DevicesController> logger)
@@ -34,6 +36,7 @@ public sealed class DevicesController : ControllerBase
         _stateRepo = stateRepo;
         _roomRepo = roomRepo;
         _groupRepo = groupRepo;
+        _historyRepo = historyRepo;
         _twinRegion = twinRegion;
         _actorSystem = actorSystem;
         _logger = logger;
@@ -170,5 +173,31 @@ public sealed class DevicesController : ControllerBase
         if (device == null) return NotFound();
         await _deviceRepo.DeleteAsync(id);
         return NoContent();
+    }
+
+    [HttpGet("{id:guid}/history/state")]
+    public async Task<IActionResult> GetStateHistory(
+        Guid id,
+        [FromQuery] int skip = 0,
+        [FromQuery] int limit = 20,
+        [FromQuery] DateTime? from = null,
+        [FromQuery] DateTime? to = null)
+    {
+        var entries = await _historyRepo.GetStateHistoryAsync(id, skip, limit, from, to);
+        var response = entries.Select(e => new { e.Capability, e.Value, e.Timestamp });
+        return Ok(response);
+    }
+
+    [HttpGet("{id:guid}/history/commands")]
+    public async Task<IActionResult> GetCommandHistory(
+        Guid id,
+        [FromQuery] int skip = 0,
+        [FromQuery] int limit = 20,
+        [FromQuery] DateTime? from = null,
+        [FromQuery] DateTime? to = null)
+    {
+        var entries = await _historyRepo.GetCommandHistoryAsync(id, skip, limit, from, to);
+        var response = entries.Select(e => new { e.Capability, e.Value, e.Source, e.Timestamp });
+        return Ok(response);
     }
 }

@@ -1,4 +1,4 @@
-import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload } from '../types';
+import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry } from '../types';
 
 const BASE = '/api';
 
@@ -116,4 +116,14 @@ export function discoverShellyDevice(host: string): Promise<{ status: string; ho
     method: 'POST',
     body: JSON.stringify({ host }),
   });
+}
+
+// --- History ---
+
+export function getDeviceStateHistory(id: string, skip = 0, limit = 20): Promise<StateHistoryEntry[]> {
+  return request(`/devices/${id}/history/state?skip=${skip}&limit=${limit}`);
+}
+
+export function getDeviceCommandHistory(id: string, skip = 0, limit = 20): Promise<CommandHistoryEntry[]> {
+  return request(`/devices/${id}/history/commands?skip=${skip}&limit=${limit}`);
 }

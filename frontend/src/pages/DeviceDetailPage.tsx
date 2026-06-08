@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import type { Device, Room } from '../types';
-import { getDevice, getRooms, sendCommand, updateDeviceSettings, deleteDevice } from '../api/client';
+import type { Device, Room, StateHistoryEntry, CommandHistoryEntry } from '../types';
+import { getDevice, getRooms, sendCommand, updateDeviceSettings, deleteDevice, getDeviceStateHistory, getDeviceCommandHistory } from '../api/client';
 import { subscribeDeviceState } from '../api/sse';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { ProgressBar } from '../components/ProgressBar';
@@ -18,6 +18,13 @@ export function DeviceDetailPage() {
   const [device, setDevice] = useState<Device | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // History state
+  const [historyTab, setHistoryTab] = useState<'state' | 'commands'>('state');
+  const [stateHistory, setStateHistory] = useState<StateHistoryEntry[]>([]);
+  const [commandHistory, setCommandHistory] = useState<CommandHistoryEntry[]>([]);
+  const [historySkip, setHistorySkip] = useState(0);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   // Edit mode state
   const [editing, setEditing] = useState(false);
@@ -47,6 +54,34 @@ export function DeviceDetailPage() {
     });
     return unsub;
   }, [loadDevice, id]);
+
+  useEffect(() => {
+    if (!id || !expert) return;
+    setHistorySkip(0);
+    setStateHistory([]);
+    setCommandHistory([]);
+  }, [id, expert, historyTab]);
+
+  const loadHistory = useCallback(async (skip: number) => {
+    if (!id) return;
+    setHistoryLoading(true);
+    try {
+      if (historyTab === 'state') {
+        const entries = await getDeviceStateHistory(id, skip, 20);
+        setStateHistory(prev => skip === 0 ? entries : [...prev, ...entries]);
+      } else {
+        const entries = await getDeviceCommandHistory(id, skip, 20);
+        setCommandHistory(prev => skip === 0 ? entries : [...prev, ...entries]);
+      }
+      setHistorySkip(skip + 20);
+    } catch { /* ignore */ }
+    finally { setHistoryLoading(false); }
+  }, [id, historyTab]);
+
+  useEffect(() => {
+    if (!expert) return;
+    loadHistory(0);
+  }, [expert, loadHistory]);
 
   async function enterEditMode() {
     if (!device) return;
@@ -344,9 +379,128 @@ export function DeviceDetailPage() {
           )}
         </div>
       )}
+
+      {/* History section (expert mode only) */}
+      {expert && (
+        <div style={{
+          background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-md)', padding: '16px 18px', marginTop: 14,
+          boxShadow: 'var(--shadow-card)',
+        }}>
+          <div style={{
+            fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const,
+            letterSpacing: '0.08em', color: 'var(--accent-primary)', marginBottom: 14,
+            fontFamily: 'var(--font-body)',
+          }}>
+            History
+          </div>
+
+          {/* Tabs */}
+          <div style={{ display: 'flex', gap: 4, marginBottom: 14 }}>
+            {(['state', 'commands'] as const).map(tab => (
+              <button
+                key={tab}
+                onClick={() => setHistoryTab(tab)}
+                style={{
+                  padding: '5px 14px', fontSize: 12, fontWeight: 600,
+                  fontFamily: 'var(--font-body)', cursor: 'pointer',
+                  borderRadius: 'var(--radius-sm)', transition: 'all 0.15s',
+                  background: historyTab === tab ? 'var(--accent-primary-dim)' : 'var(--bg-hover)',
+                  border: `1px solid ${historyTab === tab ? 'var(--accent-primary)' : 'var(--border-default)'}`,
+                  color: historyTab === tab ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                  textTransform: 'capitalize' as const,
+                }}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
+
+          {/* Table */}
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{
+              width: '100%', borderCollapse: 'collapse',
+              fontFamily: 'monospace', fontSize: 12,
+            }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                  <th style={historyThStyle}>Timestamp</th>
+                  <th style={historyThStyle}>Capability</th>
+                  <th style={historyThStyle}>Value</th>
+                  {historyTab === 'commands' && <th style={historyThStyle}>Source</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {historyTab === 'state'
+                  ? stateHistory.map((e, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      <td style={historyTdStyle}>{formatTimeAgo(e.timestamp)}</td>
+                      <td style={{ ...historyTdStyle, color: 'var(--accent-primary)' }}>{e.capability}</td>
+                      <td style={historyTdStyle}>{formatHistoryValue(e.value)}</td>
+                    </tr>
+                  ))
+                  : commandHistory.map((e, i) => (
+                    <tr key={i} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                      <td style={historyTdStyle}>{formatTimeAgo(e.timestamp)}</td>
+                      <td style={{ ...historyTdStyle, color: 'var(--accent-primary)' }}>{e.capability}</td>
+                      <td style={historyTdStyle}>{formatHistoryValue(e.value)}</td>
+                      <td style={{ ...historyTdStyle, color: 'var(--text-muted)' }}>{e.source ?? '—'}</td>
+                    </tr>
+                  ))
+                }
+                {(historyTab === 'state' ? stateHistory : commandHistory).length === 0 && !historyLoading && (
+                  <tr>
+                    <td colSpan={historyTab === 'commands' ? 4 : 3} style={{ ...historyTdStyle, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>
+                      No history yet
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Load More */}
+          <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <button
+              className="btn-secondary"
+              disabled={historyLoading}
+              onClick={() => loadHistory(historySkip)}
+              style={{ fontSize: 12, padding: '6px 14px', opacity: historyLoading ? 0.5 : 1 }}
+            >
+              {historyLoading ? 'Loading…' : 'Load More'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+// --- History helpers ---
+
+function formatTimeAgo(ts: string): string {
+  const diff = Date.now() - new Date(ts).getTime();
+  if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`;
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  return new Date(ts).toLocaleString();
+}
+
+function formatHistoryValue(v: unknown): string {
+  if (v === null || v === undefined) return '—';
+  if (typeof v === 'object') return JSON.stringify(v);
+  return String(v);
+}
+
+const historyThStyle: React.CSSProperties = {
+  padding: '6px 10px', textAlign: 'left' as const, fontSize: 10,
+  fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.06em',
+  color: 'var(--text-muted)', fontFamily: 'var(--font-body)',
+};
+
+const historyTdStyle: React.CSSProperties = {
+  padding: '6px 10px', color: 'var(--text-secondary)', verticalAlign: 'middle',
+};
 
 // --- Shared styles ---
 

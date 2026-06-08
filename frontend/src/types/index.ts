@@ -55,3 +55,16 @@ export type Capability =
   | 'Power'
   | 'Energy'
   | 'Humidity';
+
+export interface StateHistoryEntry {
+  capability: string;
+  value: unknown;
+  timestamp: string;
+}
+
+export interface CommandHistoryEntry {
+  capability: string;
+  value: unknown;
+  source: string | null;
+  timestamp: string;
+}
