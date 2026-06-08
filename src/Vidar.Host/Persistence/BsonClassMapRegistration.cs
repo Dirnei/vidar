@@ -71,7 +71,7 @@ public static class BsonClassMapRegistration
                 cm.MapProperty(e => e.Value).SetSerializer(new ObjectSerializer(ObjectSerializer.AllAllowedTypes));
             });
 
-            BsonClassMap.RegisterClassMap<IntegrationConfig>(cm =>
+            BsonClassMap.RegisterClassMap<ApplicationConfig>(cm =>
             {
                 cm.AutoMap();
                 cm.MapIdProperty(c => c.Id);

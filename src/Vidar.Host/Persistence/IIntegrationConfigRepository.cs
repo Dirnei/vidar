@@ -2,10 +2,10 @@ using Vidar.Core.Model;
 
 namespace Vidar.Host.Persistence;
 
-public interface IIntegrationConfigRepository
+public interface IApplicationConfigRepository
 {
-    Task<List<IntegrationConfig>> GetAllAsync();
-    Task<IntegrationConfig?> GetByIdAsync(string id);
-    Task UpsertAsync(IntegrationConfig config);
+    Task<List<ApplicationConfig>> GetAllAsync();
+    Task<ApplicationConfig?> GetByIdAsync(string id);
+    Task UpsertAsync(ApplicationConfig config);
     Task DeleteAsync(string id);
 }

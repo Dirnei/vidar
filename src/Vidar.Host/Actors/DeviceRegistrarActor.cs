@@ -10,10 +10,10 @@ public sealed class DeviceRegistrarActor : ReceiveActor
 {
     private readonly ILoggingAdapter _log = Context.GetLogger();
 
-    public static Props Props(IDeviceRepository deviceRepo, IIntegrationConfigRepository integrationRepo) =>
-        Akka.Actor.Props.Create(() => new DeviceRegistrarActor(deviceRepo, integrationRepo));
+    public static Props Props(IDeviceRepository deviceRepo, IApplicationConfigRepository appRepo) =>
+        Akka.Actor.Props.Create(() => new DeviceRegistrarActor(deviceRepo, appRepo));
 
-    public DeviceRegistrarActor(IDeviceRepository deviceRepo, IIntegrationConfigRepository integrationRepo)
+    public DeviceRegistrarActor(IDeviceRepository deviceRepo, IApplicationConfigRepository appRepo)
     {
         ReceiveAsync<RequestRegistrations>(async msg =>
         {
@@ -51,7 +51,7 @@ public sealed class DeviceRegistrarActor : ReceiveActor
 
         ReceiveAsync<RequestIntegrationConfig>(async msg =>
         {
-            var config = await integrationRepo.GetByIdAsync(msg.IntegrationId);
+            var config = await appRepo.GetByIdAsync(msg.IntegrationId);
             var mediator = DistributedPubSub.Get(Context.System).Mediator;
 
             if (config != null)

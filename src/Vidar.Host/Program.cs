@@ -27,7 +27,7 @@ builder.Services.AddSingleton<IDiscoveredDeviceRepository>(new MongoDiscoveredDe
 builder.Services.AddSingleton<IDeviceStateRepository>(new MongoDeviceStateRepository(database));
 builder.Services.AddSingleton<IGroupRepository>(new MongoGroupRepository(database));
 builder.Services.AddSingleton<IHistoryRepository>(new MongoHistoryRepository(database));
-builder.Services.AddSingleton<IIntegrationConfigRepository>(new MongoIntegrationConfigRepository(database));
+builder.Services.AddSingleton<IApplicationConfigRepository>(new MongoApplicationConfigRepository(database));
 builder.Services.AddHttpClient("shelly", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(5);
@@ -42,7 +42,7 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
     var discoveredRepo = sp.GetRequiredService<IDiscoveredDeviceRepository>();
     var historyRepo = sp.GetRequiredService<IHistoryRepository>();
 
-    var integrationRepo = sp.GetRequiredService<IIntegrationConfigRepository>();
+    var appRepo = sp.GetRequiredService<IApplicationConfigRepository>();
 
     configBuilder
         .WithRemoting(hostname, 4053)
@@ -68,7 +68,7 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
             registry.Register<DiscoveryManagerActor>(discoveryManager);
             var sseManager = system.ActorOf(SseManagerActor.Props(), "sse-manager");
             registry.Register<SseManagerActor>(sseManager);
-            system.ActorOf(DeviceRegistrarActor.Props(deviceRepo, integrationRepo), "device-registrar");
+            system.ActorOf(DeviceRegistrarActor.Props(deviceRepo, appRepo), "device-registrar");
         });
 });
 

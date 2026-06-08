@@ -11,12 +11,12 @@ namespace Vidar.Host.Api;
 [Route("api/integrations")]
 public sealed class IntegrationsController : ControllerBase
 {
-    private readonly IIntegrationConfigRepository _repo;
+    private readonly IApplicationConfigRepository _repo;
     private readonly ActorSystem _actorSystem;
     private readonly ILogger<IntegrationsController> _logger;
 
     public IntegrationsController(
-        IIntegrationConfigRepository repo,
+        IApplicationConfigRepository repo,
         ActorSystem actorSystem,
         ILogger<IntegrationsController> logger)
     {
@@ -44,10 +44,11 @@ public sealed class IntegrationsController : ControllerBase
     public async Task<IActionResult> Upsert(string id, [FromBody] UpsertIntegrationRequest request)
     {
         var existing = await _repo.GetByIdAsync(id);
-        var config = existing ?? new IntegrationConfig
+        var config = existing ?? new ApplicationConfig
         {
             Id = id,
-            Type = id,
+            Name = id,
+            ApplicationType = ApplicationType.Provider,
         };
 
         config.Enabled = request.Enabled;
