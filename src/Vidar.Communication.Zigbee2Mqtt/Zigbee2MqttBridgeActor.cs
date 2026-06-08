@@ -19,7 +19,8 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
 
     private readonly ILoggingAdapter _log = Context.GetLogger();
     private readonly IMaterializer _materializer;
-    private readonly Zigbee2MqttConfig _config;
+    private readonly Zigbee2MqttConfig _defaultConfig;
+    private Zigbee2MqttConfig _config;
     private readonly IActorRef _shardProxy;
 
     // Z2M device tracking
@@ -41,6 +42,7 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
     private sealed class CheckConnection { public static readonly CheckConnection Instance = new(); }
     private sealed class RepublishDiscoveries { public static readonly RepublishDiscoveries Instance = new(); }
     private sealed class FetchRegistrations { }
+    private sealed class RequestConfig { public static readonly RequestConfig Instance = new(); }
 
     public static Props Props(Zigbee2MqttConfig config, IActorRef shardProxy) =>
         Akka.Actor.Props.Create(() => new Zigbee2MqttBridgeActor(config, shardProxy));
@@ -48,6 +50,7 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
     public Zigbee2MqttBridgeActor(Zigbee2MqttConfig config, IActorRef shardProxy)
     {
         _materializer = Context.Materializer();
+        _defaultConfig = config;
         _config = config;
         _shardProxy = shardProxy;
 
@@ -112,6 +115,37 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
 
         // Discovery republish
         Receive<RepublishDiscoveries>(_ => PublishDiscoveries());
+
+        // Integration config updates from ApplicationConfig system
+        Receive<IntegrationConfigChanged>(msg =>
+        {
+            if (msg.IntegrationId != "zigbee2mqtt") return;
+            _log.Info("Received IntegrationConfigChanged for zigbee2mqtt, enabled={Enabled}", msg.Enabled);
+
+            if (!msg.Enabled)
+            {
+                _ = DisconnectAsync();
+                PublishStatus("stopped");
+                return;
+            }
+
+            var s = msg.Settings;
+            _config = new Zigbee2MqttConfig(
+                MqttHost: s.GetValueOrDefault("mqttHost") ?? _defaultConfig.MqttHost,
+                MqttPort: int.TryParse(s.GetValueOrDefault("mqttPort"), out var p) ? p : _defaultConfig.MqttPort,
+                MqttUser: s.GetValueOrDefault("mqttUser") ?? _defaultConfig.MqttUser,
+                MqttPassword: s.GetValueOrDefault("mqttPassword") ?? _defaultConfig.MqttPassword,
+                BaseTopic: s.GetValueOrDefault("baseTopic") ?? _defaultConfig.BaseTopic);
+
+            Self.Tell(ConnectToBroker.Instance);
+        });
+
+        Receive<RequestConfig>(_ =>
+        {
+            var mediator = DistributedPubSub.Get(Context.System).Mediator;
+            mediator.Tell(new Publish("request-integration-config", new RequestIntegrationConfig("zigbee2mqtt")));
+            _log.Info("Requested integration config for zigbee2mqtt from Host");
+        });
     }
 
     protected override void PreStart()
@@ -121,7 +155,9 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
         mediator.Tell(new Subscribe("commands.zigbee2mqtt", Self));
         mediator.Tell(new Subscribe("register.zigbee2mqtt", Self));
         mediator.Tell(new Subscribe("registration-response.zigbee2mqtt", Self));
+        mediator.Tell(new Subscribe("integration-config.zigbee2mqtt", Self));
         Self.Tell(ConnectToBroker.Instance);
+        Self.Tell(RequestConfig.Instance);
         Timers.StartPeriodicTimer("republish", RepublishDiscoveries.Instance,
             TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(30));
         Timers.StartPeriodicTimer("health", CheckConnection.Instance,
@@ -135,6 +171,15 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
         _mqttClient?.DisconnectAsync().GetAwaiter().GetResult();
         _mqttClient?.Dispose();
         base.PostStop();
+    }
+
+    private async Task DisconnectAsync()
+    {
+        if (_mqttClient != null && _mqttClient.IsConnected())
+        {
+            try { await _mqttClient.DisconnectAsync(); } catch { /* ignore */ }
+        }
+        Timers.CancelAll();
     }
 
     private async Task ConnectAsync()
