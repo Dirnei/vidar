@@ -785,6 +785,41 @@ function renderCapabilityCard(
         </div>
       );
     }
+    case 'Presence': {
+      const present = state['Presence'] === true;
+      const ip = settings?.ip;
+      return (
+        <div key={cap} style={capCardStyle}>
+          <Indicator color="var(--accent-green)" />
+          <div style={capLabelStyle}><CapabilityIcon capability="Presence" size={13} />Presence</div>
+          <div style={capValueStyle(present ? 'var(--accent-green)' : 'var(--text-muted)')}>
+            {present ? 'Home' : 'Away'}
+          </div>
+          {ip && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 6 }}>
+                IP Address
+              </div>
+              <span
+                role="button"
+                title="Click to copy"
+                onClick={() => navigator.clipboard.writeText(ip)}
+                style={{
+                  fontSize: 14, fontFamily: 'monospace', color: 'var(--text-secondary)',
+                  cursor: 'pointer', padding: '4px 10px', borderRadius: 6,
+                  background: 'var(--bg-hover)', border: '1px solid var(--border-subtle)',
+                  transition: 'border-color 0.15s, color 0.15s', display: 'inline-block',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; e.currentTarget.style.color = 'var(--accent-primary)'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+              >
+                {ip}
+              </span>
+            </div>
+          )}
+        </div>
+      );
+    }
     default: {
       const val = state[cap];
       return (
