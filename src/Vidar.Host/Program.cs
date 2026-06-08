@@ -69,6 +69,8 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
             var sseManager = system.ActorOf(SseManagerActor.Props(), "sse-manager");
             registry.Register<SseManagerActor>(sseManager);
             system.ActorOf(DeviceRegistrarActor.Props(deviceRepo, appRepo), "device-registrar");
+            var appStatusActor = system.ActorOf(ApplicationStatusActor.Props(), "application-status");
+            registry.Register<ApplicationStatusActor>(appStatusActor);
         });
 });
 
