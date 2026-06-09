@@ -269,12 +269,18 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
                 mediator.Tell(new Publish("device-discovered", discovered));
             }
 
-            // Fetch stats only for configured devices
+            // Send state for configured devices
             if (_configuredDevices.TryGetValue(mac, out var configuredDeviceId))
             {
-                var features = device.Features ?? [];
-                if (features.Count > 0)
+                var isOnline = string.Equals(device.State, "ONLINE", StringComparison.OrdinalIgnoreCase);
+                if (isOnline)
+                {
                     _ = FetchAndPublishDeviceStatsAsync(configuredDeviceId, device.Id);
+                }
+                else
+                {
+                    _shardProxy.Tell(new DeviceOffline(configuredDeviceId));
+                }
             }
         }
 
@@ -283,30 +289,29 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
 
     private async Task FetchAndPublishDeviceStatsAsync(Guid deviceId, string nativeDeviceId)
     {
+        var extras = new Dictionary<string, object>();
         try
         {
             var stats = await _client!.GetDeviceStatsAsync(_siteId, nativeDeviceId);
-            if (stats == null) return;
-
-            // Publish Extras state as a dictionary
-            var extras = new Dictionary<string, object>();
-            if (stats.UptimeSec.HasValue) extras["uptime_sec"] = stats.UptimeSec.Value;
-            if (stats.CpuUtilizationPct.HasValue) extras["cpu_pct"] = stats.CpuUtilizationPct.Value;
-            if (stats.MemoryUtilizationPct.HasValue) extras["memory_pct"] = stats.MemoryUtilizationPct.Value;
-            if (stats.LoadAverage1Min.HasValue) extras["load_1min"] = stats.LoadAverage1Min.Value;
-            if (stats.Uplink != null)
+            if (stats != null)
             {
-                if (stats.Uplink.TxRateBps.HasValue) extras["tx_bps"] = stats.Uplink.TxRateBps.Value;
-                if (stats.Uplink.RxRateBps.HasValue) extras["rx_bps"] = stats.Uplink.RxRateBps.Value;
+                if (stats.UptimeSec.HasValue) extras["uptime_sec"] = stats.UptimeSec.Value;
+                if (stats.CpuUtilizationPct.HasValue) extras["cpu_pct"] = stats.CpuUtilizationPct.Value;
+                if (stats.MemoryUtilizationPct.HasValue) extras["memory_pct"] = stats.MemoryUtilizationPct.Value;
+                if (stats.LoadAverage1Min.HasValue) extras["load_1min"] = stats.LoadAverage1Min.Value;
+                if (stats.Uplink != null)
+                {
+                    if (stats.Uplink.TxRateBps.HasValue) extras["tx_bps"] = stats.Uplink.TxRateBps.Value;
+                    if (stats.Uplink.RxRateBps.HasValue) extras["rx_bps"] = stats.Uplink.RxRateBps.Value;
+                }
             }
-
-            if (extras.Count > 0)
-                _shardProxy.Tell(new DeviceStateUpdate(deviceId, CapabilityType.Extras, extras));
         }
         catch (Exception ex)
         {
             _log.Warning(ex, "Failed to fetch stats for device {DeviceId}", nativeDeviceId);
         }
+
+        _shardProxy.Tell(new DeviceStateUpdate(deviceId, CapabilityType.Extras, extras));
     }
 
     private async Task PollClientsAsync()
@@ -411,14 +416,21 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
 
             if (_configuredDevices.TryGetValue(nativeId, out var configuredId))
             {
-                var rtspUrl = await GetCameraRtspUrlAsync(camera.Id);
-                _shardProxy.Tell(new DeviceStateUpdate(configuredId, CapabilityType.Camera, rtspUrl ?? ""));
+                var isConnected = string.Equals(camera.State, "CONNECTED", StringComparison.OrdinalIgnoreCase);
+                if (!isConnected)
+                {
+                    _shardProxy.Tell(new DeviceOffline(configuredId));
+                }
+                else
+                {
+                    var rtspUrl = await GetCameraRtspUrlAsync(camera.Id);
+                    _shardProxy.Tell(new DeviceStateUpdate(configuredId, CapabilityType.Camera, rtspUrl ?? ""));
 
-                var extras = new Dictionary<string, object>();
-                if (!string.IsNullOrEmpty(camera.ModelKey)) extras["model"] = camera.ModelKey;
-                if (!string.IsNullOrEmpty(camera.State)) extras["state"] = camera.State;
-                if (extras.Count > 0)
+                    var extras = new Dictionary<string, object>();
+                    if (!string.IsNullOrEmpty(camera.ModelKey)) extras["model"] = camera.ModelKey;
+                    if (!string.IsNullOrEmpty(camera.State)) extras["state"] = camera.State;
                     _shardProxy.Tell(new DeviceStateUpdate(configuredId, CapabilityType.Extras, extras));
+                }
             }
         }
 
