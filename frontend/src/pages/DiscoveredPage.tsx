@@ -316,6 +316,24 @@ export function DiscoveredPage() {
                       }}>
                         {d.deviceType}
                       </span>
+                      {d.metadata?.state && (() => {
+                        const s = d.metadata.state.toUpperCase();
+                        const online = s === 'ONLINE' || s === 'CONNECTED';
+                        const offline = s === 'OFFLINE' || s === 'DISCONNECTED';
+                        if (!online && !offline) return null;
+                        return (
+                          <span style={{
+                            fontSize: 10, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4,
+                            color: online ? 'var(--accent-green)' : 'var(--accent-red)',
+                          }}>
+                            <span style={{
+                              width: 6, height: 6, borderRadius: '50%',
+                              background: online ? 'var(--accent-green)' : 'var(--accent-red)',
+                            }} />
+                            {online ? 'Online' : 'Offline'}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                       {d.capabilities.map((cap) => (
