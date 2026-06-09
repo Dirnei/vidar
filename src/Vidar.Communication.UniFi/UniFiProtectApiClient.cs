@@ -41,8 +41,7 @@ public sealed class UniFiProtectApiClient : IDisposable
         var response = await _http.GetAsync(url, ct);
         if (!response.IsSuccessStatusCode) return [];
         var json = await response.Content.ReadAsStringAsync(ct);
-        var page = JsonSerializer.Deserialize<PagedResponse<UniFiCamera>>(json, JsonOptions);
-        return page?.Data ?? [];
+        return JsonSerializer.Deserialize<List<UniFiCamera>>(json, JsonOptions) ?? [];
     }
 
     public async Task<List<UniFiRtspStream>> GetRtspStreamsAsync(string cameraId, CancellationToken ct = default)

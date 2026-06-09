@@ -384,7 +384,7 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
 
         foreach (var camera in cameras)
         {
-            var mac = camera.MacAddress;
+            var mac = camera.Mac;
             if (string.IsNullOrEmpty(mac)) continue;
 
             var nativeId = $"protect-{mac}";
@@ -415,11 +415,8 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
                 _shardProxy.Tell(new DeviceStateUpdate(configuredId, CapabilityType.Camera, rtspUrl ?? ""));
 
                 var extras = new Dictionary<string, object>();
-                if (!string.IsNullOrEmpty(camera.Model)) extras["model"] = camera.Model;
-                if (!string.IsNullOrEmpty(camera.FirmwareVersion)) extras["firmware"] = camera.FirmwareVersion;
-                if (!string.IsNullOrEmpty(camera.Host)) extras["ip"] = camera.Host;
+                if (!string.IsNullOrEmpty(camera.ModelKey)) extras["model"] = camera.ModelKey;
                 if (!string.IsNullOrEmpty(camera.State)) extras["state"] = camera.State;
-                if (!string.IsNullOrEmpty(camera.Type)) extras["type"] = camera.Type;
                 if (extras.Count > 0)
                     _shardProxy.Tell(new DeviceStateUpdate(configuredId, CapabilityType.Extras, extras));
             }
@@ -446,11 +443,8 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
     {
         var metadata = new Dictionary<string, string>();
         if (!string.IsNullOrEmpty(camera.Name)) metadata["name"] = camera.Name;
-        if (!string.IsNullOrEmpty(camera.Model)) metadata["model"] = camera.Model;
+        if (!string.IsNullOrEmpty(camera.ModelKey)) metadata["model"] = camera.ModelKey;
         if (!string.IsNullOrEmpty(camera.State)) metadata["state"] = camera.State;
-        if (!string.IsNullOrEmpty(camera.Host)) metadata["ip"] = camera.Host;
-        if (!string.IsNullOrEmpty(camera.FirmwareVersion)) metadata["firmware"] = camera.FirmwareVersion;
-        if (!string.IsNullOrEmpty(camera.Type)) metadata["type"] = camera.Type;
         metadata["device_category"] = "camera";
         return metadata;
     }

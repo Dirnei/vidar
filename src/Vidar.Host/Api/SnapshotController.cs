@@ -56,11 +56,11 @@ public sealed class SnapshotController : ControllerBase
             return StatusCode(502, "Failed to reach Protect API");
 
         var listJson = await listResponse.Content.ReadAsStringAsync();
-        var cameras = System.Text.Json.JsonSerializer.Deserialize<CameraListResponse>(listJson,
+        var cameras = System.Text.Json.JsonSerializer.Deserialize<List<CameraEntry>>(listJson,
             new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
-        var camera = cameras?.Data?.FirstOrDefault(c =>
-            string.Equals(c.MacAddress, protectMac, StringComparison.OrdinalIgnoreCase));
+        var camera = cameras?.FirstOrDefault(c =>
+            string.Equals(c.Mac, protectMac, StringComparison.OrdinalIgnoreCase));
 
         if (camera == null)
             return NotFound("Camera not found on Protect controller");
@@ -75,6 +75,5 @@ public sealed class SnapshotController : ControllerBase
         return File(bytes, "image/jpeg");
     }
 
-    private sealed record CameraListResponse(List<CameraEntry>? Data);
-    private sealed record CameraEntry(string Id, string? MacAddress);
+    private sealed record CameraEntry(string Id, string? Mac);
 }
