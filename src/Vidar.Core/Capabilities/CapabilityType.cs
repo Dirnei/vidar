@@ -15,5 +15,6 @@ public enum CapabilityType
     Action = 10,
     Battery = 11,
     Presence = 12,
+    Camera = 13,
     Extras = 99
 }
