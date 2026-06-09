@@ -104,6 +104,13 @@ export function CapabilityIcon({ capability, size = 16, color }: Props) {
           <line x1="23" y1="10" x2="23" y2="14" />
         </svg>
       );
+    case 'Camera':
+      return (
+        <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+          <circle cx="12" cy="13" r="4" />
+        </svg>
+      );
     case 'Presence':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -134,12 +141,13 @@ function accentFor(cap: string): string {
     case 'Action': return 'var(--accent-primary)';
     case 'Battery': return 'var(--accent-green)';
     case 'Presence': return 'var(--accent-green)';
+    case 'Camera': return 'var(--accent-blue)';
     default: return 'var(--text-muted)';
   }
 }
 
 export function primaryCapabilityIcon(capabilities: string[]): string {
-  const priority = ['Light', 'Cover', 'Switch', 'Dimmer', 'Contact', 'Motion', 'Temperature', 'Humidity', 'Power', 'Energy', 'Action', 'Battery', 'Presence'];
+  const priority = ['Camera', 'Light', 'Cover', 'Switch', 'Dimmer', 'Contact', 'Motion', 'Temperature', 'Humidity', 'Power', 'Energy', 'Action', 'Battery', 'Presence'];
   for (const p of priority) {
     if (capabilities.includes(p)) return p;
   }

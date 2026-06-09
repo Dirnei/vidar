@@ -316,7 +316,7 @@ export function DeviceDetailPage() {
           display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(220px, 100%), 1fr))',
           gap: 14, marginBottom: 28,
         }}>
-          {device.capabilities.map(cap => renderCapabilityCard(cap, state, cmd, device.settings))}
+          {device.capabilities.map(cap => renderCapabilityCard(cap, state, cmd, device))}
         </div>
       )}
 
@@ -537,6 +537,57 @@ function handleBlur(e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) {
   e.currentTarget.style.boxShadow = 'none';
 }
 
+// --- Camera snapshot component ---
+
+function CameraSnapshot({ deviceId }: { deviceId: string }) {
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  const src = `/api/devices/${deviceId}/snapshot?t=${refreshKey}`;
+
+  return (
+    <div>
+      <div style={{
+        position: 'relative',
+        background: 'var(--bg-hover)',
+        borderRadius: 'var(--radius-sm)',
+        overflow: 'hidden',
+        minHeight: 180,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}>
+        {loading && !error && (
+          <span style={{ position: 'absolute', color: 'var(--text-muted)', fontSize: 13 }}>Loading snapshot...</span>
+        )}
+        {error && (
+          <span style={{ color: 'var(--accent-red)', fontSize: 13 }}>Failed to load snapshot</span>
+        )}
+        <img
+          key={refreshKey}
+          src={src}
+          alt="Camera snapshot"
+          onLoad={() => { setLoading(false); setError(false); }}
+          onError={() => { setLoading(false); setError(true); }}
+          style={{
+            width: '100%',
+            display: error ? 'none' : 'block',
+            borderRadius: 'var(--radius-sm)',
+          }}
+        />
+      </div>
+      <button
+        className="btn-secondary"
+        onClick={() => { setLoading(true); setError(false); setRefreshKey(k => k + 1); }}
+        style={{ marginTop: 10, fontSize: 12, padding: '6px 14px' }}
+      >
+        Refresh Snapshot
+      </button>
+    </div>
+  );
+}
+
 // --- Capability card renderer (extracted to keep component readable) ---
 
 function capAccentColor(cap: string): string {
@@ -548,6 +599,7 @@ function capAccentColor(cap: string): string {
     case 'Power': return 'var(--accent-blue)';
     case 'Energy': return 'var(--accent-green)';
     case 'Humidity': return 'var(--accent-blue)';
+    case 'Camera': return 'var(--accent-blue)';
     default: return 'var(--accent-primary)';
   }
 }
@@ -584,7 +636,7 @@ function renderCapabilityCard(
   cap: string,
   state: Record<string, unknown>,
   cmd: (capability: string, value: unknown) => void,
-  settings?: Record<string, string>,
+  device: Device,
 ) {
   const accent = capAccentColor(cap);
 
@@ -755,7 +807,7 @@ function renderCapabilityCard(
     }
     case 'Action': {
       const lastAction = state['Action'] as string | undefined;
-      const actionValues = settings?.action_values?.split(',').filter(Boolean) ?? [];
+      const actionValues = device.settings?.action_values?.split(',').filter(Boolean) ?? [];
       return (
         <div key={cap} style={{ ...capCardStyle, gridColumn: actionValues.length > 5 ? 'span 2' : undefined }}>
           <Indicator color={accent} />
@@ -785,9 +837,42 @@ function renderCapabilityCard(
         </div>
       );
     }
+    case 'Camera': {
+      const rtspUrl = state['Camera'] as string | undefined;
+      return (
+        <div key={cap} style={{ ...capCardStyle, gridColumn: 'span 2' }}>
+          <Indicator color="var(--accent-blue)" />
+          <div style={capLabelStyle}><CapabilityIcon capability="Camera" size={13} />Camera</div>
+          <CameraSnapshot deviceId={device.id} />
+          {rtspUrl && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 6 }}>
+                RTSP Stream
+              </div>
+              <span
+                role="button"
+                title="Click to copy"
+                onClick={() => navigator.clipboard.writeText(rtspUrl)}
+                style={{
+                  fontSize: 12, fontFamily: 'monospace', color: 'var(--text-secondary)',
+                  cursor: 'pointer', padding: '4px 10px', borderRadius: 6,
+                  background: 'var(--bg-hover)', border: '1px solid var(--border-subtle)',
+                  transition: 'border-color 0.15s, color 0.15s', display: 'inline-block',
+                  wordBreak: 'break-all' as const,
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; e.currentTarget.style.color = 'var(--accent-primary)'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+              >
+                {rtspUrl}
+              </span>
+            </div>
+          )}
+        </div>
+      );
+    }
     case 'Presence': {
       const present = state['Presence'] === true;
-      const ip = settings?.ip;
+      const ip = device.settings?.ip;
       return (
         <div key={cap} style={capCardStyle}>
           <Indicator color="var(--accent-green)" />
