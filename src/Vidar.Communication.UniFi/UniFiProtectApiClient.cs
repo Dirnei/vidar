@@ -56,8 +56,7 @@ public sealed class UniFiProtectApiClient : IDisposable
     public async Task<byte[]?> GetSnapshotAsync(string cameraId, CancellationToken ct = default)
     {
         var url = $"{_baseUrl}/cameras/{cameraId}/snapshot";
-        using var request = new HttpRequestMessage(HttpMethod.Post, url);
-        var response = await _http.SendAsync(request, ct);
+        var response = await _http.GetAsync(url, ct);
         if (!response.IsSuccessStatusCode) return null;
         return await response.Content.ReadAsByteArrayAsync(ct);
     }

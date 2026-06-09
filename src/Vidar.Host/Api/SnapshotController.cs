@@ -65,9 +65,7 @@ public sealed class SnapshotController : ControllerBase
         if (camera == null)
             return NotFound("Camera not found on Protect controller");
 
-        // Fetch snapshot (POST, not GET)
-        using var snapshotRequest = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/cameras/{camera.Id}/snapshot");
-        var snapshotResponse = await http.SendAsync(snapshotRequest);
+        var snapshotResponse = await http.GetAsync($"{baseUrl}/cameras/{camera.Id}/snapshot");
         if (!snapshotResponse.IsSuccessStatusCode)
             return StatusCode(502, "Failed to fetch snapshot");
 
