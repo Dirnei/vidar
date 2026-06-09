@@ -23,6 +23,9 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
     private readonly Dictionary<string, (Guid ClientId, UniFiClient Client)> _clientsById = new();
     private readonly Dictionary<string, Guid> _configuredDevices = new();
 
+    private UniFiProtectApiClient? _protectClient;
+    private readonly Dictionary<string, (Guid DeviceId, UniFiCamera Camera)> _camerasByMac = new();
+
     // Internal messages
     private sealed class PollTick { public static readonly PollTick Instance = new(); }
     private sealed class InitialFetch { public static readonly InitialFetch Instance = new(); }
@@ -98,6 +101,7 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
     protected override void PostStop()
     {
         _client?.Dispose();
+        _protectClient?.Dispose();
         base.PostStop();
     }
 
@@ -111,6 +115,8 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         // Dispose old client
         _client?.Dispose();
         _client = null;
+        _protectClient?.Dispose();
+        _protectClient = null;
 
         if (!enabled)
         {
@@ -134,6 +140,10 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
 
         _client = new UniFiApiClient(host);
         _client.SetApiKey(apiKey ?? "");
+
+        _protectClient?.Dispose();
+        _protectClient = new UniFiProtectApiClient(host);
+        _protectClient.SetApiKey(apiKey ?? "");
 
         // Reset siteId so InitialFetch re-resolves it
         _siteId = siteId ?? "default";
@@ -212,6 +222,7 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         {
             await PollDevicesAsync();
             await PollClientsAsync();
+            await PollCamerasAsync();
             PublishStatus("running");
         }
         catch (Exception ex)
@@ -354,6 +365,96 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         _log.Debug("UniFi poll: {Count} clients connected", clients.Count);
     }
 
+    private async Task PollCamerasAsync()
+    {
+        if (_protectClient == null) return;
+
+        List<UniFiCamera> cameras;
+        try
+        {
+            cameras = await _protectClient.GetCamerasAsync();
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, "Failed to poll Protect cameras (API may not be available)");
+            return;
+        }
+
+        var mediator = DistributedPubSub.Get(Context.System).Mediator;
+
+        foreach (var camera in cameras)
+        {
+            var mac = camera.MacAddress;
+            if (string.IsNullOrEmpty(mac)) continue;
+
+            var nativeId = $"protect-{mac}";
+            var capabilities = new List<CapabilityType> { CapabilityType.Camera, CapabilityType.Extras };
+            var metadata = BuildCameraMetadata(camera);
+
+            bool isNew = !_camerasByMac.ContainsKey(mac);
+
+            if (isNew)
+            {
+                var id = Guid.NewGuid();
+                _camerasByMac[mac] = (id, camera);
+                _log.Info("Discovered UniFi Protect camera: {Name} ({Mac})", camera.Name ?? mac, mac);
+            }
+            else
+            {
+                var (existingId, _) = _camerasByMac[mac];
+                _camerasByMac[mac] = (existingId, camera);
+            }
+
+            var (deviceId, _) = _camerasByMac[mac];
+            var discovered = new DeviceDiscovered(deviceId, "unifi", nativeId, capabilities, metadata);
+            mediator.Tell(new Publish("device-discovered", discovered));
+
+            if (_configuredDevices.TryGetValue(nativeId, out var configuredId))
+            {
+                var rtspUrl = await GetCameraRtspUrlAsync(camera.Id);
+                _shardProxy.Tell(new DeviceStateUpdate(configuredId, CapabilityType.Camera, rtspUrl ?? ""));
+
+                var extras = new Dictionary<string, object>();
+                if (!string.IsNullOrEmpty(camera.Model)) extras["model"] = camera.Model;
+                if (!string.IsNullOrEmpty(camera.FirmwareVersion)) extras["firmware"] = camera.FirmwareVersion;
+                if (!string.IsNullOrEmpty(camera.Host)) extras["ip"] = camera.Host;
+                if (!string.IsNullOrEmpty(camera.State)) extras["state"] = camera.State;
+                if (!string.IsNullOrEmpty(camera.Type)) extras["type"] = camera.Type;
+                if (extras.Count > 0)
+                    _shardProxy.Tell(new DeviceStateUpdate(configuredId, CapabilityType.Extras, extras));
+            }
+        }
+
+        _log.Debug("UniFi Protect poll: {Count} cameras", cameras.Count);
+    }
+
+    private async Task<string?> GetCameraRtspUrlAsync(string cameraId)
+    {
+        try
+        {
+            var streams = await _protectClient!.GetRtspStreamsAsync(cameraId);
+            return streams.FirstOrDefault()?.Uri;
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, "Failed to get RTSP URL for camera {CameraId}", cameraId);
+            return null;
+        }
+    }
+
+    private static Dictionary<string, string> BuildCameraMetadata(UniFiCamera camera)
+    {
+        var metadata = new Dictionary<string, string>();
+        if (!string.IsNullOrEmpty(camera.Name)) metadata["name"] = camera.Name;
+        if (!string.IsNullOrEmpty(camera.Model)) metadata["model"] = camera.Model;
+        if (!string.IsNullOrEmpty(camera.State)) metadata["state"] = camera.State;
+        if (!string.IsNullOrEmpty(camera.Host)) metadata["ip"] = camera.Host;
+        if (!string.IsNullOrEmpty(camera.FirmwareVersion)) metadata["firmware"] = camera.FirmwareVersion;
+        if (!string.IsNullOrEmpty(camera.Type)) metadata["type"] = camera.Type;
+        metadata["device_category"] = "camera";
+        return metadata;
+    }
+
     private async Task HandleCommandAsync(DeviceCommand cmd)
     {
         if (_client == null)
@@ -414,7 +515,7 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
 
     private void PublishStatus(string status, string? error = null)
     {
-        var deviceCount = _devicesByMac.Count + _clientsById.Count;
+        var deviceCount = _devicesByMac.Count + _clientsById.Count + _camerasByMac.Count;
         var mediator = DistributedPubSub.Get(Context.System).Mediator;
         mediator.Tell(new Publish("application-status",
             new ApplicationStatusUpdate("unifi", status, deviceCount, error)));
