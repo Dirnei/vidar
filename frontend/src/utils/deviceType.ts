@@ -1,4 +1,5 @@
 export type DeviceType =
+  | 'Camera'
   | 'Light'
   | 'Cover'
   | 'Switch'
@@ -16,6 +17,7 @@ export type DeviceType =
 export function deriveDeviceType(capabilities: string[], metadata?: Record<string, string>): DeviceType {
   const caps = new Set(capabilities);
 
+  if (caps.has('Camera')) return 'Camera';
   if (caps.has('Light')) return 'Light';
   if (caps.has('Cover')) return 'Cover';
   if (caps.has('Switch') && !caps.has('Light')) return 'Switch';

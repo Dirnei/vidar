@@ -141,3 +141,9 @@ export function getApplication(id: string): Promise<Application> {
 export function saveApplication(id: string, data: { enabled: boolean; settings: Record<string, string> }): Promise<void> {
   return request(`/applications/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 }
+
+// --- Snapshots ---
+
+export function snapshotUrl(deviceId: string): string {
+  return `${BASE}/devices/${deviceId}/snapshot`;
+}

@@ -61,6 +61,7 @@ export type Capability =
   | 'Action'
   | 'Battery'
   | 'Presence'
+  | 'Camera'
   | 'Extras';
 
 export interface StateHistoryEntry {
