@@ -36,6 +36,7 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
     private sealed class InitialFetch { public static readonly InitialFetch Instance = new(); }
     private sealed class RequestConfig { public static readonly RequestConfig Instance = new(); }
     private sealed class RegisterWebhooks { public static readonly RegisterWebhooks Instance = new(); }
+    private sealed record WebhookPayloadFetched(string RouteKey, Guid PayloadId, string? Body);
 
     public static Props Props(IActorRef shardProxy, IActorRef webhookRegistry, string hostUrl) =>
         Props(shardProxy, webhookRegistry, hostUrl, TimeSpan.FromSeconds(60));
@@ -97,7 +98,10 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
             _webhookRegistry.Tell(new RegisterWebhookListener("unifi-network", Self));
         });
 
-        ReceiveAsync<WebhookReceived>(HandleWebhookAsync);
+        // PipeTo keeps the mailbox responsive while the payload is fetched over HTTP —
+        // a slow host must not stall polling or webhook re-registration.
+        Receive<WebhookReceived>(msg => FetchWebhookPayloadAsync(msg).PipeTo(Self));
+        Receive<WebhookPayloadFetched>(HandleWebhookPayload);
     }
 
     protected override void PreStart()
@@ -520,9 +524,8 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         }
     }
 
-    private async Task HandleWebhookAsync(WebhookReceived msg)
+    private async Task<WebhookPayloadFetched> FetchWebhookPayloadAsync(WebhookReceived msg)
     {
-        string body;
         try
         {
             using var response = await PayloadClient.GetAsync($"{_hostUrl}/api/webhooks/payloads/{msg.PayloadId}");
@@ -530,16 +533,24 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
             {
                 _log.Warning("Webhook payload {PayloadId} for '{RouteKey}' not available (HTTP {Status})",
                     msg.PayloadId, msg.RouteKey, (int)response.StatusCode);
-                return;
+                return new WebhookPayloadFetched(msg.RouteKey, msg.PayloadId, null);
             }
-            body = await response.Content.ReadAsStringAsync();
+            var body = await response.Content.ReadAsStringAsync();
+            return new WebhookPayloadFetched(msg.RouteKey, msg.PayloadId, body);
         }
         catch (Exception ex)
         {
             _log.Error(ex, "Failed to fetch webhook payload {PayloadId} from {HostUrl}", msg.PayloadId, _hostUrl);
-            return;
+            return new WebhookPayloadFetched(msg.RouteKey, msg.PayloadId, null);
         }
+    }
 
+    private void HandleWebhookPayload(WebhookPayloadFetched msg)
+    {
+        if (msg.Body == null)
+            return; // fetch failure already logged
+
+        var body = msg.Body;
         switch (msg.RouteKey)
         {
             case "unifi-protect":
