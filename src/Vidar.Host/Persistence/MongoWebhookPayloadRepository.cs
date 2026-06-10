@@ -22,7 +22,10 @@ public sealed class MongoWebhookPayloadRepository : IWebhookPayloadRepository
             {
                 ["routeKey"] = routeKey,
                 ["contentType"] = contentType,
-                ["headers"] = new BsonDocument(headers.Select(h => new BsonElement(SanitizeKey(h.Key), h.Value)))
+                ["headers"] = new BsonDocument(
+                    headers
+                        .GroupBy(h => SanitizeKey(h.Key))
+                        .Select(g => new BsonElement(g.Key, g.Last().Value)))
             }
         });
         return payloadId;
@@ -34,11 +37,19 @@ public sealed class MongoWebhookPayloadRepository : IWebhookPayloadRepository
         if (file == null)
             return null;
 
-        var stream = await _bucket.OpenDownloadStreamAsync(file.Id);
-        var contentType = file.Metadata != null && file.Metadata.TryGetValue("contentType", out var ct)
-            ? ct.AsString
-            : "application/octet-stream";
-        return new WebhookPayload(stream, contentType);
+        try
+        {
+            var stream = await _bucket.OpenDownloadStreamAsync(file.Id);
+            var contentType = file.Metadata != null && file.Metadata.TryGetValue("contentType", out var ct)
+                ? ct.AsString
+                : "application/octet-stream";
+            return new WebhookPayload(stream, contentType);
+        }
+        catch (GridFSFileNotFoundException)
+        {
+            // Deleted between lookup and open (e.g. retention sweep) — treat as missing.
+            return null;
+        }
     }
 
     public async Task<long> DeleteOlderThanAsync(DateTime cutoffUtc)
@@ -47,10 +58,16 @@ public sealed class MongoWebhookPayloadRepository : IWebhookPayloadRepository
         // files collection would orphan the chunks collection.
         var filter = Builders<GridFSFileInfo>.Filter.Lt(f => f.UploadDateTime, cutoffUtc);
         using var cursor = await _bucket.FindAsync(filter);
-        var files = await cursor.ToListAsync();
-        foreach (var file in files)
-            await _bucket.DeleteAsync(file.Id);
-        return files.Count;
+        long deleted = 0;
+        while (await cursor.MoveNextAsync())
+        {
+            foreach (var file in cursor.Current)
+            {
+                await _bucket.DeleteAsync(file.Id);
+                deleted++;
+            }
+        }
+        return deleted;
     }
 
     private async Task<GridFSFileInfo?> FindByPayloadIdAsync(Guid payloadId)

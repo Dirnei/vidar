@@ -1,6 +1,10 @@
 namespace Vidar.Host.Persistence;
 
-public sealed record WebhookPayload(Stream Content, string ContentType);
+public sealed record WebhookPayload(Stream Content, string ContentType) : IAsyncDisposable, IDisposable
+{
+    public ValueTask DisposeAsync() => Content.DisposeAsync();
+    public void Dispose() => Content.Dispose();
+}
 
 public interface IWebhookPayloadRepository
 {
