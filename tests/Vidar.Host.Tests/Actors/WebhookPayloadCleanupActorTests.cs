@@ -39,10 +39,10 @@ public sealed class WebhookPayloadCleanupActorTests : TestKit
             repo, retention: TimeSpan.FromHours(24), interval: TimeSpan.FromMilliseconds(100)));
 
         // At least two calls: the first throws, the second proves the actor survived
-        await AwaitAssertAsync(async () =>
+        await AwaitAssertAsync(() =>
         {
-            await Task.Delay(300); // Allow time for at least 2 timer ticks
-            await repo.Received().DeleteOlderThanAsync(Arg.Any<DateTime>());
+            Assert.True(callCount >= 2, $"expected >= 2 cleanup calls, got {callCount}");
+            return Task.CompletedTask;
         });
     }
 }
