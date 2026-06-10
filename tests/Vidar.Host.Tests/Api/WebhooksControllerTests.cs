@@ -116,6 +116,19 @@ public sealed class WebhooksControllerTests : TestKit
     }
 
     [Fact]
+    public async Task Receive_HeaderToken_Wrong_Returns404()
+    {
+        SetupRoute("unifi-protect", new WebhookRouteInfo(WebhookAuthMode.HeaderToken, "tok", "X-Webhook-Token"));
+        SetBody("{}");
+        _sut.Request.Headers["X-Webhook-Token"] = "wrong";
+
+        var result = await _sut.Receive("unifi-protect");
+
+        Assert.IsType<NotFoundResult>(result);
+        await _payloads.DidNotReceiveWithAnyArgs().StoreAsync(default!, default!, default!, default!);
+    }
+
+    [Fact]
     public async Task Receive_BodyTooLarge_Returns413()
     {
         SetupRoute("unifi-protect", new WebhookRouteInfo(WebhookAuthMode.None, null, null));

@@ -13,7 +13,7 @@ namespace Vidar.Host.Api;
 public sealed class WebhooksController : ControllerBase
 {
     private static readonly long MaxBodyBytes =
-        long.Parse(Environment.GetEnvironmentVariable("VIDAR_WEBHOOK_MAX_BODY_MB") ?? "8") * 1024 * 1024;
+        (long.TryParse(Environment.GetEnvironmentVariable("VIDAR_WEBHOOK_MAX_BODY_MB"), out var mb) ? mb : 8) * 1024 * 1024;
 
     private readonly IWebhookRouteCache _routes;
     private readonly IWebhookPayloadRepository _payloads;
@@ -72,6 +72,9 @@ public sealed class WebhooksController : ControllerBase
         var payload = await _payloads.OpenAsync(payloadId);
         if (payload == null)
             return NotFound();
+        // FileStreamResult takes ownership and disposes the GridFS stream after writing
+        // the response — do not add code between OpenAsync and this return that could
+        // throw or exit early without disposing the payload.
         return File(payload.Content, payload.ContentType);
     }
 
