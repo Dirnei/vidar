@@ -26,18 +26,17 @@ public sealed class WebhookRegistryActor : ReceiveActor
 
         Receive<RegisterWebhookListener>(msg =>
         {
-            if (_routes.TryGetValue(msg.RouteKey, out var existing) && !existing.Listener.Equals(msg.Listener))
-            {
+            var isTakeover = _routes.TryGetValue(msg.RouteKey, out var existing) &&
+                             !existing.Listener.Equals(msg.Listener);
+            if (isTakeover)
                 _log.Warning("Webhook route '{RouteKey}' taken over by {New} (was {Old})",
-                    msg.RouteKey, msg.Listener, existing.Listener);
-                _routes[msg.RouteKey] = msg;
-                UnwatchIfUnused(existing.Listener);
-            }
-            else
-            {
-                _routes[msg.RouteKey] = msg;
-            }
+                    msg.RouteKey, msg.Listener, existing!.Listener);
 
+            _routes[msg.RouteKey] = msg;
+            if (isTakeover)
+                UnwatchIfUnused(existing!.Listener);
+
+            // Watch is idempotent in Akka; re-registrations don't stack watches.
             Context.Watch(msg.Listener);
             PushRouteCache();
         });
