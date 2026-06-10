@@ -8,6 +8,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Vidar.Communication.Shelly.Tests/Vidar.Communication.Shelly.Tests.csproj" />
+    <Project Path="tests/Vidar.Communication.UniFi.Tests/Vidar.Communication.UniFi.Tests.csproj" />
     <Project Path="tests/Vidar.Communication.Zigbee2Mqtt.Tests/Vidar.Communication.Zigbee2Mqtt.Tests.csproj" />
     <Project Path="tests/Vidar.Core.Tests/Vidar.Core.Tests.csproj" />
     <Project Path="tests/Vidar.Host.Tests/Vidar.Host.Tests.csproj" />

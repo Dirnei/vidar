@@ -1,0 +1,263 @@
+{
+    "alarm": {
+        "name": "Kennzeichen",
+        "sources": [
+            {
+                "device": "942A6FD0A26B",
+                "type": "include"
+            }
+        ],
+        "conditions": [
+            {
+                "condition": {
+                    "type": "is",
+                    "source": "license_plate_of_interest"
+                }
+            },
+            {
+                "condition": {
+                    "type": "is",
+                    "source": "license_plate_known"
+                }
+            },
+            {
+                "condition": {
+                    "type": "is",
+                    "source": "license_plate_unknown"
+                }
+            }
+        ],
+        "triggers": [
+            {
+                "device": "942A6FD0A26B",
+                "value": "Mama",
+                "key": "license_plate_known",
+                "group": {
+                    "name": "Mama"
+                },
+                "zones": {
+                    "loiter": [],
+                    "zone": [],
+                    "line": [
+                        1
+                    ]
+                },
+                "eventId": "297062c0-8d6d-41a9-b50f-2c1b93427c0a",
+                "timestamp": 1781077240042,
+                "sourceEvent": {
+                    "camera": "67b619c9030a8d03e4004f21",
+                    "createdAt": "2026-06-10T07:40:40.017947519Z",
+                    "device": "67b619c9030a8d03e4004f21",
+                    "id": "297062c0-8d6d-41a9-b50f-2c1b93427c0a",
+                    "locked": false,
+                    "metadata": {
+                        "count": {
+                            "1": {
+                                "animals": {
+                                    "A2B": 6,
+                                    "B2A": 5
+                                },
+                                "persons": {
+                                    "A2B": 0,
+                                    "B2A": 0
+                                },
+                                "vehicles": {
+                                    "A2B": 1,
+                                    "B2A": 8
+                                }
+                            }
+                        },
+                        "detectedAreas": [],
+                        "detectedThumbnails": [],
+                        "hallway_mode": "disabled",
+                        "linesSettings": [
+                            {
+                                "color": "#46C7FD",
+                                "direction": "both",
+                                "id": "1",
+                                "isTargetCounting": false,
+                                "isTriggerLightEnabled": false,
+                                "name": "Straße",
+                                "objectTypes": [
+                                    "animal",
+                                    "person",
+                                    "vehicle"
+                                ],
+                                "plan": {
+                                    "autoReset": "none"
+                                },
+                                "points": [
+                                    [
+                                        1,
+                                        0.2460000067949295
+                                    ],
+                                    [
+                                        0,
+                                        0.1940000057220459
+                                    ]
+                                ],
+                                "sensitivity": 50
+                            }
+                        ],
+                        "linesStatus": {
+                            "1": {
+                                "animal": {
+                                    "crosslineA2B": 0,
+                                    "crosslineA2BAdd": 0,
+                                    "crosslineB2A": 0,
+                                    "crosslineB2AAdd": 0
+                                },
+                                "level": 76,
+                                "person": {
+                                    "crosslineA2B": 0,
+                                    "crosslineA2BAdd": 0,
+                                    "crosslineB2A": 0,
+                                    "crosslineB2AAdd": 0
+                                },
+                                "status": "enter",
+                                "vehicle": {
+                                    "crosslineA2B": 0,
+                                    "crosslineA2BAdd": 0,
+                                    "crosslineB2A": 0,
+                                    "crosslineB2AAdd": 0
+                                }
+                            }
+                        },
+                        "weather": {
+                            "iconCode": "12",
+                            "temperature": 10.7,
+                            "temperatureUnit": "C"
+                        }
+                    },
+                    "score": 76,
+                    "smartDetectTypes": [
+                        "licensePlate",
+                        "vehicle"
+                    ],
+                    "start": 1781077237633,
+                    "type": "smartDetectLine",
+                    "updatedAt": "2026-06-10T07:40:40.017948119Z",
+                    "pk": "297062c0-8d6d-41a9-b50f-2c1b93427c0a",
+                    "_pk": "297062c0-8d6d-41a9-b50f-2c1b93427c0a"
+                }
+            },
+            {
+                "device": "942A6FD0A26B",
+                "value": "Mama",
+                "key": "license_plate_of_interest",
+                "group": {
+                    "name": "Mama"
+                },
+                "zones": {
+                    "loiter": [],
+                    "zone": [],
+                    "line": [
+                        1
+                    ]
+                },
+                "eventId": "297062c0-8d6d-41a9-b50f-2c1b93427c0a",
+                "timestamp": 1781077240042,
+                "sourceEvent": {
+                    "camera": "67b619c9030a8d03e4004f21",
+                    "createdAt": "2026-06-10T07:40:40.017947519Z",
+                    "device": "67b619c9030a8d03e4004f21",
+                    "id": "297062c0-8d6d-41a9-b50f-2c1b93427c0a",
+                    "locked": false,
+                    "metadata": {
+                        "count": {
+                            "1": {
+                                "animals": {
+                                    "A2B": 6,
+                                    "B2A": 5
+                                },
+                                "persons": {
+                                    "A2B": 0,
+                                    "B2A": 0
+                                },
+                                "vehicles": {
+                                    "A2B": 1,
+                                    "B2A": 8
+                                }
+                            }
+                        },
+                        "detectedAreas": [],
+                        "detectedThumbnails": [],
+                        "hallway_mode": "disabled",
+                        "linesSettings": [
+                            {
+                                "color": "#46C7FD",
+                                "direction": "both",
+                                "id": "1",
+                                "isTargetCounting": false,
+                                "isTriggerLightEnabled": false,
+                                "name": "Straße",
+                                "objectTypes": [
+                                    "animal",
+                                    "person",
+                                    "vehicle"
+                                ],
+                                "plan": {
+                                    "autoReset": "none"
+                                },
+                                "points": [
+                                    [
+                                        1,
+                                        0.2460000067949295
+                                    ],
+                                    [
+                                        0,
+                                        0.1940000057220459
+                                    ]
+                                ],
+                                "sensitivity": 50
+                            }
+                        ],
+                        "linesStatus": {
+                            "1": {
+                                "animal": {
+                                    "crosslineA2B": 0,
+                                    "crosslineA2BAdd": 0,
+                                    "crosslineB2A": 0,
+                                    "crosslineB2AAdd": 0
+                                },
+                                "level": 76,
+                                "person": {
+                                    "crosslineA2B": 0,
+                                    "crosslineA2BAdd": 0,
+                                    "crosslineB2A": 0,
+                                    "crosslineB2AAdd": 0
+                                },
+                                "status": "enter",
+                                "vehicle": {
+                                    "crosslineA2B": 0,
+                                    "crosslineA2BAdd": 0,
+                                    "crosslineB2A": 0,
+                                    "crosslineB2AAdd": 0
+                                }
+                            }
+                        },
+                        "weather": {
+                            "iconCode": "12",
+                            "temperature": 10.7,
+                            "temperatureUnit": "C"
+                        }
+                    },
+                    "score": 76,
+                    "smartDetectTypes": [
+                        "licensePlate",
+                        "vehicle"
+                    ],
+                    "start": 1781077237633,
+                    "type": "smartDetectLine",
+                    "updatedAt": "2026-06-10T07:40:40.017948119Z",
+                    "pk": "297062c0-8d6d-41a9-b50f-2c1b93427c0a",
+                    "_pk": "297062c0-8d6d-41a9-b50f-2c1b93427c0a"
+                }
+            }
+        ],
+        "thumbnail": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcHBw8LCwkMEQ8SEhEPERETFhwXExQaFRERGCEYGh0dHx8fExciJCIeJBweHx7/2wBDAQUFBQcGBw4ICA4eFBEUHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh7/wAARCAFoAoADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDwv4ZeH/C9/wDDTxHrPiXwyYrOyguAuvy30qsbwxj7La20K4R3LZaTcHwhzlMAnsPGHw68G6VYXUVn4Wv71tC1LRLeOS2vJRL4iW9tmlkRch1VtyjaY1GFbBBPNeL6T438aaToz6JpXi/X7DS3D...",
+        "eventPath": "/protect/events/event/297062c0-8d6d-41a9-b50f-2c1b93427c0a",
+        "eventLocalLink": "https://192.168.0.1/protect/events/event/297062c0-8d6d-41a9-b50f-2c1b93427c0a"
+    },
+    "timestamp": 1781077241154
+}
