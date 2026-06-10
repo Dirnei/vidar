@@ -5,8 +5,10 @@ using Akka.Remote.Hosting;
 using MongoDB.Driver;
 using Vidar.Core.Model;
 using Vidar.Core.Sharding;
+using Vidar.Core.Webhooks;
 using Vidar.Host.Actors;
 using Vidar.Host.Persistence;
+using Vidar.Host.Webhooks;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,6 +30,8 @@ builder.Services.AddSingleton<IDeviceStateRepository>(new MongoDeviceStateReposi
 builder.Services.AddSingleton<IGroupRepository>(new MongoGroupRepository(database));
 builder.Services.AddSingleton<IHistoryRepository>(new MongoHistoryRepository(database));
 builder.Services.AddSingleton<IApplicationConfigRepository>(new MongoApplicationConfigRepository(database));
+builder.Services.AddSingleton<IWebhookRouteCache, WebhookRouteCache>();
+builder.Services.AddSingleton<IWebhookPayloadRepository>(new MongoWebhookPayloadRepository(database));
 builder.Services.AddHttpClient("shelly", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(5);
@@ -51,6 +55,11 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
 
     var appRepo = sp.GetRequiredService<IApplicationConfigRepository>();
 
+    var webhookRouteCache = sp.GetRequiredService<IWebhookRouteCache>();
+    var webhookPayloads = sp.GetRequiredService<IWebhookPayloadRepository>();
+    var webhookRetention = TimeSpan.FromHours(
+        int.TryParse(Environment.GetEnvironmentVariable("VIDAR_WEBHOOK_RETENTION_HOURS"), out var h) ? h : 24);
+
     configBuilder
         .WithRemoting(hostname, 4053)
         .WithClustering(new ClusterOptions
@@ -69,6 +78,10 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
                 Role = "host",
                 StateStoreMode = StateStoreMode.DData
             })
+        .WithSingleton<WebhookRegistry>(
+            "webhook-registry",
+            WebhookRegistryActor.Props(webhookRouteCache),
+            new ClusterSingletonOptions { Role = "host" })
         .WithActors((system, registry, resolver) =>
         {
             var discoveryManager = system.ActorOf(DiscoveryManagerActor.Props(discoveredRepo), "discovery-manager");
@@ -78,6 +91,9 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
             system.ActorOf(DeviceRegistrarActor.Props(deviceRepo, appRepo), "device-registrar");
             var appStatusActor = system.ActorOf(ApplicationStatusActor.Props(), "application-status");
             registry.Register<ApplicationStatusActor>(appStatusActor);
+            system.ActorOf(
+                WebhookPayloadCleanupActor.Props(webhookPayloads, webhookRetention, TimeSpan.FromHours(1)),
+                "webhook-payload-cleanup");
         });
 });
 
