@@ -28,6 +28,18 @@ public class WebhookParserTests
     }
 
     [Fact]
+    public void ProtectParser_NonStringTriggerValue_DoesNotThrow()
+    {
+        var json = """{"alarm":{"name":"Test","triggers":[{"device":"AABB","key":"motion","value":42}]},"timestamp":"not-a-number"}""";
+
+        var evt = ProtectAlarmWebhookParser.Parse(json);
+
+        Assert.NotNull(evt);
+        Assert.Null(evt.Triggers[0].Value);
+        Assert.Equal(DateTimeOffset.MinValue, evt.Timestamp);
+    }
+
+    [Fact]
     public void NetworkParser_ParsesClientDisconnectedEvent()
     {
         var evt = NetworkWebhookParser.Parse(Fixture("unifi_networks.json"));

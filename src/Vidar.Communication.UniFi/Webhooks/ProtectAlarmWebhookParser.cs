@@ -20,8 +20,9 @@ public static class ProtectAlarmWebhookParser
             if (!doc.RootElement.TryGetProperty("alarm", out var alarm))
                 return null;
 
-            var name = alarm.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
-            var timestamp = doc.RootElement.TryGetProperty("timestamp", out var ts) && ts.TryGetInt64(out var millis)
+            var name = GetStringOrEmpty(alarm, "name");
+            var timestamp = doc.RootElement.TryGetProperty("timestamp", out var ts) &&
+                            ts.ValueKind == JsonValueKind.Number && ts.TryGetInt64(out var millis)
                 ? DateTimeOffset.FromUnixTimeMilliseconds(millis)
                 : DateTimeOffset.MinValue;
 
@@ -31,9 +32,11 @@ public static class ProtectAlarmWebhookParser
                 foreach (var t in trigs.EnumerateArray())
                 {
                     triggers.Add(new ProtectAlarmTrigger(
-                        t.TryGetProperty("device", out var d) ? d.GetString() ?? "" : "",
-                        t.TryGetProperty("key", out var k) ? k.GetString() ?? "" : "",
-                        t.TryGetProperty("value", out var v) ? v.GetString() : null));
+                        GetStringOrEmpty(t, "device"),
+                        GetStringOrEmpty(t, "key"),
+                        t.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.String
+                            ? v.GetString()
+                            : null));
                 }
             }
 
@@ -44,4 +47,9 @@ public static class ProtectAlarmWebhookParser
             return null;
         }
     }
+
+    private static string GetStringOrEmpty(JsonElement element, string property) =>
+        element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? ""
+            : "";
 }
