@@ -1,7 +1,7 @@
 # Webhook Ingress — Design
 
 **Date:** 2026-06-10
-**Status:** Draft, pending review
+**Status:** Implemented (2026-06-10)
 
 ## Goal
 
