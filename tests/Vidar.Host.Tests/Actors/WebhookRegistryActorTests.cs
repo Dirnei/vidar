@@ -101,6 +101,23 @@ public sealed class WebhookRegistryActorTests : TestKit
         AwaitAssert(() => _cache.Received().UpdateRoutes(Arg.Is<Dictionary<string, WebhookRouteInfo>>(d => d.Count == 0)));
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("Unifi-Protect")]
+    [InlineData("unifi protect")]
+    [InlineData("unifi/protect")]
+    public void Register_InvalidRouteKey_IsRejected(string routeKey)
+    {
+        var registry = CreateRegistry();
+        var listener = CreateTestProbe();
+
+        registry.Tell(new RegisterWebhookListener(routeKey, listener.Ref));
+
+        registry.Tell(new WebhookReceived(routeKey, Guid.NewGuid(), new Dictionary<string, string>(),
+            "application/json", 0, DateTimeOffset.UtcNow));
+        listener.ExpectNoMsg(TimeSpan.FromMilliseconds(200));
+    }
+
     [Fact]
     public void Unregister_RemovesRoute_OnlyForOwningListener()
     {

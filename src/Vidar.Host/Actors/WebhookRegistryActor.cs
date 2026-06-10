@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Akka.Actor;
 using Akka.Event;
 using Vidar.Core.Messages;
@@ -10,9 +11,14 @@ namespace Vidar.Host.Actors;
 /// (no pub/sub — exactly one recipient per route). Registration is idempotent and
 /// last-write-wins; listeners are DeathWatched and their routes removed on termination.
 /// Every state change is mirrored into IWebhookRouteCache for the HTTP hot path.
+/// NOTE: the cache lives in this process — this only works while the HTTP host and this
+/// singleton share the single "host"-role node. Scaling the host to multiple nodes
+/// requires cross-node route propagation first.
 /// </summary>
 public sealed class WebhookRegistryActor : ReceiveActor
 {
+    private static readonly Regex RouteKeyPattern = new("^[a-z0-9-]+$", RegexOptions.Compiled);
+
     private readonly ILoggingAdapter _log = Context.GetLogger();
     private readonly IWebhookRouteCache _routeCache;
     private readonly Dictionary<string, RegisterWebhookListener> _routes = new();
@@ -26,6 +32,13 @@ public sealed class WebhookRegistryActor : ReceiveActor
 
         Receive<RegisterWebhookListener>(msg =>
         {
+            if (!RouteKeyPattern.IsMatch(msg.RouteKey))
+            {
+                _log.Warning("Rejected webhook registration from {Listener}: route key '{RouteKey}' " +
+                             "is invalid (must match [a-z0-9-]+)", msg.Listener, msg.RouteKey);
+                return;
+            }
+
             var isTakeover = _routes.TryGetValue(msg.RouteKey, out var existing) &&
                              !existing.Listener.Equals(msg.Listener);
             if (isTakeover)
