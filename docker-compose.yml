@@ -69,6 +69,7 @@ services:
       - VIDAR_UNIFI_API_KEY=${UNIFI_API_KEY}
       - VIDAR_UNIFI_SITE_ID=${UNIFI_SITE_ID:-default}
       - VIDAR_UNIFI_POLL_INTERVAL=30
+      - VIDAR_HOST_URL=http://vidar-host:8080
 
   mongodb:
     image: mongo:8

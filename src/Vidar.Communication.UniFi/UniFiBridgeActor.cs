@@ -3,6 +3,7 @@ using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
 using Vidar.Core.Capabilities;
 using Vidar.Core.Messages;
+using Vidar.Communication.UniFi.Webhooks;
 
 namespace Vidar.Communication.UniFi;
 
@@ -12,6 +13,10 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
 
     private readonly ILoggingAdapter _log = Context.GetLogger();
     private readonly IActorRef _shardProxy;
+    private readonly IActorRef _webhookRegistry;
+    private readonly string _hostUrl;
+    private readonly TimeSpan _webhookRegisterInterval;
+    private static readonly HttpClient PayloadClient = new() { Timeout = TimeSpan.FromSeconds(15) };
 
     // Current config — null until received from Host
     private UniFiApiClient? _client;
@@ -30,13 +35,20 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
     private sealed class PollTick { public static readonly PollTick Instance = new(); }
     private sealed class InitialFetch { public static readonly InitialFetch Instance = new(); }
     private sealed class RequestConfig { public static readonly RequestConfig Instance = new(); }
+    private sealed class RegisterWebhooks { public static readonly RegisterWebhooks Instance = new(); }
 
-    public static Props Props(IActorRef shardProxy) =>
-        Akka.Actor.Props.Create(() => new UniFiBridgeActor(shardProxy));
+    public static Props Props(IActorRef shardProxy, IActorRef webhookRegistry, string hostUrl) =>
+        Props(shardProxy, webhookRegistry, hostUrl, TimeSpan.FromSeconds(60));
 
-    public UniFiBridgeActor(IActorRef shardProxy)
+    public static Props Props(IActorRef shardProxy, IActorRef webhookRegistry, string hostUrl, TimeSpan webhookRegisterInterval) =>
+        Akka.Actor.Props.Create(() => new UniFiBridgeActor(shardProxy, webhookRegistry, hostUrl, webhookRegisterInterval));
+
+    public UniFiBridgeActor(IActorRef shardProxy, IActorRef webhookRegistry, string hostUrl, TimeSpan webhookRegisterInterval)
     {
         _shardProxy = shardProxy;
+        _webhookRegistry = webhookRegistry;
+        _hostUrl = hostUrl.TrimEnd('/');
+        _webhookRegisterInterval = webhookRegisterInterval;
 
         // Handle config updates from pub/sub
         Receive<IntegrationConfigChanged>(msg =>
@@ -78,6 +90,14 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
             if (cmd.CommunicationType != "unifi") return;
             _ = HandleCommandAsync(cmd);
         });
+
+        Receive<RegisterWebhooks>(_ =>
+        {
+            _webhookRegistry.Tell(new RegisterWebhookListener("unifi-protect", Self));
+            _webhookRegistry.Tell(new RegisterWebhookListener("unifi-network", Self));
+        });
+
+        ReceiveAsync<WebhookReceived>(HandleWebhookAsync);
     }
 
     protected override void PreStart()
@@ -96,6 +116,10 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
 
         // Request current config from Host after a short delay (let cluster form)
         Timers.StartSingleTimer("request-config", RequestConfig.Instance, TimeSpan.FromSeconds(5));
+
+        // Idempotent re-registration: self-heals after host/singleton restarts
+        Timers.StartPeriodicTimer("webhook-register", RegisterWebhooks.Instance,
+            TimeSpan.Zero, _webhookRegisterInterval);
     }
 
     protected override void PostStop()
@@ -493,6 +517,56 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         catch (Exception ex)
         {
             _log.Error(ex, "Failed to handle command for device {NativeId}", cmd.NativeId);
+        }
+    }
+
+    private async Task HandleWebhookAsync(WebhookReceived msg)
+    {
+        string body;
+        try
+        {
+            using var response = await PayloadClient.GetAsync($"{_hostUrl}/api/webhooks/payloads/{msg.PayloadId}");
+            if (!response.IsSuccessStatusCode)
+            {
+                _log.Warning("Webhook payload {PayloadId} for '{RouteKey}' not available (HTTP {Status})",
+                    msg.PayloadId, msg.RouteKey, (int)response.StatusCode);
+                return;
+            }
+            body = await response.Content.ReadAsStringAsync();
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "Failed to fetch webhook payload {PayloadId} from {HostUrl}", msg.PayloadId, _hostUrl);
+            return;
+        }
+
+        switch (msg.RouteKey)
+        {
+            case "unifi-protect":
+                var alarm = ProtectAlarmWebhookParser.Parse(body);
+                if (alarm == null)
+                {
+                    _log.Warning("Unparseable unifi-protect webhook payload {PayloadId}", msg.PayloadId);
+                    return;
+                }
+                _log.Info("Protect alarm '{Alarm}' at {Time}: {Triggers}",
+                    alarm.AlarmName, alarm.Timestamp,
+                    string.Join("; ", alarm.Triggers.Select(t => $"{t.Key}={t.Value} (device {t.Device})")));
+                break;
+
+            case "unifi-network":
+                var evt = NetworkWebhookParser.Parse(body);
+                if (evt == null)
+                {
+                    _log.Warning("Unparseable unifi-network webhook payload {PayloadId}", msg.PayloadId);
+                    return;
+                }
+                _log.Info("Network event '{Name}': {Message}", evt.Name, evt.Message);
+                break;
+
+            default:
+                _log.Warning("Webhook for unexpected route '{RouteKey}' ignored", msg.RouteKey);
+                break;
         }
     }
 
