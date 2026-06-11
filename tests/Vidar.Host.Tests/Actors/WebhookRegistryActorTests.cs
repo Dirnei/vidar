@@ -1,17 +1,44 @@
 using Akka.Actor;
+using Akka.Cluster.Tools.PublishSubscribe;
+using Akka.Configuration;
 using Akka.TestKit.Xunit2;
 using NSubstitute;
 using Vidar.Core.Messages;
 using Vidar.Host.Actors;
+using Vidar.Host.Persistence;
 using Vidar.Host.Webhooks;
 
 namespace Vidar.Host.Tests.Actors;
 
 public sealed class WebhookRegistryActorTests : TestKit
 {
-    private readonly IWebhookRouteCache _cache = Substitute.For<IWebhookRouteCache>();
+    private static readonly Config TestConfig = ConfigurationFactory.ParseString(@"
+        akka {
+            actor.provider = cluster
+            remote.dot-netty.tcp {
+                hostname = ""127.0.0.1""
+                port = 0
+            }
+            cluster {
+                seed-nodes = [""akka.tcp://WebhookRegistryActorTests@127.0.0.1:2553""]
+                auto-down-unreachable-after = 5s
+            }
+        }
+    ").WithFallback(DistributedPubSub.DefaultConfig());
 
-    private IActorRef CreateRegistry() => Sys.ActorOf(WebhookRegistryActor.Props(_cache));
+    private readonly IWebhookRouteCache _cache = Substitute.For<IWebhookRouteCache>();
+    private readonly IWebhookEventRepository _eventRepo = Substitute.For<IWebhookEventRepository>();
+
+    public WebhookRegistryActorTests() : base(TestConfig, "WebhookRegistryActorTests")
+    {
+    }
+
+    private IActorRef CreateRegistry(IActorRef? sseActor = null)
+    {
+        var registry = Sys.ActorOf(WebhookRegistryActor.Props(_cache));
+        registry.Tell(new SetWebhookDependencies(sseActor ?? TestActor, _eventRepo));
+        return registry;
+    }
 
     [Fact]
     public void Register_PushesRouteToCache()
@@ -137,5 +164,61 @@ public sealed class WebhookRegistryActorTests : TestKit
         registry.Tell(new WebhookReceived("unifi-protect", Guid.NewGuid(), new Dictionary<string, string>(),
             "application/json", 0, DateTimeOffset.UtcNow));
         owner.ExpectNoMsg(TimeSpan.FromMilliseconds(200));
+    }
+
+    [Fact]
+    public void Register_WithIntegrationId_FlowsIntoCacheSnapshot()
+    {
+        var registry = CreateRegistry();
+        var listener = CreateTestProbe();
+
+        registry.Tell(new RegisterWebhookListener("unifi-protect", listener.Ref, IntegrationId: "unifi"));
+
+        AwaitAssert(() => _cache.Received().UpdateRoutes(Arg.Is<Dictionary<string, WebhookRouteInfo>>(d =>
+            d.ContainsKey("unifi-protect") &&
+            d["unifi-protect"].IntegrationId == "unifi")));
+    }
+
+    [Fact]
+    public void WebhookReceived_TellsSseActorDirectly()
+    {
+        var sseProbe = CreateTestProbe();
+        var registry = CreateRegistry(sseProbe.Ref);
+        var listener = CreateTestProbe();
+        registry.Tell(new RegisterWebhookListener("unifi-protect", listener.Ref));
+
+        var evt = new WebhookReceived("unifi-protect", Guid.NewGuid(), new Dictionary<string, string>(),
+            "application/json", 42, DateTimeOffset.UtcNow);
+        registry.Tell(evt);
+
+        sseProbe.ExpectMsg<WebhookReceived>(m => m.PayloadId == evt.PayloadId);
+    }
+
+    [Fact]
+    public void WebhookHandled_TellsSseActor_AndPersists()
+    {
+        var sseProbe = CreateTestProbe();
+        var registry = CreateRegistry(sseProbe.Ref);
+
+        var handled = new WebhookHandled(Guid.NewGuid(), WebhookHandleStatus.Handled, null, DateTimeOffset.UtcNow);
+        registry.Tell(handled);
+
+        sseProbe.ExpectMsg<WebhookHandled>(m => m.PayloadId == handled.PayloadId);
+        AwaitAssert(() => _eventRepo.Received().AcknowledgeAsync(
+            handled.PayloadId, "handled", null, Arg.Any<DateTimeOffset>()));
+    }
+
+    [Fact]
+    public void WebhookHandled_Failed_PersistsError()
+    {
+        var sseProbe = CreateTestProbe();
+        var registry = CreateRegistry(sseProbe.Ref);
+
+        var handled = new WebhookHandled(Guid.NewGuid(), WebhookHandleStatus.Failed, "parse error", DateTimeOffset.UtcNow);
+        registry.Tell(handled);
+
+        sseProbe.ExpectMsg<WebhookHandled>();
+        AwaitAssert(() => _eventRepo.Received().AcknowledgeAsync(
+            handled.PayloadId, "failed", "parse error", Arg.Any<DateTimeOffset>()));
     }
 }

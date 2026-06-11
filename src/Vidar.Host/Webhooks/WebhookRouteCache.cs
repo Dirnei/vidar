@@ -11,6 +11,8 @@ public sealed class WebhookRouteCache : IWebhookRouteCache
     public bool TryGetRoute(string routeKey, out WebhookRouteInfo route) =>
         _routes.TryGetValue(routeKey, out route!);
 
+    public IReadOnlyDictionary<string, WebhookRouteInfo> Snapshot() => _routes;
+
     public void UpdateRoutes(Dictionary<string, WebhookRouteInfo> routes) =>
         _routes = routes;
 }

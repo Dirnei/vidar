@@ -41,4 +41,18 @@ public class WebhookRouteCacheTests
         Assert.False(_sut.TryGetRoute("a", out _));
         Assert.True(_sut.TryGetRoute("b", out _));
     }
+
+    [Fact]
+    public void Snapshot_ReturnsCurrentRoutes()
+    {
+        _sut.UpdateRoutes(new Dictionary<string, WebhookRouteInfo>
+        {
+            ["unifi-protect"] = new(WebhookAuthMode.None, null, null, "unifi")
+        });
+
+        var snapshot = _sut.Snapshot();
+
+        Assert.Single(snapshot);
+        Assert.Equal("unifi", snapshot["unifi-protect"].IntegrationId);
+    }
 }

@@ -1,3 +1,4 @@
+using Akka.Actor;
 using Akka.Cluster.Hosting;
 using Akka.Cluster.Sharding;
 using Akka.Hosting;
@@ -32,6 +33,7 @@ builder.Services.AddSingleton<IHistoryRepository>(new MongoHistoryRepository(dat
 builder.Services.AddSingleton<IApplicationConfigRepository>(new MongoApplicationConfigRepository(database));
 builder.Services.AddSingleton<IWebhookRouteCache, WebhookRouteCache>();
 builder.Services.AddSingleton<IWebhookPayloadRepository>(new MongoWebhookPayloadRepository(database));
+builder.Services.AddSingleton<IWebhookEventRepository>(new MongoWebhookEventRepository(database));
 builder.Services.AddHttpClient("shelly", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(5);
@@ -88,6 +90,11 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
             registry.Register<DiscoveryManagerActor>(discoveryManager);
             var sseManager = system.ActorOf(SseManagerActor.Props(), "sse-manager");
             registry.Register<SseManagerActor>(sseManager);
+            var webhookSseActor = system.ActorOf(WebhookEventSseActor.Props(), "webhook-event-sse");
+            registry.Register<WebhookEventSseActor>(webhookSseActor);
+            var webhookEventRepo = sp.GetRequiredService<IWebhookEventRepository>();
+            var webhookRegistryProxy = registry.Get<WebhookRegistry>();
+            webhookRegistryProxy.Tell(new SetWebhookDependencies(webhookSseActor, webhookEventRepo), ActorRefs.Nobody);
             system.ActorOf(DeviceRegistrarActor.Props(deviceRepo, appRepo), "device-registrar");
             var appStatusActor = system.ActorOf(ApplicationStatusActor.Props(), "application-status");
             registry.Register<ApplicationStatusActor>(appStatusActor);

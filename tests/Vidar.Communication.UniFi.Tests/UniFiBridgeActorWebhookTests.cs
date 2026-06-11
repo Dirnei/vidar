@@ -42,22 +42,57 @@ public sealed class UniFiBridgeActorWebhookTests : TestKit
         Assert.Contains(registrations, r => r.RouteKey == "unifi-protect");
         Assert.Contains(registrations, r => r.RouteKey == "unifi-network");
         Assert.All(registrations, r => Assert.Equal(WebhookAuthMode.None, r.AuthMode));
+        Assert.All(registrations, r => Assert.Equal("unifi", r.IntegrationId));
     }
 
     [Fact]
-    public void Bridge_ReRegisters_Periodically()
+    public void Bridge_ReRegisters_OnWebhookRegistryStarted()
     {
         var shardProxy = CreateTestProbe();
         var webhookRegistry = CreateTestProbe();
 
-        // Re-registration interval is parameterized so this test doesn't wait 60s
-        Sys.ActorOf(UniFiBridgeActor.Props(
-            shardProxy.Ref, webhookRegistry.Ref, "http://localhost:1", TimeSpan.FromMilliseconds(200)), "unifi-bridge-2");
+        var bridge = Sys.ActorOf(
+            UniFiBridgeActor.Props(shardProxy.Ref, webhookRegistry.Ref, "http://localhost:1"), "unifi-bridge-2");
 
-        // initial round + at least one re-registration round
+        // drain initial registration
         webhookRegistry.ExpectMsg<RegisterWebhookListener>(TimeSpan.FromSeconds(10));
         webhookRegistry.ExpectMsg<RegisterWebhookListener>(TimeSpan.FromSeconds(10));
+
+        // simulate registry singleton restart
+        bridge.Tell(WebhookRegistryStarted.Instance, TestActor);
+
+        var reRegistrations = new[]
+        {
+            webhookRegistry.ExpectMsg<RegisterWebhookListener>(TimeSpan.FromSeconds(5)),
+            webhookRegistry.ExpectMsg<RegisterWebhookListener>(TimeSpan.FromSeconds(5))
+        };
+
+        Assert.Contains(reRegistrations, r => r.RouteKey == "unifi-protect");
+        Assert.Contains(reRegistrations, r => r.RouteKey == "unifi-network");
+    }
+
+    [Fact]
+    public void Bridge_AcknowledgesFailedWebhook_OnFetchFailure()
+    {
+        var shardProxy = CreateTestProbe();
+        var webhookRegistry = CreateTestProbe();
+
+        var bridge = Sys.ActorOf(
+            UniFiBridgeActor.Props(shardProxy.Ref, webhookRegistry.Ref, "http://localhost:1"), "bridge-ack");
+
+        // drain initial registrations
         webhookRegistry.ExpectMsg<RegisterWebhookListener>(TimeSpan.FromSeconds(10));
         webhookRegistry.ExpectMsg<RegisterWebhookListener>(TimeSpan.FromSeconds(10));
+
+        // Send a webhook — the bridge will try to fetch payload from http://localhost:1 which will fail
+        var payloadId = Guid.NewGuid();
+        bridge.Tell(new WebhookReceived("unifi-protect", payloadId,
+            new Dictionary<string, string>(), "application/json", 0, DateTimeOffset.UtcNow), webhookRegistry.Ref);
+
+        // Bridge should acknowledge with Failed status since the HTTP fetch will fail
+        var handled = webhookRegistry.ExpectMsg<WebhookHandled>(TimeSpan.FromSeconds(30));
+        Assert.Equal(payloadId, handled.PayloadId);
+        Assert.Equal(WebhookHandleStatus.Failed, handled.Status);
+        Assert.NotNull(handled.Error);
     }
 }

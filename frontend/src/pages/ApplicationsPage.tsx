@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { getApplications, saveApplication } from '../api/client';
-import type { Application } from '../types';
+import { getApplications, getWebhookRoutes, saveApplication } from '../api/client';
+import type { Application, WebhookRoute } from '../types';
 
 // ---- Types ----
 
@@ -231,15 +231,81 @@ function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (v: b
   );
 }
 
+// ---- Webhook URL row ----
+
+function WebhookUrlRow({ route }: { route: WebhookRoute }) {
+  const [copied, setCopied] = useState(false);
+  const url = `${window.location.origin}${route.path}`;
+  const canCopy = typeof navigator !== 'undefined' && !!navigator.clipboard;
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard unavailable — the URL is still selectable below
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <code
+          style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border-default)',
+            borderRadius: 'var(--radius-sm)',
+            padding: '6px 10px',
+            fontSize: 12,
+            color: 'var(--text-primary)',
+            overflowX: 'auto',
+            whiteSpace: 'nowrap',
+            flex: 1,
+            userSelect: 'all',
+          }}
+        >
+          {url}
+        </code>
+        {canCopy && (
+          <button
+            type="button"
+            onClick={copy}
+            style={{
+              background: 'none',
+              border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '5px 10px',
+              cursor: 'pointer',
+              fontSize: 12,
+              color: copied ? 'var(--accent-primary)' : 'var(--text-muted)',
+              fontFamily: 'var(--font-body)',
+              flexShrink: 0,
+            }}
+          >
+            {copied ? 'copied' : 'copy'}
+          </button>
+        )}
+      </div>
+      {route.authMode === 'HeaderToken' && route.headerName && (
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>
+          requires token in header {route.headerName}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---- ApplicationCard ----
 
 interface ApplicationCardProps {
   app: Application;
   def: AppDef | undefined;
+  webhookRoutes: WebhookRoute[];
   onSaved: () => void;
 }
 
-function ApplicationCard({ app, def, onSaved }: ApplicationCardProps) {
+function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardProps) {
   const fields = def?.fields ?? [];
   const icon = def?.icon ?? '\u{1F4E6}';
   const description = def?.description ?? '';
@@ -320,6 +386,18 @@ function ApplicationCard({ app, def, onSaved }: ApplicationCardProps) {
           color: 'var(--accent-red)',
         }}>
           {app.errorMessage}
+        </div>
+      )}
+
+      {/* Webhook URLs (live registrations) */}
+      {webhookRoutes.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ ...fieldLabelStyle, marginBottom: 8 }}>Webhooks</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {webhookRoutes.map(r => (
+              <WebhookUrlRow key={r.routeKey} route={r} />
+            ))}
+          </div>
         </div>
       )}
 
@@ -433,13 +511,18 @@ function ApplicationCard({ app, def, onSaved }: ApplicationCardProps) {
 
 export function ApplicationsPage() {
   const [apps, setApps] = useState<Application[]>([]);
+  const [webhookRoutes, setWebhookRoutes] = useState<WebhookRoute[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   async function load() {
     try {
-      const data = await getApplications();
-      setApps(data);
+      const [appsData, routesData] = await Promise.all([
+        getApplications(),
+        getWebhookRoutes().catch(() => [] as WebhookRoute[]),
+      ]);
+      setApps(appsData);
+      setWebhookRoutes(routesData);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load applications');
     } finally {
@@ -488,7 +571,7 @@ export function ApplicationsPage() {
         <>
           <div style={sectionLabelStyle}>Providers</div>
           {providers.map(app => (
-            <ApplicationCard key={app.id} app={app} def={getAppDef(app.id)} onSaved={load} />
+            <ApplicationCard key={app.id} app={app} def={getAppDef(app.id)} webhookRoutes={webhookRoutes.filter(r => r.integrationId === app.id)} onSaved={load} />
           ))}
         </>
       )}
@@ -497,7 +580,7 @@ export function ApplicationsPage() {
         <>
           <div style={sectionLabelStyle}>Consumers</div>
           {consumers.map(app => (
-            <ApplicationCard key={app.id} app={app} def={getAppDef(app.id)} onSaved={load} />
+            <ApplicationCard key={app.id} app={app} def={getAppDef(app.id)} webhookRoutes={webhookRoutes.filter(r => r.integrationId === app.id)} onSaved={load} />
           ))}
         </>
       )}

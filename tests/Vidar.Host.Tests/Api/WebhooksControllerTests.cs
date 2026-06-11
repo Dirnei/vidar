@@ -6,7 +6,9 @@ using Microsoft.AspNetCore.Mvc;
 using NSubstitute;
 using Vidar.Core.Messages;
 using Vidar.Core.Webhooks;
+using Vidar.Host.Actors;
 using Vidar.Host.Api;
+using Vidar.Host.Api.Dto;
 using Vidar.Host.Persistence;
 using Vidar.Host.Webhooks;
 
@@ -16,13 +18,16 @@ public sealed class WebhooksControllerTests : TestKit
 {
     private readonly IWebhookRouteCache _routes = Substitute.For<IWebhookRouteCache>();
     private readonly IWebhookPayloadRepository _payloads = Substitute.For<IWebhookPayloadRepository>();
+    private readonly IWebhookEventRepository _events = Substitute.For<IWebhookEventRepository>();
     private readonly WebhooksController _sut;
 
     public WebhooksControllerTests()
     {
         var registry = Substitute.For<IRequiredActor<WebhookRegistry>>();
         registry.GetAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(TestActor));
-        _sut = new WebhooksController(_routes, _payloads, registry)
+        var webhookSse = Substitute.For<IRequiredActor<WebhookEventSseActor>>();
+        webhookSse.ActorRef.Returns(TestActor);
+        _sut = new WebhooksController(_routes, _payloads, _events, registry, webhookSse)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
         };
@@ -162,5 +167,100 @@ public sealed class WebhooksControllerTests : TestKit
 
         var file = Assert.IsType<FileStreamResult>(result);
         Assert.Equal("application/json", file.ContentType);
+    }
+
+    [Fact]
+    public void GetRoutes_ReturnsRegisteredRoutes_SortedByKey()
+    {
+        _routes.Snapshot().Returns(new Dictionary<string, WebhookRouteInfo>
+        {
+            ["unifi-protect"] = new(WebhookAuthMode.None, null, null, "unifi"),
+            ["homeassistant"] = new(WebhookAuthMode.HeaderToken, "tok", "X-Webhook-Token", null)
+        });
+
+        var result = _sut.GetRoutes();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var routes = Assert.IsAssignableFrom<List<WebhookRouteResponse>>(ok.Value);
+        Assert.Equal(2, routes.Count);
+        Assert.Equal("homeassistant", routes[0].RouteKey); // sorted
+        Assert.Equal("X-Webhook-Token", routes[0].HeaderName);
+        Assert.Equal("/webhooks/homeassistant", routes[0].Path);
+        Assert.Equal("unifi", routes[1].IntegrationId);
+        Assert.Equal("/webhooks/unifi-protect", routes[1].Path);
+    }
+
+    [Fact]
+    public void GetRoutes_UrlSecretRoute_EmbedsSecretInPathOnly()
+    {
+        _routes.Snapshot().Returns(new Dictionary<string, WebhookRouteInfo>
+        {
+            ["cam"] = new(WebhookAuthMode.UrlSecret, "s3cret", null, "unifi")
+        });
+
+        var result = _sut.GetRoutes();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var routes = Assert.IsAssignableFrom<List<WebhookRouteResponse>>(ok.Value);
+        Assert.Equal("/webhooks/cam/s3cret", routes[0].Path);
+    }
+
+    [Fact]
+    public async Task GetEvents_NoFilter_ReturnsPagedResults()
+    {
+        var doc = new WebhookEventDocument(
+            Guid.NewGuid(), "unifi-protect", "unifi", "application/json", 1234, DateTimeOffset.UtcNow);
+        _events.ListAsync(null, 0, 20).Returns(new WebhookEventPage([doc], 1));
+
+        var result = await _sut.GetEvents(null, 0, 20);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var page = Assert.IsType<WebhookEventPageResponse>(ok.Value);
+        Assert.Single(page.Items);
+        Assert.Equal(1, page.TotalCount);
+        Assert.Equal("unifi-protect", page.Items[0].RouteKey);
+        Assert.Equal("pending", page.Items[0].Status);
+        Assert.Null(page.Items[0].HandledAt);
+        Assert.Null(page.Items[0].Error);
+    }
+
+    [Fact]
+    public async Task GetEvents_WithRouteKeyFilter_PassesToRepository()
+    {
+        _events.ListAsync("unifi-protect", 0, 20).Returns(new WebhookEventPage([], 0));
+
+        var result = await _sut.GetEvents("unifi-protect", 0, 20);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var page = Assert.IsType<WebhookEventPageResponse>(ok.Value);
+        Assert.Empty(page.Items);
+    }
+
+    [Fact]
+    public async Task GetEvents_TakeCappedAt100()
+    {
+        _events.ListAsync(null, 0, 100).Returns(new WebhookEventPage([], 0));
+
+        await _sut.GetEvents(null, 0, 999);
+
+        await _events.Received().ListAsync(null, 0, 100);
+    }
+
+    [Fact]
+    public async Task Receive_StoresEventMetadata()
+    {
+        SetupRoute("unifi-protect", new WebhookRouteInfo(WebhookAuthMode.None, null, null, "unifi"));
+        SetBody("{\"alarm\":{}}");
+        var payloadId = Guid.NewGuid();
+        _payloads.StoreAsync("unifi-protect", "application/json", Arg.Any<Dictionary<string, string>>(), Arg.Any<Stream>())
+            .Returns(payloadId);
+
+        await _sut.Receive("unifi-protect");
+
+        await _events.Received().InsertAsync(Arg.Is<WebhookEventDocument>(e =>
+            e.PayloadId == payloadId &&
+            e.RouteKey == "unifi-protect" &&
+            e.IntegrationId == "unifi" &&
+            e.ContentType == "application/json"));
     }
 }

@@ -1,4 +1,4 @@
-import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry, Application } from '../types';
+import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry, Application, WebhookRoute, WebhookEventPage } from '../types';
 
 const BASE = '/api';
 
@@ -142,8 +142,30 @@ export function saveApplication(id: string, data: { enabled: boolean; settings: 
   return request(`/applications/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 }
 
+export function getWebhookRoutes(): Promise<WebhookRoute[]> {
+  return request('/webhooks/routes');
+}
+
 // --- Snapshots ---
 
 export function snapshotUrl(deviceId: string): string {
   return `${BASE}/devices/${deviceId}/snapshot`;
+}
+
+export async function getWebhookEvents(
+  routeKey?: string,
+  skip = 0,
+  take = 20,
+): Promise<WebhookEventPage> {
+  const params = new URLSearchParams();
+  if (routeKey) params.set('routeKey', routeKey);
+  params.set('skip', String(skip));
+  params.set('take', String(take));
+  return request<WebhookEventPage>(`/webhooks/events?${params}`);
+}
+
+export async function getWebhookPayload(payloadId: string): Promise<string> {
+  const res = await fetch(`${BASE}/webhooks/payloads/${payloadId}`);
+  if (!res.ok) throw new Error(`${res.status}`);
+  return res.text();
 }

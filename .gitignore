@@ -8,3 +8,4 @@ dist/
 frontend/build/
 .superpowers/
 .env
+docs/superpowers/

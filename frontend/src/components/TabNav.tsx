@@ -6,6 +6,7 @@ const navItems = [
   { to: '/devices', label: 'All Devices', icon: '◈', end: false },
   { to: '/discovered', label: 'Setup', icon: '⊕', end: true },
   { to: '/applications', label: 'Applications', icon: '⧉', end: true },
+  { to: '/webhooks', label: 'Webhooks', icon: '↯', end: true },
 ];
 
 export function SideNav() {

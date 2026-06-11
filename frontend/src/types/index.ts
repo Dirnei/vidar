@@ -88,6 +88,14 @@ export interface Application {
   errorMessage: string | null;
 }
 
+export interface WebhookRoute {
+  routeKey: string;
+  integrationId: string | null;
+  authMode: 'None' | 'UrlSecret' | 'HeaderToken';
+  path: string;
+  headerName: string | null;
+}
+
 export interface FilterSection {
   key: string;
   label: string;
@@ -101,3 +109,27 @@ export interface FilterOption {
 }
 
 export type ActiveFilters = Record<string, Set<string>>;
+
+export interface WebhookEvent {
+  payloadId: string;
+  routeKey: string;
+  integrationId: string | null;
+  contentType: string;
+  contentLength: number;
+  receivedAt: string;
+  status: 'pending' | 'handled' | 'failed';
+  handledAt: string | null;
+  error: string | null;
+}
+
+export interface WebhookEventPage {
+  items: WebhookEvent[];
+  totalCount: number;
+}
+
+export interface WebhookHandledEvent {
+  payloadId: string;
+  status: 'handled' | 'failed';
+  error: string | null;
+  handledAt: string;
+}

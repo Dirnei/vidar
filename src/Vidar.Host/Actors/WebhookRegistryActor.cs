@@ -1,10 +1,14 @@
 using System.Text.RegularExpressions;
 using Akka.Actor;
+using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
 using Vidar.Core.Messages;
+using Vidar.Host.Persistence;
 using Vidar.Host.Webhooks;
 
 namespace Vidar.Host.Actors;
+
+public sealed record SetWebhookDependencies(IActorRef SseActor, IWebhookEventRepository EventRepo);
 
 /// <summary>
 /// Cluster singleton holding the webhook route table. Listeners register point-to-point
@@ -22,6 +26,8 @@ public sealed class WebhookRegistryActor : ReceiveActor
     private readonly ILoggingAdapter _log = Context.GetLogger();
     private readonly IWebhookRouteCache _routeCache;
     private readonly Dictionary<string, RegisterWebhookListener> _routes = new();
+    private IActorRef? _sseActor;
+    private IWebhookEventRepository? _eventRepo;
 
     public static Props Props(IWebhookRouteCache routeCache) =>
         Akka.Actor.Props.Create(() => new WebhookRegistryActor(routeCache));
@@ -29,6 +35,12 @@ public sealed class WebhookRegistryActor : ReceiveActor
     public WebhookRegistryActor(IWebhookRouteCache routeCache)
     {
         _routeCache = routeCache;
+
+        Receive<SetWebhookDependencies>(msg =>
+        {
+            _sseActor = msg.SseActor;
+            _eventRepo = msg.EventRepo;
+        });
 
         Receive<RegisterWebhookListener>(msg =>
         {
@@ -70,6 +82,24 @@ public sealed class WebhookRegistryActor : ReceiveActor
                 route.Listener.Tell(msg);
             else
                 _log.Info("Webhook for '{RouteKey}' dropped — no listener registered", msg.RouteKey);
+            _sseActor?.Tell(msg);
+        });
+
+        ReceiveAsync<WebhookHandled>(async msg =>
+        {
+            _sseActor?.Tell(msg);
+            if (_eventRepo != null)
+            {
+                try
+                {
+                    await _eventRepo.AcknowledgeAsync(
+                        msg.PayloadId, msg.Status.ToString().ToLowerInvariant(), msg.Error, msg.HandledAt);
+                }
+                catch (Exception ex)
+                {
+                    _log.Error(ex, "Failed to persist webhook acknowledgement for {PayloadId}", msg.PayloadId);
+                }
+            }
         });
 
         Receive<Terminated>(t =>
@@ -85,6 +115,14 @@ public sealed class WebhookRegistryActor : ReceiveActor
         });
     }
 
+    protected override void PreStart()
+    {
+        base.PreStart();
+        var mediator = DistributedPubSub.Get(Context.System).Mediator;
+        mediator.Tell(new Publish("webhook-registry-started", WebhookRegistryStarted.Instance));
+        _log.Info("Webhook registry started, notified subscribers");
+    }
+
     private void UnwatchIfUnused(IActorRef listener)
     {
         if (!_routes.Values.Any(r => r.Listener.Equals(listener)))
@@ -94,5 +132,5 @@ public sealed class WebhookRegistryActor : ReceiveActor
     private void PushRouteCache() =>
         _routeCache.UpdateRoutes(_routes.ToDictionary(
             kv => kv.Key,
-            kv => new WebhookRouteInfo(kv.Value.AuthMode, kv.Value.Secret, kv.Value.HeaderName)));
+            kv => new WebhookRouteInfo(kv.Value.AuthMode, kv.Value.Secret, kv.Value.HeaderName, kv.Value.IntegrationId)));
 }
