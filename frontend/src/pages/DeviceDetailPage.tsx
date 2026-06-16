@@ -34,6 +34,7 @@ export function DeviceDetailPage() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [updateSent, setUpdateSent] = useState(false);
 
   const loadDevice = useCallback(async () => {
     if (!id) return;
@@ -316,7 +317,7 @@ export function DeviceDetailPage() {
           display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(220px, 100%), 1fr))',
           gap: 14, marginBottom: 28,
         }}>
-          {device.capabilities.map(cap => renderCapabilityCard(cap, state, cmd, device))}
+          {device.capabilities.map(cap => renderCapabilityCard(cap, state, cmd, device, updateSent, setUpdateSent))}
         </div>
       )}
 
@@ -600,6 +601,7 @@ function capAccentColor(cap: string): string {
     case 'Energy': return 'var(--accent-green)';
     case 'Humidity': return 'var(--accent-blue)';
     case 'Camera': return 'var(--accent-blue)';
+    case 'Update': return 'var(--accent-primary)';
     default: return 'var(--accent-primary)';
   }
 }
@@ -637,6 +639,8 @@ function renderCapabilityCard(
   state: Record<string, unknown>,
   cmd: (capability: string, value: unknown) => void,
   device: Device,
+  updateSent?: boolean,
+  setUpdateSent?: (v: boolean) => void,
 ) {
   const accent = capAccentColor(cap);
 
@@ -900,6 +904,64 @@ function renderCapabilityCard(
               >
                 {ip}
               </span>
+            </div>
+          )}
+        </div>
+      );
+    }
+    case 'Update': {
+      const update = state['Update'] as Record<string, unknown> | undefined;
+      const updateState = (update?.state as string) ?? 'idle';
+      const installedVersion = update?.installed_version;
+      const latestVersion = update?.latest_version;
+      const progress = typeof update?.progress === 'number' ? update.progress : null;
+      const isAvailable = updateState === 'available';
+      const isUpdating = updateState === 'updating' || updateState === 'downloading';
+      return (
+        <div key={cap} style={capCardStyle}>
+          <Indicator color={isAvailable ? 'var(--accent-primary)' : isUpdating ? 'var(--accent-blue)' : 'var(--border-subtle)'} />
+          <div style={capLabelStyle}><CapabilityIcon capability="Update" size={13} />Firmware Update</div>
+          <div style={capValueStyle(isAvailable ? 'var(--accent-primary)' : isUpdating ? 'var(--accent-blue)' : 'var(--text-muted)')}>
+            {isUpdating ? 'Updating…' : isAvailable ? 'Update Available' : 'Up to Date'}
+          </div>
+          {installedVersion != null && (
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+              Installed: <span style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{String(installedVersion)}</span>
+            </div>
+          )}
+          {latestVersion != null && isAvailable && (
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+              Latest: <span style={{ color: 'var(--accent-primary)', fontFamily: 'monospace' }}>{String(latestVersion)}</span>
+            </div>
+          )}
+          {isUpdating && progress != null && (
+            <div style={{ marginTop: 10 }}>
+              <ProgressBar value={progress} color="var(--accent-blue)" />
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, textAlign: 'center' }}>{Math.round(progress)}%</div>
+            </div>
+          )}
+          {isAvailable && !updateSent && (
+            <button
+              className="btn-primary"
+              style={{ marginTop: 12, fontSize: 12, padding: '8px 16px' }}
+              onClick={async () => {
+                setUpdateSent?.(true);
+                await cmd('Update', 'update');
+              }}
+            >
+              Install Update
+            </button>
+          )}
+          {isAvailable && updateSent && (
+            <div style={{ marginTop: 12, fontSize: 12, color: 'var(--accent-blue)', fontWeight: 500 }}>
+              Update command sent — waiting for device…
+            </div>
+          )}
+          {isUpdating && (
+            <div style={{
+              marginTop: 10, fontSize: 12, color: 'var(--accent-blue)', fontWeight: 500,
+            }}>
+              Do not power off the device
             </div>
           )}
         </div>

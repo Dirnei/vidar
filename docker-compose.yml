@@ -71,6 +71,19 @@ services:
       - VIDAR_UNIFI_POLL_INTERVAL=30
       - VIDAR_HOST_URL=http://vidar-host:8080
 
+  vidar-comm-homeconnect:
+    build:
+      context: .
+      dockerfile: src/Vidar.Communication.HomeConnect/Dockerfile
+    depends_on:
+      - lighthouse
+    env_file:
+      - .env
+    environment:
+      - VIDAR_CLUSTER_SEED=lighthouse:4053
+      - VIDAR_HOSTNAME=vidar-comm-homeconnect
+      - VIDAR_AKKA_PORT=4057
+
   mongodb:
     image: mongo:8
     volumes:

@@ -24,6 +24,7 @@ public sealed class ApplicationsController : ControllerBase
         ["shelly"] = ("Shelly", "provider"),
         ["zigbee2mqtt"] = ("Zigbee2MQTT", "provider"),
         ["unifi"] = ("UniFi Network", "provider"),
+        ["homeconnect"] = ("Home Connect", "provider"),
     };
 
     public ApplicationsController(

@@ -39,4 +39,12 @@ public class ExposesMapperTests
         Assert.Contains(CapabilityType.Power, caps);
         Assert.Contains(CapabilityType.Energy, caps);
     }
+
+    [Fact]
+    public void MapExposes_Update_ReturnsUpdateCapability()
+    {
+        var json = """[{"type":"update","features":[{"type":"binary","name":"update_available","access":1},{"type":"numeric","name":"update_progress","access":1}]}]""";
+        var caps = ExposesMapper.MapCapabilities(JsonDocument.Parse(json).RootElement);
+        Assert.Contains(CapabilityType.Update, caps);
+    }
 }

@@ -86,7 +86,7 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
             new ClusterSingletonOptions { Role = "host" })
         .WithActors((system, registry, resolver) =>
         {
-            var discoveryManager = system.ActorOf(DiscoveryManagerActor.Props(discoveredRepo), "discovery-manager");
+            var discoveryManager = system.ActorOf(DiscoveryManagerActor.Props(discoveredRepo, deviceRepo), "discovery-manager");
             registry.Register<DiscoveryManagerActor>(discoveryManager);
             var sseManager = system.ActorOf(SseManagerActor.Props(), "sse-manager");
             registry.Register<SseManagerActor>(sseManager);

@@ -16,5 +16,6 @@ public enum CapabilityType
     Battery = 11,
     Presence = 12,
     Camera = 13,
+    Update = 14,
     Extras = 99
 }

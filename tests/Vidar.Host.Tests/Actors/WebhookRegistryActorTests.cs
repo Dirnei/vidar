@@ -221,4 +221,37 @@ public sealed class WebhookRegistryActorTests : TestKit
         AwaitAssert(() => _eventRepo.Received().AcknowledgeAsync(
             handled.PayloadId, "failed", "parse error", Arg.Any<DateTimeOffset>()));
     }
+
+    [Fact]
+    public void OAuthCallbackReceived_RouteExists_ForwardsToListener()
+    {
+        var routeCache = Substitute.For<IWebhookRouteCache>();
+        var registry = Sys.ActorOf(WebhookRegistryActor.Props(routeCache));
+
+        var listener = CreateTestProbe();
+        registry.Tell(new RegisterWebhookListener("oauth-homeconnect", listener, IntegrationId: "homeconnect"));
+
+        var callback = new OAuthCallbackReceived("homeconnect", "code-123", "state-xyz", DateTimeOffset.UtcNow);
+        registry.Tell(callback);
+
+        listener.ExpectMsg<OAuthCallbackReceived>(msg =>
+            msg.IntegrationId == "homeconnect" &&
+            msg.Code == "code-123" &&
+            msg.State == "state-xyz");
+    }
+
+    [Fact]
+    public void OAuthCallbackReceived_NoRoute_DoesNotCrash()
+    {
+        var routeCache = Substitute.For<IWebhookRouteCache>();
+        var registry = Sys.ActorOf(WebhookRegistryActor.Props(routeCache));
+
+        var callback = new OAuthCallbackReceived("homeconnect", "code-123", "state-xyz", DateTimeOffset.UtcNow);
+        registry.Tell(callback);
+
+        // Actor stays alive — register something after to prove it
+        var probe = CreateTestProbe();
+        registry.Tell(new RegisterWebhookListener("test-route", probe, IntegrationId: "test"));
+        ExpectNoMsg(TimeSpan.FromMilliseconds(200));
+    }
 }

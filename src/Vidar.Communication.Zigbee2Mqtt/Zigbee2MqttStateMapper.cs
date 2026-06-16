@@ -64,10 +64,31 @@ public static class Zigbee2MqttStateMapper
                 result.Add(new Zigbee2MqttCapabilityValue(CapabilityType.Light, lightState));
         }
 
+        // Update is composite like Light; always parse if present (OTA support
+        // may not appear in exposes but does appear in device state)
+        if (root.TryGetProperty("update", out var updateProp) &&
+            updateProp.ValueKind == JsonValueKind.Object)
+        {
+            var updateState = new Dictionary<string, object>();
+            if (updateProp.TryGetProperty("state", out var uState) && uState.ValueKind == JsonValueKind.String)
+                updateState["state"] = uState.GetString()!;
+            if (updateProp.TryGetProperty("installed_version", out var iv))
+                updateState["installed_version"] = iv.ValueKind == JsonValueKind.Number ? iv.GetInt64() : (object)(iv.GetString() ?? "");
+            if (updateProp.TryGetProperty("latest_version", out var lv))
+                updateState["latest_version"] = lv.ValueKind == JsonValueKind.Number ? lv.GetInt64() : (object)(lv.GetString() ?? "");
+            if (updateProp.TryGetProperty("progress", out var prog) && prog.ValueKind == JsonValueKind.Number)
+                updateState["progress"] = prog.GetDouble();
+            if (updateState.Count > 0)
+                result.Add(new Zigbee2MqttCapabilityValue(CapabilityType.Update, updateState));
+        }
+
         var extras = new Dictionary<string, object>();
 
         foreach (var prop in root.EnumerateObject())
         {
+            if (prop.Name == "update")
+                continue;
+
             if (NameMap.TryGetValue(prop.Name, out var cap) && knownSet.Contains(cap))
             {
                 if (knownSet.Contains(CapabilityType.Light) && (cap == CapabilityType.Switch || cap == CapabilityType.Dimmer))

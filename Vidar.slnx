@@ -1,12 +1,14 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Vidar.Communication.Shelly/Vidar.Communication.Shelly.csproj" />
+    <Project Path="src/Vidar.Communication.HomeConnect/Vidar.Communication.HomeConnect.csproj" />
     <Project Path="src/Vidar.Communication.UniFi/Vidar.Communication.UniFi.csproj" />
     <Project Path="src/Vidar.Communication.Zigbee2Mqtt/Vidar.Communication.Zigbee2Mqtt.csproj" />
     <Project Path="src/Vidar.Core/Vidar.Core.csproj" />
     <Project Path="src/Vidar.Host/Vidar.Host.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Vidar.Communication.HomeConnect.Tests/Vidar.Communication.HomeConnect.Tests.csproj" />
     <Project Path="tests/Vidar.Communication.Shelly.Tests/Vidar.Communication.Shelly.Tests.csproj" />
     <Project Path="tests/Vidar.Communication.UniFi.Tests/Vidar.Communication.UniFi.Tests.csproj" />
     <Project Path="tests/Vidar.Communication.Zigbee2Mqtt.Tests/Vidar.Communication.Zigbee2Mqtt.Tests.csproj" />

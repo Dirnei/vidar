@@ -360,6 +360,10 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
                     actionValues = ExposesMapper.ExtractActionValues(exposes);
                 }
 
+                if (!capabilities.Contains(CapabilityType.Update) &&
+                    deviceEl.TryGetProperty("software_build_id", out _))
+                    capabilities.Add(CapabilityType.Update);
+
                 var metadata = new Dictionary<string, string>();
                 if (deviceEl.TryGetProperty("manufacturer", out var mfr) && mfr.GetString() != null)
                     metadata["manufacturer"] = mfr.GetString()!;
@@ -455,6 +459,7 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
             CapabilityType.Dimmer => CoerceToNumber(value) is { } b ? JsonSerializer.Serialize(new { brightness = (int)(b / 100.0 * 254.0) }) : null,
             CapabilityType.Light => BuildLightPayload(value),
             CapabilityType.Cover => CoerceToNumber(value) is { } p ? JsonSerializer.Serialize(new { position = (int)p }) : null,
+            CapabilityType.Update => BuildUpdatePayload(value),
             _ => null
         };
     }
@@ -472,6 +477,17 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
         if (value is string s)
             return s;
         return null;
+    }
+
+    private static string BuildUpdatePayload(object value)
+    {
+        var action = value switch
+        {
+            string s => s,
+            JsonElement el when el.ValueKind == JsonValueKind.String => el.GetString() ?? "update",
+            _ => "update"
+        };
+        return JsonSerializer.Serialize(new { update = new { state = action } });
     }
 
     private static double? CoerceToNumber(object value) => value switch

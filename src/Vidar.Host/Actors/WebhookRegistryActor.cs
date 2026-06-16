@@ -85,6 +85,16 @@ public sealed class WebhookRegistryActor : ReceiveActor
             _sseActor?.Tell(msg);
         });
 
+        Receive<OAuthCallbackReceived>(msg =>
+        {
+            var routeKey = $"oauth-{msg.IntegrationId}";
+            if (_routes.TryGetValue(routeKey, out var route))
+                route.Listener.Tell(msg);
+            else
+                _log.Warning("OAuth callback for '{IntegrationId}' dropped — no listener on route '{RouteKey}'",
+                    msg.IntegrationId, routeKey);
+        });
+
         ReceiveAsync<WebhookHandled>(async msg =>
         {
             _sseActor?.Tell(msg);

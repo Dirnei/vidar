@@ -11,14 +11,14 @@ public sealed class DiscoveryManagerActor : ReceiveActor
 {
     private readonly ILoggingAdapter _log = Context.GetLogger();
 
-    public static Props Props(IDiscoveredDeviceRepository repo) =>
-        Akka.Actor.Props.Create(() => new DiscoveryManagerActor(repo));
+    public static Props Props(IDiscoveredDeviceRepository discoveredRepo, IDeviceRepository deviceRepo) =>
+        Akka.Actor.Props.Create(() => new DiscoveryManagerActor(discoveredRepo, deviceRepo));
 
-    public DiscoveryManagerActor(IDiscoveredDeviceRepository repo)
+    public DiscoveryManagerActor(IDiscoveredDeviceRepository discoveredRepo, IDeviceRepository deviceRepo)
     {
         ReceiveAsync<DeviceDiscovered>(async msg =>
         {
-            var existing = await repo.GetByNativeIdAsync(msg.CommunicationType, msg.NativeId);
+            var existing = await discoveredRepo.GetByNativeIdAsync(msg.CommunicationType, msg.NativeId);
             var discovered = new DiscoveredDevice
             {
                 Id = existing?.Id ?? msg.DeviceId,
@@ -28,7 +28,23 @@ public sealed class DiscoveryManagerActor : ReceiveActor
                 Metadata = msg.Metadata,
                 DiscoveredAt = existing?.DiscoveredAt ?? DateTime.UtcNow
             };
-            await repo.UpsertAsync(discovered);
+            await discoveredRepo.UpsertAsync(discovered);
+
+            // Sync capabilities to already-configured devices
+            var allDevices = await deviceRepo.GetAllAsync();
+            var configured = allDevices.FirstOrDefault(d =>
+                d.NativeId == msg.NativeId && d.CommunicationType == msg.CommunicationType);
+            if (configured != null)
+            {
+                var newCaps = msg.Capabilities.Where(c => !configured.Capabilities.Contains(c)).ToList();
+                if (newCaps.Count > 0)
+                {
+                    configured.Capabilities.AddRange(newCaps);
+                    await deviceRepo.UpdateAsync(configured);
+                    _log.Info("Synced {Count} new capabilities to configured device {NativeId}: {Caps}",
+                        newCaps.Count, msg.NativeId, string.Join(",", newCaps));
+                }
+            }
         });
     }
 

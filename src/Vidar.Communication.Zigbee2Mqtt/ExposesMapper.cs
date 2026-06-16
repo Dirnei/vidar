@@ -77,6 +77,10 @@ public static class ExposesMapper
                     MapExposesArray(coverFeatures, result, lightFeatures, actionValues);
                 break;
 
+            case "update":
+                result.Add(CapabilityType.Update);
+                break;
+
             default:
                 if (item.TryGetProperty("features", out var features))
                     MapExposesArray(features, result, lightFeatures, actionValues);

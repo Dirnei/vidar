@@ -118,6 +118,14 @@ export function CapabilityIcon({ capability, size = 16, color }: Props) {
           <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
         </svg>
       );
+    case 'Update':
+      return (
+        <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+      );
     default:
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round">
@@ -142,6 +150,7 @@ function accentFor(cap: string): string {
     case 'Battery': return 'var(--accent-green)';
     case 'Presence': return 'var(--accent-green)';
     case 'Camera': return 'var(--accent-blue)';
+    case 'Update': return 'var(--accent-primary)';
     default: return 'var(--text-muted)';
   }
 }

@@ -49,6 +49,19 @@ const APP_DEFS: AppDef[] = [
       { key: 'pollIntervalSeconds', label: 'Poll Interval (seconds)', placeholder: '30', defaultValue: '30', type: 'text' },
     ],
   },
+  {
+    id: 'homeconnect',
+    icon: '🏠',
+    description: 'Bosch/Siemens home appliances via Home Connect cloud API.',
+    fields: [
+      { key: 'clientId', label: 'Client ID', placeholder: 'Home Connect developer client ID', type: 'text' },
+      { key: 'clientSecret', label: 'Client Secret', placeholder: 'Home Connect client secret', type: 'password' },
+      { key: 'oauthAuthorizeEndpoint', label: 'Authorize Endpoint', placeholder: 'https://api.home-connect.com/security/oauth/authorize', defaultValue: 'https://api.home-connect.com/security/oauth/authorize', type: 'text' },
+      { key: 'oauthTokenEndpoint', label: 'Token Endpoint', placeholder: 'https://api.home-connect.com/security/oauth/token', defaultValue: 'https://api.home-connect.com/security/oauth/token', type: 'text' },
+      { key: 'oauthScopes', label: 'Scopes', placeholder: 'IdentifyAppliance Monitor Settings Control', defaultValue: 'IdentifyAppliance Monitor Settings Control', type: 'text' },
+      { key: 'hostBaseUrl', label: 'Vidar Host URL', placeholder: 'http://vidar-host:8080', defaultValue: 'http://vidar-host:8080', type: 'text' },
+    ],
+  },
 ];
 
 // ---- Status colors ----
@@ -305,8 +318,10 @@ interface ApplicationCardProps {
   onSaved: () => void;
 }
 
+const EMPTY_FIELDS: FieldDef[] = [];
+
 function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardProps) {
-  const fields = def?.fields ?? [];
+  const fields = def?.fields ?? EMPTY_FIELDS;
   const icon = def?.icon ?? '\u{1F4E6}';
   const description = def?.description ?? '';
 
