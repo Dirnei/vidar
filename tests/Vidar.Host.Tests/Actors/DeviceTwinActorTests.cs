@@ -56,7 +56,7 @@ public sealed class DeviceTwinActorTests : TestKit
         historyRepo.AddStateEntryAsync(Arg.Any<StateHistoryEntry>()).Returns(Task.CompletedTask);
 
         var actor = Sys.ActorOf(
-            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo, historyRepo),
+            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo, historyRepo, ActorRefs.Nobody),
             $"device-twin-{deviceId}");
 
         var update = new DeviceStateUpdate(deviceId, CapabilityType.Switch, true);
@@ -70,6 +70,47 @@ public sealed class DeviceTwinActorTests : TestKit
             s.DeviceId == deviceId &&
             s.States.ContainsKey(CapabilityType.Switch) &&
             (bool)s.States[CapabilityType.Switch] == true));
+    }
+
+    [Fact]
+    public async Task Command_RoutesToPluginRegistry()
+    {
+        // Arrange
+        var deviceId = Guid.NewGuid();
+        var stateRepo = Substitute.For<IDeviceStateRepository>();
+        var deviceRepo = Substitute.For<IDeviceRepository>();
+        var historyRepo = Substitute.For<IHistoryRepository>();
+
+        var config = new DeviceConfiguration
+        {
+            Id = deviceId,
+            Name = "Test Device",
+            CommunicationType = "shelly",
+            NativeId = "shelly-1",
+            Capabilities = new List<CapabilityType>(),
+            Settings = new Dictionary<string, string>()
+        };
+        stateRepo.GetByDeviceIdAsync(deviceId).Returns((DeviceState?)null);
+        deviceRepo.GetByIdAsync(deviceId).Returns(config);
+        historyRepo.AddCommandEntryAsync(Arg.Any<CommandHistoryEntry>()).Returns(Task.CompletedTask);
+
+        var pluginRegistryProbe = CreateTestProbe();
+        var actor = Sys.ActorOf(
+            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo, historyRepo, pluginRegistryProbe),
+            $"device-twin-cmd-{deviceId}");
+
+        // Wait for config to load
+        await Task.Delay(300);
+
+        var command = new DeviceCommand(deviceId, "shelly", "shelly-1", CapabilityType.Switch, true);
+
+        // Act
+        actor.Tell(command);
+
+        // Assert
+        pluginRegistryProbe.ExpectMsg<RouteToPlugin>(
+            msg => msg.PluginId == "shelly" && msg.Message is DeviceCommand,
+            TimeSpan.FromSeconds(3));
     }
 
     /// <summary>
@@ -107,7 +148,7 @@ public sealed class DeviceTwinActorTests : TestKit
         historyRepo.AddStateEntryAsync(Arg.Any<StateHistoryEntry>()).Returns(Task.CompletedTask);
 
         var actor = Sys.ActorOf(
-            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo, historyRepo),
+            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo, historyRepo, ActorRefs.Nobody),
             $"device-twin-pubsub-{deviceId}");
 
         var update = new DeviceStateUpdate(deviceId, CapabilityType.Temperature, 21.5);

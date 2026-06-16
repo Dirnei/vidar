@@ -6,6 +6,7 @@ using Akka.Remote.Hosting;
 using MongoDB.Driver;
 using Vidar.Core.Model;
 using Vidar.Core.Sharding;
+using Vidar.Core.Plugins;
 using Vidar.Core.Webhooks;
 using Vidar.Host.Actors;
 using Vidar.Host.Persistence;
@@ -72,14 +73,22 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
         .WithDistributedPubSub("")
         .WithShardRegion<DeviceTwinRegion>(
             "device-twin",
-            (system, registry, resolver) => entityId =>
-                DeviceTwinActor.Props(entityId, stateRepo, deviceRepo, historyRepo),
+            (system, registry, resolver) =>
+            {
+                var pluginRegistryProxy = registry.Get<PluginRegistry>();
+                return entityId =>
+                    DeviceTwinActor.Props(entityId, stateRepo, deviceRepo, historyRepo, pluginRegistryProxy);
+            },
             new DeviceTwinMessageExtractor(100),
             new ShardOptions
             {
                 Role = "host",
                 StateStoreMode = StateStoreMode.DData
             })
+        .WithSingleton<PluginRegistry>(
+            "plugin-registry",
+            PluginRegistryActor.Props(deviceRepo, appRepo),
+            new ClusterSingletonOptions { Role = "host" })
         .WithSingleton<WebhookRegistry>(
             "webhook-registry",
             WebhookRegistryActor.Props(webhookRouteCache),
@@ -95,7 +104,6 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
             var webhookEventRepo = sp.GetRequiredService<IWebhookEventRepository>();
             var webhookRegistryProxy = registry.Get<WebhookRegistry>();
             webhookRegistryProxy.Tell(new SetWebhookDependencies(webhookSseActor, webhookEventRepo), ActorRefs.Nobody);
-            system.ActorOf(DeviceRegistrarActor.Props(deviceRepo, appRepo), "device-registrar");
             var appStatusActor = system.ActorOf(ApplicationStatusActor.Props(), "application-status");
             registry.Register<ApplicationStatusActor>(appStatusActor);
             system.ActorOf(

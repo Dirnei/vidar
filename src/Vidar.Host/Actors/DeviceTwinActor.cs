@@ -16,18 +16,20 @@ public sealed class DeviceTwinActor : ReceiveActor
     private readonly IDeviceStateRepository _stateRepo;
     private readonly IDeviceRepository _deviceRepo;
     private readonly IHistoryRepository _historyRepo;
+    private readonly IActorRef _pluginRegistry;
     private DeviceConfiguration? _config;
     private readonly Dictionary<CapabilityType, object> _states = new();
 
-    public static Props Props(string entityId, IDeviceStateRepository stateRepo, IDeviceRepository deviceRepo, IHistoryRepository historyRepo) =>
-        Akka.Actor.Props.Create(() => new DeviceTwinActor(entityId, stateRepo, deviceRepo, historyRepo));
+    public static Props Props(string entityId, IDeviceStateRepository stateRepo, IDeviceRepository deviceRepo, IHistoryRepository historyRepo, IActorRef pluginRegistry) =>
+        Akka.Actor.Props.Create(() => new DeviceTwinActor(entityId, stateRepo, deviceRepo, historyRepo, pluginRegistry));
 
-    public DeviceTwinActor(string entityId, IDeviceStateRepository stateRepo, IDeviceRepository deviceRepo, IHistoryRepository historyRepo)
+    public DeviceTwinActor(string entityId, IDeviceStateRepository stateRepo, IDeviceRepository deviceRepo, IHistoryRepository historyRepo, IActorRef pluginRegistry)
     {
         _entityId = entityId;
         _stateRepo = stateRepo;
         _deviceRepo = deviceRepo;
         _historyRepo = historyRepo;
+        _pluginRegistry = pluginRegistry;
 
         ReceiveAsync<DeviceStateUpdate>(HandleStateUpdate);
         ReceiveAsync<DeviceCommand>(HandleCommand);
@@ -120,7 +122,6 @@ public sealed class DeviceTwinActor : ReceiveActor
                 _log.Warning(t.Exception, "Failed to write command history for device {DeviceId}", command.DeviceId);
         });
 
-        var mediator = DistributedPubSub.Get(Context.System).Mediator;
-        mediator.Tell(new Publish($"commands.{_config.CommunicationType}", command));
+        _pluginRegistry.Tell(new RouteToPlugin(_config.CommunicationType, command));
     }
 }
