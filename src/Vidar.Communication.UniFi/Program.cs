@@ -3,6 +3,7 @@ using Akka.Cluster.Sharding;
 using Akka.Hosting;
 using Akka.Remote.Hosting;
 using Vidar.Communication.UniFi;
+using Vidar.Core.Plugins;
 using Vidar.Core.Sharding;
 using Vidar.Core.Webhooks;
 
@@ -25,11 +26,13 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
         .WithDistributedPubSub("")
         .WithShardRegionProxy<DeviceTwinRegion>("device-twin", "host", new DeviceTwinMessageExtractor(100))
         .WithSingletonProxy<WebhookRegistry>("webhook-registry", new ClusterSingletonOptions { Role = "host" })
+        .WithSingletonProxy<PluginRegistry>("plugin-registry", new ClusterSingletonOptions { Role = "host" })
         .WithActors((system, registry, resolver) =>
         {
             var shardProxy = registry.Get<DeviceTwinRegion>();
             var webhookRegistry = registry.Get<WebhookRegistry>();
-            system.ActorOf(UniFiBridgeActor.Props(shardProxy, webhookRegistry, hostUrl), "unifi-bridge");
+            var pluginRegistry = registry.Get<PluginRegistry>();
+            system.ActorOf(UniFiBridgeActor.Props(shardProxy, webhookRegistry, hostUrl, pluginRegistry), "unifi-bridge");
         });
 });
 

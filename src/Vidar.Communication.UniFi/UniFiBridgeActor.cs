@@ -15,6 +15,7 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
     private readonly IActorRef _shardProxy;
     private readonly IActorRef _webhookRegistry;
     private readonly string _hostUrl;
+    private readonly IActorRef _pluginRegistry;
     private IActorRef _protectHandler = ActorRefs.Nobody;
     private IActorRef _networkHandler = ActorRefs.Nobody;
     private static readonly HttpClient PayloadClient = new() { Timeout = TimeSpan.FromSeconds(15) };
@@ -35,19 +36,30 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
     // Internal messages
     private sealed class PollTick { public static readonly PollTick Instance = new(); }
     private sealed class InitialFetch { public static readonly InitialFetch Instance = new(); }
-    private sealed class RequestConfig { public static readonly RequestConfig Instance = new(); }
     private sealed class RegisterWebhooks { public static readonly RegisterWebhooks Instance = new(); }
 
-    public static Props Props(IActorRef shardProxy, IActorRef webhookRegistry, string hostUrl) =>
-        Akka.Actor.Props.Create(() => new UniFiBridgeActor(shardProxy, webhookRegistry, hostUrl));
+    public static Props Props(IActorRef shardProxy, IActorRef webhookRegistry, string hostUrl, IActorRef pluginRegistry) =>
+        Akka.Actor.Props.Create(() => new UniFiBridgeActor(shardProxy, webhookRegistry, hostUrl, pluginRegistry));
 
-    public UniFiBridgeActor(IActorRef shardProxy, IActorRef webhookRegistry, string hostUrl)
+    public UniFiBridgeActor(IActorRef shardProxy, IActorRef webhookRegistry, string hostUrl, IActorRef pluginRegistry)
     {
         _shardProxy = shardProxy;
         _webhookRegistry = webhookRegistry;
         _hostUrl = hostUrl.TrimEnd('/');
+        _pluginRegistry = pluginRegistry;
 
-        // Handle config updates from pub/sub
+        // Handle config updates from PluginRegistry
+        Receive<PluginRegistered>(msg =>
+        {
+            foreach (var reg in msg.Registrations)
+                _configuredDevices[reg.NativeId] = reg.DeviceId;
+            _log.Info("Plugin registered with {Count} devices, enabled={Enabled}", msg.Registrations.Count, msg.Enabled);
+
+            if (msg.Enabled)
+                ConfigureAndStart(true, msg.Settings);
+        });
+
+        // Handle runtime config updates
         Receive<IntegrationConfigChanged>(msg =>
         {
             if (msg.IntegrationId != "unifi") return;
@@ -58,30 +70,7 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         ReceiveAsync<InitialFetch>(_ => InitialFetchAsync());
         ReceiveAsync<PollTick>(_ => PollAsync());
 
-        Receive<RequestConfig>(_ =>
-        {
-            if (_client != null) return;
-            var mediator = DistributedPubSub.Get(Context.System).Mediator;
-            mediator.Tell(new Publish("request-integration-config", new RequestIntegrationConfig("unifi")));
-            _log.Info("Requested integration config for unifi from Host");
-            Timers.StartSingleTimer("config-retry", RequestConfig.Instance, TimeSpan.FromSeconds(5));
-        });
-
-        // Config cache: map nativeId → configured device GUID
-        Receive<RegisterDeviceForPolling>(msg =>
-        {
-            if (msg.CommunicationType != "unifi") return;
-            _configuredDevices[msg.NativeId] = msg.DeviceId;
-        });
-
-        Receive<RegistrationResponse>(msg =>
-        {
-            foreach (var reg in msg.Devices)
-                _configuredDevices[reg.NativeId] = reg.DeviceId;
-            _log.Info("Config cache loaded: {Count} UniFi devices", msg.Devices.Count);
-        });
-
-        // Handle port power-cycle commands from Pub/Sub
+        // Handle port power-cycle commands
         Receive<DeviceCommand>(cmd =>
         {
             if (cmd.CommunicationType != "unifi") return;
@@ -117,22 +106,13 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
             NetworkWebhookHandlerActor.Props(_shardProxy, _webhookRegistry, _hostUrl, _configuredDevices),
             "network-webhook");
 
+        _pluginRegistry.Tell(new RegisterPlugin("unifi", Self));
+
         var mediator = DistributedPubSub.Get(Context.System).Mediator;
-
-        // Subscribe to commands topic
-        mediator.Tell(new Subscribe("commands.unifi", Self));
-
-        // Subscribe to config updates and registrations
-        mediator.Tell(new Subscribe("integration-config.unifi", Self));
-        mediator.Tell(new Subscribe("register.unifi", Self));
-        mediator.Tell(new Subscribe("registration-response.unifi", Self));
-
-        // Request current config from Host after a short delay (let cluster form)
-        Timers.StartSingleTimer("request-config", RequestConfig.Instance, TimeSpan.FromSeconds(5));
+        mediator.Tell(new Subscribe("webhook-registry-started", Self));
 
         // Register once on start; re-registration happens via WebhookRegistryStarted pub/sub
         Timers.StartSingleTimer("webhook-register", RegisterWebhooks.Instance, TimeSpan.Zero);
-        mediator.Tell(new Subscribe("webhook-registry-started", Self));
     }
 
     protected override void PostStop()
@@ -192,10 +172,6 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         _siteId = siteId ?? "default";
 
         _log.Info("UniFi configured: host={Host}, siteId={SiteId}, pollInterval={Interval}s", host, _siteId, _pollIntervalSeconds);
-
-        // Request device registrations from Host
-        var mediator = DistributedPubSub.Get(Context.System).Mediator;
-        mediator.Tell(new Publish("request-registrations", new RequestRegistrations("unifi")));
 
         // Start initial fetch
         Timers.StartSingleTimer("initial-fetch", InitialFetch.Instance, TimeSpan.FromSeconds(2));
