@@ -17,5 +17,8 @@ public enum CapabilityType
     Presence = 12,
     Camera = 13,
     Update = 14,
+    SolarProduction = 15,
+    GridPower = 16,
+    Consumption = 17,
     Extras = 99
 }
