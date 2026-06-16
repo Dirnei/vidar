@@ -1,9 +1,9 @@
 using Akka.Actor;
-using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Vidar.Core.Messages;
 using Vidar.Core.Model;
+using Vidar.Core.Plugins;
 using Vidar.Host.Actors;
 using Vidar.Host.Api.Dto;
 using Vidar.Host.Persistence;
@@ -15,8 +15,8 @@ namespace Vidar.Host.Api;
 public sealed class ApplicationsController : ControllerBase
 {
     private readonly IApplicationConfigRepository _repo;
-    private readonly ActorSystem _actorSystem;
     private readonly IRequiredActor<ApplicationStatusActor> _statusActorProvider;
+    private readonly IRequiredActor<PluginRegistry> _pluginRegistryProvider;
     private readonly ILogger<ApplicationsController> _logger;
 
     private static readonly Dictionary<string, (string Name, string Type)> KnownApplications = new()
@@ -29,13 +29,13 @@ public sealed class ApplicationsController : ControllerBase
 
     public ApplicationsController(
         IApplicationConfigRepository repo,
-        ActorSystem actorSystem,
         IRequiredActor<ApplicationStatusActor> statusActorProvider,
+        IRequiredActor<PluginRegistry> pluginRegistryProvider,
         ILogger<ApplicationsController> logger)
     {
         _repo = repo;
-        _actorSystem = actorSystem;
         _statusActorProvider = statusActorProvider;
+        _pluginRegistryProvider = pluginRegistryProvider;
         _logger = logger;
     }
 
@@ -112,9 +112,9 @@ public sealed class ApplicationsController : ControllerBase
 
         await _repo.UpsertAsync(config);
 
-        var mediator = DistributedPubSub.Get(_actorSystem).Mediator;
+        var pluginRegistry = await _pluginRegistryProvider.GetAsync();
         var changed = new IntegrationConfigChanged(id, config.Enabled, config.Settings);
-        mediator.Tell(new Publish($"integration-config.{id}", changed));
+        pluginRegistry.Tell(new RouteToPlugin(id, changed));
 
         _logger.LogInformation("Updated application {Id}, enabled={Enabled}", id, config.Enabled);
         return NoContent();

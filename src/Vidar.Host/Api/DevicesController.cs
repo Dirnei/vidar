@@ -1,8 +1,8 @@
 using Akka.Actor;
-using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Vidar.Core.Messages;
+using Vidar.Core.Plugins;
 using Vidar.Core.Sharding;
 using Vidar.Host.Api.Dto;
 using Vidar.Host.Persistence;
@@ -19,7 +19,7 @@ public sealed class DevicesController : ControllerBase
     private readonly IGroupRepository _groupRepo;
     private readonly IHistoryRepository _historyRepo;
     private readonly IRequiredActor<DeviceTwinRegion> _twinRegion;
-    private readonly ActorSystem _actorSystem;
+    private readonly IRequiredActor<PluginRegistry> _pluginRegistryProvider;
     private readonly ILogger<DevicesController> _logger;
 
     public DevicesController(
@@ -29,7 +29,7 @@ public sealed class DevicesController : ControllerBase
         IGroupRepository groupRepo,
         IHistoryRepository historyRepo,
         IRequiredActor<DeviceTwinRegion> twinRegion,
-        ActorSystem actorSystem,
+        IRequiredActor<PluginRegistry> pluginRegistryProvider,
         ILogger<DevicesController> logger)
     {
         _deviceRepo = deviceRepo;
@@ -38,7 +38,7 @@ public sealed class DevicesController : ControllerBase
         _groupRepo = groupRepo;
         _historyRepo = historyRepo;
         _twinRegion = twinRegion;
-        _actorSystem = actorSystem;
+        _pluginRegistryProvider = pluginRegistryProvider;
         _logger = logger;
     }
 
@@ -158,8 +158,8 @@ public sealed class DevicesController : ControllerBase
                 newHost,
                 generation,
                 device.Capabilities);
-            var mediator = DistributedPubSub.Get(_actorSystem).Mediator;
-            mediator.Tell(new Publish("register.shelly", msg));
+            var pluginRegistry = await _pluginRegistryProvider.GetAsync();
+            pluginRegistry.Tell(new RouteToPlugin(device.CommunicationType, msg));
             _logger.LogInformation("Republished RegisterDeviceForPolling for device {DeviceId} with new host {Host}", id, newHost);
         }
 

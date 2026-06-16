@@ -1,8 +1,9 @@
 using Akka.Actor;
-using Akka.Cluster.Tools.PublishSubscribe;
+using Akka.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Vidar.Core.Messages;
 using Vidar.Core.Model;
+using Vidar.Core.Plugins;
 using Vidar.Host.Api.Dto;
 using Vidar.Host.Persistence;
 
@@ -14,13 +15,13 @@ public sealed class DiscoveredDevicesController : ControllerBase
 {
     private readonly IDiscoveredDeviceRepository _discoveredRepo;
     private readonly IDeviceRepository _deviceRepo;
-    private readonly ActorSystem _actorSystem;
+    private readonly IRequiredActor<PluginRegistry> _pluginRegistryProvider;
 
-    public DiscoveredDevicesController(IDiscoveredDeviceRepository discoveredRepo, IDeviceRepository deviceRepo, ActorSystem actorSystem)
+    public DiscoveredDevicesController(IDiscoveredDeviceRepository discoveredRepo, IDeviceRepository deviceRepo, IRequiredActor<PluginRegistry> pluginRegistryProvider)
     {
         _discoveredRepo = discoveredRepo;
         _deviceRepo = deviceRepo;
-        _actorSystem = actorSystem;
+        _pluginRegistryProvider = pluginRegistryProvider;
     }
 
     [HttpGet]
@@ -63,26 +64,19 @@ public sealed class DiscoveredDevicesController : ControllerBase
         await _deviceRepo.CreateAsync(device);
         await _discoveredRepo.DeleteAsync(id);
 
-        // Publish registration so the appropriate communication node can start polling
-        var mediator = DistributedPubSub.Get(_actorSystem).Mediator;
-        if (discovered.CommunicationType == "shelly" &&
-            discovered.Metadata.TryGetValue("host", out var host))
-        {
-            int.TryParse(discovered.Metadata.GetValueOrDefault("generation", "2"), out var generation);
-            mediator.Tell(new Publish("register.shelly", new RegisterDeviceForPolling(
-                device.Id, device.CommunicationType, device.NativeId, host, generation, device.Capabilities)));
-        }
-        else if (discovered.CommunicationType == "zigbee2mqtt")
-        {
-            var friendlyName = discovered.Metadata.GetValueOrDefault("friendly_name", device.NativeId);
-            mediator.Tell(new Publish("register.zigbee2mqtt", new RegisterDeviceForPolling(
-                device.Id, device.CommunicationType, device.NativeId, friendlyName, 0, device.Capabilities)));
-        }
-        else if (discovered.CommunicationType == "unifi")
-        {
-            mediator.Tell(new Publish("register.unifi", new RegisterDeviceForPolling(
-                device.Id, device.CommunicationType, device.NativeId, "", 0, device.Capabilities)));
-        }
+        // Route registration to the appropriate plugin via PluginRegistry
+        var pluginRegistry = await _pluginRegistryProvider.GetAsync();
+
+        var host = discovered.Metadata.GetValueOrDefault("host", "");
+        var friendlyName = discovered.Metadata.GetValueOrDefault("friendly_name", device.NativeId);
+        int.TryParse(discovered.Metadata.GetValueOrDefault("generation", "0"), out var generation);
+
+        var reg = new RegisterDeviceForPolling(
+            device.Id, device.CommunicationType, device.NativeId,
+            discovered.CommunicationType == "shelly" ? host : friendlyName,
+            generation, device.Capabilities);
+
+        pluginRegistry.Tell(new RouteToPlugin(discovered.CommunicationType, reg));
 
         return Created($"/api/devices/{device.Id}", new DeviceResponse(
             device.Id, device.Name, device.RoomId, null,
