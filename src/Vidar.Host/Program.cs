@@ -35,6 +35,7 @@ builder.Services.AddSingleton<IApplicationConfigRepository>(new MongoApplication
 builder.Services.AddSingleton<IWebhookRouteCache, WebhookRouteCache>();
 builder.Services.AddSingleton<IWebhookPayloadRepository>(new MongoWebhookPayloadRepository(database));
 builder.Services.AddSingleton<IWebhookEventRepository>(new MongoWebhookEventRepository(database));
+builder.Services.AddSingleton<IThresholdRuleRepository>(new MongoThresholdRuleRepository(database));
 builder.Services.AddHttpClient("shelly", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(5);
@@ -109,6 +110,9 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
             system.ActorOf(
                 WebhookPayloadCleanupActor.Props(webhookPayloads, webhookRetention, TimeSpan.FromHours(1)),
                 "webhook-payload-cleanup");
+            var thresholdRuleRepo = sp.GetRequiredService<IThresholdRuleRepository>();
+            var thresholdEvaluator = system.ActorOf(ThresholdEvaluatorActor.Props(thresholdRuleRepo), "threshold-evaluator");
+            registry.Register<ThresholdEvaluatorActor>(thresholdEvaluator);
         });
 });
 
