@@ -17,6 +17,11 @@ public static class CapabilityMetadata
         [CapabilityType.Action] = (false, ""),
         [CapabilityType.Battery] = (false, "%"),
         [CapabilityType.Presence] = (false, ""),
+        [CapabilityType.Camera] = (false, ""),
+        [CapabilityType.Update] = (false, ""),
+        [CapabilityType.SolarProduction] = (false, "W"),
+        [CapabilityType.GridPower] = (false, "W"),
+        [CapabilityType.Consumption] = (false, "W"),
         [CapabilityType.Extras] = (false, ""),
     };
 
