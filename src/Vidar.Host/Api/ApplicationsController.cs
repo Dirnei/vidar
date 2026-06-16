@@ -25,6 +25,7 @@ public sealed class ApplicationsController : ControllerBase
         ["zigbee2mqtt"] = ("Zigbee2MQTT", "provider"),
         ["unifi"] = ("UniFi Network", "provider"),
         ["homeconnect"] = ("Home Connect", "provider"),
+        ["e3dc"] = ("E3/DC S10", "provider"),
     };
 
     public ApplicationsController(
