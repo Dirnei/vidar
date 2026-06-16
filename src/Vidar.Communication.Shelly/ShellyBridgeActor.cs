@@ -12,20 +12,21 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
     private readonly ILoggingAdapter _log = Context.GetLogger();
     private readonly ShellyHttpClient _httpClient;
     private readonly IActorRef _shardProxy;
+    private readonly IActorRef _pluginRegistry;
     private readonly Dictionary<string, ShellyDevice> _devices = new();
 
     public ITimerScheduler Timers { get; set; } = null!;
 
     private sealed class PollTick { public static readonly PollTick Instance = new(); }
-    private sealed class FetchRegistrations { public static readonly FetchRegistrations Instance = new(); }
 
-    public static Props Props(ShellyHttpClient httpClient, IActorRef shardProxy) =>
-        Akka.Actor.Props.Create(() => new ShellyBridgeActor(httpClient, shardProxy));
+    public static Props Props(ShellyHttpClient httpClient, IActorRef shardProxy, IActorRef pluginRegistry) =>
+        Akka.Actor.Props.Create(() => new ShellyBridgeActor(httpClient, shardProxy, pluginRegistry));
 
-    public ShellyBridgeActor(ShellyHttpClient httpClient, IActorRef shardProxy)
+    public ShellyBridgeActor(ShellyHttpClient httpClient, IActorRef shardProxy, IActorRef pluginRegistry)
     {
         _httpClient = httpClient;
         _shardProxy = shardProxy;
+        _pluginRegistry = pluginRegistry;
 
         Receive<RegisterShellyDevice>(msg =>
         {
@@ -33,33 +34,23 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
             _log.Info("Registered Shelly device: {NativeId} at {Host}", msg.Device.NativeId, msg.Device.Host);
         });
 
-        Receive<RegisterDeviceForPolling>(msg =>
+        Receive<PluginRegistered>(msg =>
         {
-            if (msg.CommunicationType != "shelly") return;
-            var device = new ShellyDevice
+            foreach (var reg in msg.Registrations)
             {
-                NativeId = msg.NativeId,
-                Host = msg.Host,
-                Generation = msg.Generation,
-                Capabilities = msg.Capabilities,
-                VidarDeviceId = msg.DeviceId
-            };
-            _devices[device.NativeId] = device;
-            _log.Info("Registered configured Shelly device: {NativeId} at {Host} (Gen{Gen})",
-                msg.NativeId, msg.Host, msg.Generation);
-        });
-
-        Receive<FetchRegistrations>(_ =>
-        {
-            var mediator = DistributedPubSub.Get(Context.System).Mediator;
-            mediator.Tell(new Publish("request-registrations", new RequestRegistrations("shelly")));
-        });
-
-        Receive<RegistrationResponse>(msg =>
-        {
-            foreach (var reg in msg.Devices)
-                Self.Tell(reg);
-            _log.Info("Received {Count} device registrations from Host", msg.Devices.Count);
+                var device = new ShellyDevice
+                {
+                    NativeId = reg.NativeId,
+                    Host = reg.Host,
+                    Generation = reg.Generation,
+                    Capabilities = reg.Capabilities,
+                    VidarDeviceId = reg.DeviceId
+                };
+                _devices[device.NativeId] = device;
+            }
+            _log.Info("Plugin registered with {Count} devices, enabled={Enabled}",
+                msg.Registrations.Count, msg.Enabled);
+            PublishStatus();
         });
 
         Receive<PollTick>(_ => PollAllDevices());
@@ -192,13 +183,8 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
     protected override void PreStart()
     {
         base.PreStart();
-        var mediator = DistributedPubSub.Get(Context.System).Mediator;
-        mediator.Tell(new Subscribe("commands.shelly", Self));
-        mediator.Tell(new Subscribe("discover.shelly", Self));
-        mediator.Tell(new Subscribe("register.shelly", Self));
-        mediator.Tell(new Subscribe("registration-response.shelly", Self));
+        _pluginRegistry.Tell(new RegisterPlugin("shelly", Self));
         Timers.StartPeriodicTimer("poll", PollTick.Instance, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
-        Timers.StartSingleTimer("fetch-registrations", FetchRegistrations.Instance, TimeSpan.FromSeconds(10));
     }
 
     private void PublishStatus()

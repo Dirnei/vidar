@@ -3,6 +3,7 @@ using Akka.Cluster.Sharding;
 using Akka.Hosting;
 using Akka.Remote.Hosting;
 using Vidar.Communication.Shelly;
+using Vidar.Core.Plugins;
 using Vidar.Core.Sharding;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -24,10 +25,12 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
         })
         .WithDistributedPubSub("")
         .WithShardRegionProxy<DeviceTwinRegion>("device-twin", "host", new DeviceTwinMessageExtractor(100))
+        .WithSingletonProxy<PluginRegistry>("plugin-registry", new ClusterSingletonOptions { Role = "host" })
         .WithActors((system, registry, resolver) =>
         {
             var shardProxy = registry.Get<DeviceTwinRegion>();
-            var bridge = system.ActorOf(ShellyBridgeActor.Props(httpClient, shardProxy), "shelly-bridge");
+            var pluginRegistry = registry.Get<PluginRegistry>();
+            var bridge = system.ActorOf(ShellyBridgeActor.Props(httpClient, shardProxy, pluginRegistry), "shelly-bridge");
         });
 });
 
