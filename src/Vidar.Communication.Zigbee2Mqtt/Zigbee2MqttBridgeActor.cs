@@ -22,6 +22,7 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
     private readonly Zigbee2MqttConfig _defaultConfig;
     private Zigbee2MqttConfig _config;
     private readonly IActorRef _shardProxy;
+    private readonly IActorRef _pluginRegistry;
 
     // Z2M device tracking
     private readonly Dictionary<string, Zigbee2MqttDevice> _devicesByFriendlyName = new();
@@ -41,18 +42,16 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
     private sealed class ConnectToBroker { public static readonly ConnectToBroker Instance = new(); }
     private sealed class CheckConnection { public static readonly CheckConnection Instance = new(); }
     private sealed class RepublishDiscoveries { public static readonly RepublishDiscoveries Instance = new(); }
-    private sealed class FetchRegistrations { }
-    private sealed class RequestConfig { public static readonly RequestConfig Instance = new(); }
+    public static Props Props(Zigbee2MqttConfig config, IActorRef shardProxy, IActorRef pluginRegistry) =>
+        Akka.Actor.Props.Create(() => new Zigbee2MqttBridgeActor(config, shardProxy, pluginRegistry));
 
-    public static Props Props(Zigbee2MqttConfig config, IActorRef shardProxy) =>
-        Akka.Actor.Props.Create(() => new Zigbee2MqttBridgeActor(config, shardProxy));
-
-    public Zigbee2MqttBridgeActor(Zigbee2MqttConfig config, IActorRef shardProxy)
+    public Zigbee2MqttBridgeActor(Zigbee2MqttConfig config, IActorRef shardProxy, IActorRef pluginRegistry)
     {
         _materializer = Context.Materializer();
         _defaultConfig = config;
         _config = config;
         _shardProxy = shardProxy;
+        _pluginRegistry = pluginRegistry;
 
         ReceiveAsync<ConnectToBroker>(_ => ConnectAsync());
 
@@ -80,32 +79,29 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
             }
         });
 
-        Receive<RegistrationResponse>(msg =>
+        Receive<PluginRegistered>(msg =>
         {
-            foreach (var reg in msg.Devices)
-            {
+            // Process registrations
+            foreach (var reg in msg.Registrations)
                 _configuredDevices[reg.NativeId] = reg.DeviceId;
-            }
-            _log.Info("Config cache loaded: {Count} devices", msg.Devices.Count);
+            _log.Info("Plugin registered with {Count} devices", msg.Registrations.Count);
 
-            foreach (var reg in msg.Devices)
+            // Process config (same logic as IntegrationConfigChanged handler)
+            if (msg.Enabled)
             {
-                if (_devicesByIeeeAddress.TryGetValue(reg.NativeId, out var device))
-                    RequestDeviceState(device);
+                var s = msg.Settings;
+                _config = new Zigbee2MqttConfig(
+                    MqttHost: s.GetValueOrDefault("mqttHost") ?? _defaultConfig.MqttHost,
+                    MqttPort: int.TryParse(s.GetValueOrDefault("mqttPort"), out var p) ? p : _defaultConfig.MqttPort,
+                    MqttUser: s.GetValueOrDefault("mqttUser") ?? _defaultConfig.MqttUser,
+                    MqttPassword: s.GetValueOrDefault("mqttPassword") ?? _defaultConfig.MqttPassword,
+                    BaseTopic: s.GetValueOrDefault("baseTopic") ?? _defaultConfig.BaseTopic);
+                Self.Tell(ConnectToBroker.Instance);
             }
         });
 
         // Device list from inbound stream
         Receive<ProcessDeviceList>(msg => HandleDeviceList(msg.Payload));
-
-        // Fetch registrations from Host — retries until successful
-        Receive<FetchRegistrations>(_ =>
-        {
-            if (_configuredDevices.Count > 0) return;
-            var mediator = DistributedPubSub.Get(Context.System).Mediator;
-            mediator.Tell(new Publish("request-registrations", new RequestRegistrations("zigbee2mqtt")));
-            Timers.StartSingleTimer("fetch-registrations-retry", new FetchRegistrations(), TimeSpan.FromSeconds(5));
-        });
 
         // Outbound: receive commands from Pub/Sub, write to outbound channel
         Receive<DeviceCommand>(cmd =>
@@ -140,24 +136,13 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
             Self.Tell(ConnectToBroker.Instance);
         });
 
-        Receive<RequestConfig>(_ =>
-        {
-            var mediator = DistributedPubSub.Get(Context.System).Mediator;
-            mediator.Tell(new Publish("request-integration-config", new RequestIntegrationConfig("zigbee2mqtt")));
-            _log.Info("Requested integration config for zigbee2mqtt from Host");
-        });
     }
 
     protected override void PreStart()
     {
         base.PreStart();
-        var mediator = DistributedPubSub.Get(Context.System).Mediator;
-        mediator.Tell(new Subscribe("commands.zigbee2mqtt", Self));
-        mediator.Tell(new Subscribe("register.zigbee2mqtt", Self));
-        mediator.Tell(new Subscribe("registration-response.zigbee2mqtt", Self));
-        mediator.Tell(new Subscribe("integration-config.zigbee2mqtt", Self));
+        _pluginRegistry.Tell(new RegisterPlugin("zigbee2mqtt", Self));
         Self.Tell(ConnectToBroker.Instance);
-        Self.Tell(RequestConfig.Instance);
         Timers.StartPeriodicTimer("republish", RepublishDiscoveries.Instance,
             TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(30));
         Timers.StartPeriodicTimer("health", CheckConnection.Instance,
@@ -244,9 +229,6 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
             StartOutboundStream();
 
             PublishStatus("running");
-
-            // Request registrations from Host (delayed to let cluster form)
-            Timers.StartSingleTimer("fetch-registrations", new FetchRegistrations(), TimeSpan.FromSeconds(10));
         }
         catch (Exception ex)
         {
