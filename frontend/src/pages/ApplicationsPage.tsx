@@ -62,6 +62,19 @@ const APP_DEFS: AppDef[] = [
       { key: 'hostBaseUrl', label: 'Vidar Host URL', placeholder: 'http://vidar-host:8080', defaultValue: 'http://vidar-host:8080', type: 'text' },
     ],
   },
+  {
+    id: 'e3dc',
+    icon: '⚡',
+    description: 'E3/DC S10 home energy storage system via RSCP protocol.',
+    fields: [
+      { key: 'host', label: 'E3DC IP Address', type: 'text' },
+      { key: 'port', label: 'RSCP Port', type: 'text' },
+      { key: 'user', label: 'E3DC Username', type: 'text' },
+      { key: 'password', label: 'E3DC Password', type: 'password' },
+      { key: 'rscpKey', label: 'RSCP Encryption Key', type: 'password' },
+      { key: 'pollingInterval', label: 'Polling Interval (seconds)', type: 'text' },
+    ],
+  },
 ];
 
 // ---- Status colors ----

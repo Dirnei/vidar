@@ -126,6 +126,36 @@ export function CapabilityIcon({ capability, size = 16, color }: Props) {
           <line x1="12" y1="15" x2="12" y2="3" />
         </svg>
       );
+    case 'SolarProduction':
+      return (
+        <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="5" />
+          <line x1="12" y1="1" x2="12" y2="3" />
+          <line x1="12" y1="21" x2="12" y2="23" />
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+          <line x1="1" y1="12" x2="3" y2="12" />
+          <line x1="21" y1="12" x2="23" y2="12" />
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+        </svg>
+      );
+    case 'GridPower':
+      return (
+        <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M18 4v16" />
+          <path d="M6 4v16" />
+          <path d="M2 8h20" />
+          <path d="M2 16h20" />
+        </svg>
+      );
+    case 'Consumption':
+      return (
+        <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+          <polyline points="9 22 9 12 15 12 15 22" />
+        </svg>
+      );
     default:
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round">
@@ -151,12 +181,15 @@ function accentFor(cap: string): string {
     case 'Presence': return 'var(--accent-green)';
     case 'Camera': return 'var(--accent-blue)';
     case 'Update': return 'var(--accent-primary)';
+    case 'SolarProduction': return 'var(--accent-yellow, #f59e0b)';
+    case 'GridPower': return 'var(--accent-blue)';
+    case 'Consumption': return 'var(--accent-red)';
     default: return 'var(--text-muted)';
   }
 }
 
 export function primaryCapabilityIcon(capabilities: string[]): string {
-  const priority = ['Camera', 'Light', 'Cover', 'Switch', 'Dimmer', 'Contact', 'Motion', 'Temperature', 'Humidity', 'Power', 'Energy', 'Action', 'Battery', 'Presence'];
+  const priority = ['Camera', 'Light', 'Cover', 'Switch', 'Dimmer', 'Contact', 'Motion', 'Temperature', 'Humidity', 'Power', 'Energy', 'SolarProduction', 'GridPower', 'Consumption', 'Action', 'Battery', 'Presence'];
   for (const p of priority) {
     if (capabilities.includes(p)) return p;
   }

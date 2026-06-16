@@ -63,6 +63,9 @@ export type Capability =
   | 'Presence'
   | 'Camera'
   | 'Update'
+  | 'SolarProduction'
+  | 'GridPower'
+  | 'Consumption'
   | 'Extras';
 
 export interface StateHistoryEntry {
