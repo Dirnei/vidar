@@ -12,6 +12,7 @@ using TurboHomeConnect.Model;
 using TurboHomeConnect.OAuth;
 using Vidar.Core.Capabilities;
 using Vidar.Core.Messages;
+using Vidar.Core.Plugins;
 
 namespace Vidar.Communication.HomeConnect;
 
@@ -20,6 +21,7 @@ public sealed class HomeConnectBridgeActor : ReceiveActor, IWithTimers
     private readonly ILoggingAdapter _log = Context.GetLogger();
     private readonly IActorRef _shardProxy;
     private readonly IActorRef _webhookRegistry;
+    private readonly IActorRef _pluginRegistry;
     private readonly IActorRef _mediator;
 
     private readonly Dictionary<string, Guid> _haIdToDeviceId = new();
@@ -39,21 +41,33 @@ public sealed class HomeConnectBridgeActor : ReceiveActor, IWithTimers
     private sealed class StreamAck { public static readonly StreamAck Instance = new(); }
     private sealed class StreamComplete { public static readonly StreamComplete Instance = new(); }
     private sealed record StreamFailed(Exception Cause);
-    private sealed class FetchRegistrations { public static readonly FetchRegistrations Instance = new(); }
     private sealed class BeginSseStream { public static readonly BeginSseStream Instance = new(); }
     private sealed record TokenExchangeFailed(string Error);
 
-    public static Props Props(IActorRef shardProxy, IActorRef webhookRegistry) =>
-        Akka.Actor.Props.Create(() => new HomeConnectBridgeActor(shardProxy, webhookRegistry));
+    public static Props Props(IActorRef shardProxy, IActorRef webhookRegistry, IActorRef pluginRegistry) =>
+        Akka.Actor.Props.Create(() => new HomeConnectBridgeActor(shardProxy, webhookRegistry, pluginRegistry));
 
-    public HomeConnectBridgeActor(IActorRef shardProxy, IActorRef webhookRegistry)
+    public HomeConnectBridgeActor(IActorRef shardProxy, IActorRef webhookRegistry, IActorRef pluginRegistry)
     {
         _shardProxy = shardProxy;
         _webhookRegistry = webhookRegistry;
+        _pluginRegistry = pluginRegistry;
         _mediator = DistributedPubSub.Get(Context.System).Mediator;
 
         Receive<IntegrationConfigChanged>(OnIntegrationConfigChanged);
-        Receive<RegistrationResponse>(OnRegistrationResponse);
+        Receive<PluginRegistered>(msg =>
+        {
+            foreach (var device in msg.Registrations)
+                RegisterDevice(device.DeviceId, device.NativeId);
+            _log.Info("Plugin registered with {Count} devices, enabled={Enabled}",
+                msg.Registrations.Count, msg.Enabled);
+
+            _settings = msg.Settings;
+            _enabled = msg.Enabled;
+
+            if (_enabled)
+                StartClient();
+        });
         Receive<RegisterDeviceForPolling>(OnRegisterDevice);
         Receive<DeviceCommand>(OnDeviceCommand);
         Receive<WebhookReceived>(OnWebhookReceived);
@@ -64,7 +78,6 @@ public sealed class HomeConnectBridgeActor : ReceiveActor, IWithTimers
             _log.Error("OAuth token exchange failed: {Error}", msg.Error);
             PublishStatus("error", 0, $"OAuth token exchange failed: {msg.Error}");
         });
-        Receive<FetchRegistrations>(_ => RequestRegistrations());
 
         // Akka.Streams flow messages
         Receive<StreamInit>(_ => Sender.Tell(StreamAck.Instance));
@@ -76,30 +89,16 @@ public sealed class HomeConnectBridgeActor : ReceiveActor, IWithTimers
     protected override void PreStart()
     {
         base.PreStart();
-        _mediator.Tell(new Subscribe("commands.homeconnect", Self));
-        _mediator.Tell(new Subscribe("registration-response.homeconnect", Self));
-        _mediator.Tell(new Subscribe("register.homeconnect", Self));
+        _pluginRegistry.Tell(new RegisterPlugin("homeconnect", Self));
 
         _webhookRegistry.Tell(new RegisterWebhookListener(
             "oauth-homeconnect", Self, IntegrationId: "homeconnect"));
-
-        _mediator.Tell(new Publish("request-integration-config",
-            new RequestIntegrationConfig("homeconnect")));
-
-        Timers.StartSingleTimer("fetch-registrations",
-            FetchRegistrations.Instance, TimeSpan.FromSeconds(10));
     }
 
     protected override void PostStop()
     {
         DisposeClient();
         base.PostStop();
-    }
-
-    private void RequestRegistrations()
-    {
-        _mediator.Tell(new Publish("request-registrations",
-            new RequestRegistrations("homeconnect")));
     }
 
     private void OnIntegrationConfigChanged(IntegrationConfigChanged msg)
@@ -213,12 +212,6 @@ public sealed class HomeConnectBridgeActor : ReceiveActor, IWithTimers
     {
         _mediator.Tell(new Publish("application-status",
             new ApplicationStatusUpdate("homeconnect", status, deviceCount, error)));
-    }
-
-    private void OnRegistrationResponse(RegistrationResponse msg)
-    {
-        foreach (var device in msg.Devices)
-            RegisterDevice(device.DeviceId, device.NativeId);
     }
 
     private void OnRegisterDevice(RegisterDeviceForPolling msg)
