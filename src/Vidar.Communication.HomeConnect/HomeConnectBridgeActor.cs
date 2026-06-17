@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using Akka.Actor;
+using Akka.Cluster;
 using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
 using Akka.Streams;
@@ -84,11 +85,18 @@ public sealed class HomeConnectBridgeActor : ReceiveActor, IWithTimers
         Receive<IHomeConnectMessage>(OnHomeConnectMessage);
         Receive<StreamComplete>(_ => _log.Info("Home Connect event stream completed"));
         Receive<StreamFailed>(msg => _log.Error(msg.Cause, "Home Connect event stream failed"));
+        Receive<ClusterEvent.CurrentClusterState>(_ => { });
+        Receive<ClusterEvent.MemberUp>(msg =>
+        {
+            if (msg.Member.HasRole("host"))
+                _pluginRegistry.Tell(new RegisterPlugin("homeconnect", Self));
+        });
     }
 
     protected override void PreStart()
     {
         base.PreStart();
+        Cluster.Get(Context.System).Subscribe(Self, typeof(ClusterEvent.MemberUp));
         _pluginRegistry.Tell(new RegisterPlugin("homeconnect", Self));
 
         _webhookRegistry.Tell(new RegisterWebhookListener(

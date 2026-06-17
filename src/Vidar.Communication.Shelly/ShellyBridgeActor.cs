@@ -1,4 +1,5 @@
 using Akka.Actor;
+using Akka.Cluster;
 using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
 using System.Text.Json;
@@ -55,6 +56,12 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
 
         Receive<PollTick>(_ => PollAllDevices());
         Receive<PollFailed>(HandlePollFailed);
+        Receive<ClusterEvent.CurrentClusterState>(_ => { });
+        Receive<ClusterEvent.MemberUp>(msg =>
+        {
+            if (msg.Member.HasRole("host"))
+                _pluginRegistry.Tell(new RegisterPlugin("shelly", Self));
+        });
 
         ReceiveAsync<DiscoverShellyDevice>(async msg =>
         {
@@ -183,6 +190,7 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
     protected override void PreStart()
     {
         base.PreStart();
+        Cluster.Get(Context.System).Subscribe(Self, typeof(ClusterEvent.MemberUp));
         _pluginRegistry.Tell(new RegisterPlugin("shelly", Self));
         Timers.StartPeriodicTimer("poll", PollTick.Instance, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
     }

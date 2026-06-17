@@ -362,12 +362,15 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
     setSettings(next);
   }, [app, fields]);
 
-  async function handleSave() {
+  async function handleSave(overrides?: { enabled?: boolean }) {
     setSaving(true);
     setSaveError(null);
     setSaved(false);
     try {
-      await saveApplication(app.id, { enabled, settings });
+      await saveApplication(app.id, {
+        enabled: overrides?.enabled ?? enabled,
+        settings,
+      });
       setSaved(true);
       onSaved();
       setTimeout(() => setSaved(false), 2000);
@@ -376,6 +379,11 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleToggle(value: boolean) {
+    setEnabled(value);
+    handleSave({ enabled: value });
   }
 
   const sColor = statusColor(app.status);
@@ -394,7 +402,7 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
         <span style={deviceCountStyle}>
           {app.deviceCount} device{app.deviceCount !== 1 ? 's' : ''}
         </span>
-        <ToggleSwitch checked={enabled} onChange={setEnabled} />
+        <ToggleSwitch checked={enabled} onChange={handleToggle} />
       </div>
 
       {/* Description */}
@@ -521,7 +529,7 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
           className="btn-primary"
           disabled={saving}
           style={{ opacity: saving ? 0.6 : 1 }}
-          onClick={handleSave}
+          onClick={() => handleSave()}
         >
           {saving ? 'Saving…' : 'Save'}
         </button>

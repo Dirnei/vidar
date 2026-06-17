@@ -1,4 +1,5 @@
 using Akka.Actor;
+using Akka.Cluster;
 using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
 using Vidar.Core.Capabilities;
@@ -93,6 +94,13 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
                     break;
             }
         });
+
+        Receive<ClusterEvent.CurrentClusterState>(_ => { });
+        Receive<ClusterEvent.MemberUp>(msg =>
+        {
+            if (msg.Member.HasRole("host"))
+                _pluginRegistry.Tell(new RegisterPlugin("unifi", Self));
+        });
     }
 
     protected override void PreStart()
@@ -108,6 +116,7 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
 
         _pluginRegistry.Tell(new RegisterPlugin("unifi", Self));
 
+        Cluster.Get(Context.System).Subscribe(Self, typeof(ClusterEvent.MemberUp));
         var mediator = DistributedPubSub.Get(Context.System).Mediator;
         mediator.Tell(new Subscribe("webhook-registry-started", Self));
 

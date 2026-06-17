@@ -602,6 +602,10 @@ function capAccentColor(cap: string): string {
     case 'Humidity': return 'var(--accent-blue)';
     case 'Camera': return 'var(--accent-blue)';
     case 'Update': return 'var(--accent-primary)';
+    case 'SolarProduction': return 'var(--accent-yellow, #f59e0b)';
+    case 'GridPower': return 'var(--accent-blue)';
+    case 'Consumption': return 'var(--accent-red)';
+    case 'Battery': return 'var(--accent-green)';
     default: return 'var(--accent-primary)';
   }
 }
@@ -871,6 +875,111 @@ function renderCapabilityCard(
               </span>
             </div>
           )}
+        </div>
+      );
+    }
+    case 'SolarProduction': {
+      const watts = typeof state['SolarProduction'] === 'number' ? (state['SolarProduction'] as number) : null;
+      return (
+        <div key={cap} style={capCardStyle}>
+          <Indicator color="var(--accent-yellow, #f59e0b)" />
+          <div style={capLabelStyle}><CapabilityIcon capability="SolarProduction" size={13} />Solar Production</div>
+          <div style={capValueStyle(watts != null ? 'var(--accent-yellow, #f59e0b)' : 'var(--text-muted)')}>
+            {watts != null ? `${Math.round(watts)} W` : '— W'}
+          </div>
+          {watts != null && watts >= 1000 && (
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+              {(watts / 1000).toFixed(2)} kW
+            </div>
+          )}
+        </div>
+      );
+    }
+    case 'GridPower': {
+      const watts = typeof state['GridPower'] === 'number' ? (state['GridPower'] as number) : null;
+      const exporting = watts != null && watts > 0;
+      return (
+        <div key={cap} style={capCardStyle}>
+          <Indicator color="var(--accent-blue)" />
+          <div style={capLabelStyle}><CapabilityIcon capability="GridPower" size={13} />Grid</div>
+          <div style={capValueStyle(watts != null ? 'var(--accent-blue)' : 'var(--text-muted)')}>
+            {watts != null ? `${Math.abs(Math.round(watts))} W` : '— W'}
+          </div>
+          {watts != null && (
+            <div style={{ fontSize: 12, color: exporting ? 'var(--accent-green)' : 'var(--accent-red)', marginTop: 2, fontWeight: 500 }}>
+              {exporting ? 'Exporting' : watts < 0 ? 'Importing' : 'Balanced'}
+            </div>
+          )}
+        </div>
+      );
+    }
+    case 'Consumption': {
+      const watts = typeof state['Consumption'] === 'number' ? (state['Consumption'] as number) : null;
+      return (
+        <div key={cap} style={capCardStyle}>
+          <Indicator color="var(--accent-red)" />
+          <div style={capLabelStyle}><CapabilityIcon capability="Consumption" size={13} />Consumption</div>
+          <div style={capValueStyle(watts != null ? 'var(--accent-red)' : 'var(--text-muted)')}>
+            {watts != null ? `${Math.round(watts)} W` : '— W'}
+          </div>
+          {watts != null && watts >= 1000 && (
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+              {(watts / 1000).toFixed(2)} kW
+            </div>
+          )}
+        </div>
+      );
+    }
+    case 'Battery': {
+      const raw = state['Battery'];
+      const level = typeof raw === 'number' ? raw : null;
+      const batteryWatts = typeof (state['Extras'] as Record<string, unknown>)?.['batteryWatts'] === 'number'
+        ? ((state['Extras'] as Record<string, unknown>)['batteryWatts'] as number) : null;
+      const charging = batteryWatts != null && batteryWatts > 0;
+      return (
+        <div key={cap} style={capCardStyle}>
+          <Indicator color="var(--accent-green)" />
+          <div style={capLabelStyle}><CapabilityIcon capability="Battery" size={13} />Battery</div>
+          <div style={capValueStyle(level != null ? 'var(--accent-green)' : 'var(--text-muted)')}>
+            {level != null ? `${Math.round(level)}%` : '—'}
+          </div>
+          {level != null && (
+            <div style={{ marginTop: 10 }}>
+              <ProgressBar value={level} color="var(--accent-green)" />
+            </div>
+          )}
+          {batteryWatts != null && (
+            <div style={{ fontSize: 12, color: charging ? 'var(--accent-green)' : 'var(--accent-red)', marginTop: 6, fontWeight: 500 }}>
+              {charging ? 'Charging' : 'Discharging'} {Math.abs(Math.round(batteryWatts))} W
+            </div>
+          )}
+        </div>
+      );
+    }
+    case 'Extras': {
+      const extras = state['Extras'];
+      if (extras == null || typeof extras !== 'object') {
+        return <React.Fragment key={cap} />;
+      }
+      const entries = Object.entries(extras as Record<string, unknown>)
+        .filter(([k]) => k !== 'batteryWatts' && k !== 'additionalWatts');
+      if (entries.length === 0) return <React.Fragment key={cap} />;
+      return (
+        <div key={cap} style={capCardStyle}>
+          <Indicator color="var(--accent-primary)" />
+          <div style={capLabelStyle}>Details</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {entries.map(([k, v]) => (
+              <div key={k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <span style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'capitalize' }}>
+                  {k.replace(/([A-Z])/g, ' $1').trim()}
+                </span>
+                <span style={{ fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-heading)', color: 'var(--text-primary)' }}>
+                  {typeof v === 'number' ? (v > 1 ? Math.round(v).toLocaleString() : v.toFixed(1)) + (k.includes('autarky') || k.includes('onsumption') ? '%' : '') : String(v)}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       );
     }

@@ -1,4 +1,5 @@
 using Akka.Actor;
+using Akka.Cluster;
 using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
 using E3dc;
@@ -11,7 +12,7 @@ using Vidar.Core.Messages;
 
 namespace Vidar.Communication.E3dc;
 
-public sealed class E3dcBridgeActor : ReceiveActor
+public sealed class E3dcBridgeActor : ReceiveActor, IWithTimers
 {
     private readonly ILoggingAdapter _log = Context.GetLogger();
     private readonly IActorRef _shardProxy;
@@ -22,6 +23,11 @@ public sealed class E3dcBridgeActor : ReceiveActor
     private IDisposable? _subscription;
     private Guid _deviceId;
     private bool _discovered;
+    private Dictionary<string, string> _settings = new();
+
+    public ITimerScheduler Timers { get; set; } = null!;
+
+    private sealed class StatusTick { public static readonly StatusTick Instance = new(); }
 
     private static readonly TagDescriptor[] PollingTags =
     [
@@ -42,11 +48,19 @@ public sealed class E3dcBridgeActor : ReceiveActor
         Receive<IntegrationConfigChanged>(OnConfigChanged);
         Receive<RegisterDeviceForPolling>(OnRegisterDevice);
         Receive<SnapshotReceived>(OnSnapshot);
+        Receive<StatusTick>(_ => OnStatusTick());
+        Receive<ClusterEvent.CurrentClusterState>(_ => { });
+        Receive<ClusterEvent.MemberUp>(msg =>
+        {
+            if (msg.Member.HasRole("host"))
+                _pluginRegistry.Tell(new RegisterPlugin("e3dc", Self));
+        });
     }
 
     protected override void PreStart()
     {
         base.PreStart();
+        Cluster.Get(Context.System).Subscribe(Self, typeof(ClusterEvent.MemberUp));
         _pluginRegistry.Tell(new RegisterPlugin("e3dc", Self));
     }
 
@@ -92,6 +106,7 @@ public sealed class E3dcBridgeActor : ReceiveActor
     private void StartClient(Dictionary<string, string> settings)
     {
         DisposeClient();
+        _settings = settings;
 
         var host = settings.GetValueOrDefault("host", "");
         if (string.IsNullOrEmpty(host))
@@ -123,10 +138,16 @@ public sealed class E3dcBridgeActor : ReceiveActor
         });
 
         _log.Info("E3DC client started, polling {Host}:{Port} every {Interval}s", host, port, pollSeconds);
+
+        Timers.StartPeriodicTimer("status", StatusTick.Instance, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30));
+    }
+
+    private void OnStatusTick()
+    {
         PublishStatus("running", _deviceId != Guid.Empty ? 1 : 0);
 
         if (!_discovered)
-            DiscoverDevice(settings);
+            DiscoverDevice(_settings);
     }
 
     private void OnSnapshot(SnapshotReceived msg)
@@ -148,8 +169,8 @@ public sealed class E3dcBridgeActor : ReceiveActor
             deviceId,
             "e3dc",
             $"e3dc-{host}",
-            [CapabilityType.SolarProduction, CapabilityType.GridPower,
-             CapabilityType.Consumption, CapabilityType.Battery, CapabilityType.Extras],
+            new List<CapabilityType> { CapabilityType.SolarProduction, CapabilityType.GridPower,
+                CapabilityType.Consumption, CapabilityType.Battery, CapabilityType.Extras },
             new Dictionary<string, string>
             {
                 ["host"] = host,
@@ -162,6 +183,7 @@ public sealed class E3dcBridgeActor : ReceiveActor
 
     private void DisposeClient()
     {
+        Timers.Cancel("status");
         _subscription?.Dispose();
         _subscription = null;
         _client?.DisposeAsync().GetAwaiter().GetResult();

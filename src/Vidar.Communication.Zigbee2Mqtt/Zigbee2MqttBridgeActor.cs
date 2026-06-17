@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using Akka.Actor;
+using Akka.Cluster;
 using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
 using Akka.Streams;
@@ -112,6 +113,13 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
         // Discovery republish
         Receive<RepublishDiscoveries>(_ => PublishDiscoveries());
 
+        Receive<ClusterEvent.CurrentClusterState>(_ => { });
+        Receive<ClusterEvent.MemberUp>(msg =>
+        {
+            if (msg.Member.HasRole("host"))
+                _pluginRegistry.Tell(new RegisterPlugin("zigbee2mqtt", Self));
+        });
+
         // Integration config updates from ApplicationConfig system
         Receive<IntegrationConfigChanged>(msg =>
         {
@@ -141,6 +149,7 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
     protected override void PreStart()
     {
         base.PreStart();
+        Cluster.Get(Context.System).Subscribe(Self, typeof(ClusterEvent.MemberUp));
         _pluginRegistry.Tell(new RegisterPlugin("zigbee2mqtt", Self));
         Self.Tell(ConnectToBroker.Instance);
         Timers.StartPeriodicTimer("republish", RepublishDiscoveries.Instance,

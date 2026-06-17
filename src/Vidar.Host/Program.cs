@@ -72,6 +72,10 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
             Roles = ["host"]
         })
         .WithDistributedPubSub("")
+        .WithSingleton<PluginRegistry>(
+            "plugin-registry",
+            PluginRegistryActor.Props(deviceRepo, appRepo),
+            new ClusterSingletonOptions { Role = "host" })
         .WithShardRegion<DeviceTwinRegion>(
             "device-twin",
             (system, registry, resolver) =>
@@ -86,10 +90,6 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
                 Role = "host",
                 StateStoreMode = StateStoreMode.DData
             })
-        .WithSingleton<PluginRegistry>(
-            "plugin-registry",
-            PluginRegistryActor.Props(deviceRepo, appRepo),
-            new ClusterSingletonOptions { Role = "host" })
         .WithSingleton<WebhookRegistry>(
             "webhook-registry",
             WebhookRegistryActor.Props(webhookRouteCache),
