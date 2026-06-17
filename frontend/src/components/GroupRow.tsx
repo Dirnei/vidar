@@ -25,8 +25,8 @@ export function GroupRow({ group, onStateChange }: Props) {
   const state = group.state ?? {};
   const capabilities = group.capabilities ?? [];
 
-  async function handleGroupCommand(capability: string, value: unknown) {
-    await sendGroupCommand(group.id, { capability, value });
+  async function handleGroupCommand(capabilityKey: string, value: unknown) {
+    await sendGroupCommand(group.id, { capabilityKey, value });
     onStateChange?.();
   }
 
@@ -42,66 +42,66 @@ export function GroupRow({ group, onStateChange }: Props) {
   function renderControls() {
     const items: React.ReactNode[] = [];
 
-    if (capabilities.includes('Light')) {
-      const lightState = state['Light'] as Record<string, unknown> | undefined;
+    if (capabilities.includes('light')) {
+      const lightState = state['light'] as Record<string, unknown> | undefined;
       const isOn = lightState?.on === true;
       items.push(
         <ToggleSwitch
           key="light"
           checked={isOn}
-          onChange={v => handleGroupCommand('Light', v)}
+          onChange={v => handleGroupCommand('light', v)}
         />
       );
     }
 
-    if (capabilities.includes('Switch') && !capabilities.includes('Light')) {
-      const isOn = Boolean(state['Switch']);
+    if (capabilities.includes('switch') && !capabilities.includes('light')) {
+      const isOn = Boolean(state['switch']);
       items.push(
         <ToggleSwitch
           key="switch"
           checked={isOn}
-          onChange={v => handleGroupCommand('Switch', v)}
+          onChange={v => handleGroupCommand('switch', v)}
         />
       );
     }
 
-    if (capabilities.includes('Dimmer') && !capabilities.includes('Light')) {
-      const level = typeof state['Dimmer'] === 'number' ? (state['Dimmer'] as number) : 0;
+    if (capabilities.includes('dimmer') && !capabilities.includes('light')) {
+      const level = typeof state['dimmer'] === 'number' ? (state['dimmer'] as number) : 0;
       items.push(
         <div key="dimmer" style={{ width: 110 }}>
           <SliderControl
             value={level}
             className="slider-dimmer"
             accentColor="var(--accent-primary)"
-            onCommit={v => handleGroupCommand('Dimmer', v)}
+            onCommit={v => handleGroupCommand('dimmer', v)}
           />
         </div>
       );
     }
 
-    if (capabilities.includes('Cover')) {
-      const pos = typeof state['Cover'] === 'number' ? (state['Cover'] as number) : 0;
+    if (capabilities.includes('cover')) {
+      const pos = typeof state['cover'] === 'number' ? (state['cover'] as number) : 0;
       items.push(
         <div key="cover" style={{ width: 110 }}>
           <SliderControl
             value={pos}
             className="slider-cover"
             accentColor="var(--accent-teal)"
-            onCommit={v => handleGroupCommand('Cover', v)}
+            onCommit={v => handleGroupCommand('cover', v)}
           />
         </div>
       );
     }
 
-    if (capabilities.includes('Motion')) {
-      const detected = Boolean(state['Motion']);
+    if (capabilities.includes('motion')) {
+      const detected = Boolean(state['motion']);
       items.push(
         <StatusDot key="motion" active={detected} label={detected ? 'Detected' : 'Clear'} />
       );
     }
 
-    if (capabilities.includes('Temperature')) {
-      const temp = state['Temperature'];
+    if (capabilities.includes('temperature')) {
+      const temp = state['temperature'];
       items.push(
         <span key="temp" style={{ fontSize: 13, color: temp != null ? 'var(--accent-red)' : 'var(--text-muted)' }}>
           {temp != null ? `${Number(temp).toFixed(1)} °C` : '— °C'}
@@ -109,8 +109,8 @@ export function GroupRow({ group, onStateChange }: Props) {
       );
     }
 
-    if (capabilities.includes('Power')) {
-      const power = state['Power'];
+    if (capabilities.includes('power')) {
+      const power = state['power'];
       items.push(
         <span key="power" style={{ fontSize: 13, color: power != null ? 'var(--accent-blue)' : 'var(--text-muted)' }}>
           {power != null ? `${Number(power).toFixed(1)} W` : '— W'}
@@ -118,8 +118,8 @@ export function GroupRow({ group, onStateChange }: Props) {
       );
     }
 
-    if (capabilities.includes('Energy')) {
-      const energy = state['Energy'];
+    if (capabilities.includes('energy')) {
+      const energy = state['energy'];
       items.push(
         <span key="energy" style={{ fontSize: 13, color: energy != null ? 'var(--accent-green)' : 'var(--text-muted)' }}>
           {energy != null ? `${Number(energy).toFixed(2)} kWh` : '— kWh'}
@@ -127,8 +127,8 @@ export function GroupRow({ group, onStateChange }: Props) {
       );
     }
 
-    if (capabilities.includes('Humidity')) {
-      const hum = typeof state['Humidity'] === 'number' ? (state['Humidity'] as number) : 0;
+    if (capabilities.includes('humidity')) {
+      const hum = typeof state['humidity'] === 'number' ? (state['humidity'] as number) : 0;
       items.push(
         <div key="hum" style={{ width: 80 }}>
           <ProgressBar value={hum} color="var(--accent-blue)" label={`${Math.round(hum)}%`} />

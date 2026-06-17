@@ -2,7 +2,6 @@ using System.Threading.Tasks;
 using Akka.Actor;
 using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
-using Vidar.Core.Capabilities;
 using Vidar.Core.Messages;
 using Vidar.Core.Model;
 using Vidar.Host.Persistence;
@@ -16,18 +15,20 @@ public sealed class DeviceTwinActor : ReceiveActor
     private readonly IDeviceStateRepository _stateRepo;
     private readonly IDeviceRepository _deviceRepo;
     private readonly IHistoryRepository _historyRepo;
+    private readonly IActorRef _pluginRegistry;
     private DeviceConfiguration? _config;
-    private readonly Dictionary<CapabilityType, object> _states = new();
+    private readonly Dictionary<string, object> _states = new();
 
-    public static Props Props(string entityId, IDeviceStateRepository stateRepo, IDeviceRepository deviceRepo, IHistoryRepository historyRepo) =>
-        Akka.Actor.Props.Create(() => new DeviceTwinActor(entityId, stateRepo, deviceRepo, historyRepo));
+    public static Props Props(string entityId, IDeviceStateRepository stateRepo, IDeviceRepository deviceRepo, IHistoryRepository historyRepo, IActorRef pluginRegistry) =>
+        Akka.Actor.Props.Create(() => new DeviceTwinActor(entityId, stateRepo, deviceRepo, historyRepo, pluginRegistry));
 
-    public DeviceTwinActor(string entityId, IDeviceStateRepository stateRepo, IDeviceRepository deviceRepo, IHistoryRepository historyRepo)
+    public DeviceTwinActor(string entityId, IDeviceStateRepository stateRepo, IDeviceRepository deviceRepo, IHistoryRepository historyRepo, IActorRef pluginRegistry)
     {
         _entityId = entityId;
         _stateRepo = stateRepo;
         _deviceRepo = deviceRepo;
         _historyRepo = historyRepo;
+        _pluginRegistry = pluginRegistry;
 
         ReceiveAsync<DeviceStateUpdate>(HandleStateUpdate);
         ReceiveAsync<DeviceCommand>(HandleCommand);
@@ -56,12 +57,12 @@ public sealed class DeviceTwinActor : ReceiveActor
 
     private async Task HandleStateUpdate(DeviceStateUpdate update)
     {
-        _states[update.Capability] = update.Value;
+        _states[update.CapabilityKey] = update.Value;
         var now = DateTime.UtcNow;
         var state = new DeviceState
         {
             DeviceId = update.DeviceId,
-            States = new Dictionary<CapabilityType, object>(_states),
+            States = new Dictionary<string, object>(_states),
             LastUpdated = now,
             Online = true
         };
@@ -72,7 +73,7 @@ public sealed class DeviceTwinActor : ReceiveActor
         _ = _historyRepo.AddStateEntryAsync(new StateHistoryEntry
         {
             DeviceId = update.DeviceId,
-            Capability = update.Capability.ToString(),
+            Capability = update.CapabilityKey,
             Value = update.Value,
             Timestamp = now,
         }).ContinueWith(t =>
@@ -82,7 +83,7 @@ public sealed class DeviceTwinActor : ReceiveActor
         });
 
         var mediator = DistributedPubSub.Get(Context.System).Mediator;
-        mediator.Tell(new Publish("device-state-changes", new DeviceStateChanged(update.DeviceId, update.Capability, update.Value, now)));
+        mediator.Tell(new Publish("device-state-changes", new DeviceStateChanged(update.DeviceId, update.CapabilityKey, update.Value, now)));
     }
 
     private async Task HandleDeviceOffline(DeviceOffline msg)
@@ -91,15 +92,12 @@ public sealed class DeviceTwinActor : ReceiveActor
         var state = new DeviceState
         {
             DeviceId = msg.DeviceId,
-            States = new Dictionary<CapabilityType, object>(_states),
+            States = new Dictionary<string, object>(_states),
             LastUpdated = DateTime.UtcNow,
             Online = false
         };
         try { await _stateRepo.UpsertAsync(state); }
         catch (Exception ex) { _log.Warning(ex, "Failed to persist offline state for device {DeviceId}", msg.DeviceId); }
-
-        var mediator = DistributedPubSub.Get(Context.System).Mediator;
-        mediator.Tell(new Publish("device-state-changes", new DeviceStateChanged(msg.DeviceId, CapabilityType.Switch, false, DateTime.UtcNow)));
     }
 
     private async Task HandleCommand(DeviceCommand command)
@@ -110,7 +108,7 @@ public sealed class DeviceTwinActor : ReceiveActor
         _ = _historyRepo.AddCommandEntryAsync(new CommandHistoryEntry
         {
             DeviceId = command.DeviceId,
-            Capability = command.Capability.ToString(),
+            Capability = command.CapabilityKey,
             Value = command.Value,
             Source = "api",
             Timestamp = DateTime.UtcNow,
@@ -120,7 +118,6 @@ public sealed class DeviceTwinActor : ReceiveActor
                 _log.Warning(t.Exception, "Failed to write command history for device {DeviceId}", command.DeviceId);
         });
 
-        var mediator = DistributedPubSub.Get(Context.System).Mediator;
-        mediator.Tell(new Publish($"commands.{_config.CommunicationType}", command));
+        _pluginRegistry.Tell(new RouteToPlugin(_config.CommunicationType, command));
     }
 }

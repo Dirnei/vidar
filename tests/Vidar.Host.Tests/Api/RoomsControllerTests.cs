@@ -27,7 +27,7 @@ public class RoomsControllerTests
             new DeviceConfiguration
             {
                 Id = Guid.NewGuid(), Name = "Plug", CommunicationType = "shelly",
-                NativeId = "s1", Capabilities = [Vidar.Core.Capabilities.CapabilityType.Switch]
+                NativeId = "s1", Capabilities = [new Vidar.Core.Capabilities.CapabilityDescriptor { Key = "switch", Label = "Switch", Unit = Vidar.Core.Capabilities.UnitType.OnOff, Commandable = true }]
             }
         ]);
 

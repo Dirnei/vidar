@@ -18,8 +18,8 @@ public class HomeConnectStateMapperTests
 
         var result = HomeConnectStateMapper.MapEventItems(items);
 
-        Assert.Equal("Run", result["OperationState"]);
-        Assert.Equal("Closed", result["DoorState"]);
+        Assert.Equal("Run", result.First(r => r.CapabilityKey == "OperationState").Value);
+        Assert.Equal("Closed", result.First(r => r.CapabilityKey == "DoorState").Value);
     }
 
     [Fact]
@@ -35,8 +35,8 @@ public class HomeConnectStateMapperTests
 
         var result = HomeConnectStateMapper.MapEventItems(items);
 
-        Assert.Equal(1800, ((JsonElement)result["RemainingProgramTime"]).GetInt32());
-        Assert.Equal(185, ((JsonElement)result["CurrentCavityTemperature"]).GetInt32());
+        Assert.Equal(1800, ((JsonElement)result.First(r => r.CapabilityKey == "RemainingProgramTime").Value).GetInt32());
+        Assert.Equal(185, ((JsonElement)result.First(r => r.CapabilityKey == "CurrentCavityTemperature").Value).GetInt32());
     }
 
     [Fact]
@@ -50,7 +50,7 @@ public class HomeConnectStateMapperTests
 
         var result = HomeConnectStateMapper.MapEventItems(items);
 
-        Assert.Equal("Dishcare.Dishwasher.Program.Eco50", result["ActiveProgram"]);
+        Assert.Equal("Dishcare.Dishwasher.Program.Eco50", result.First(r => r.CapabilityKey == "ActiveProgram").Value);
     }
 
     [Fact]
@@ -64,7 +64,7 @@ public class HomeConnectStateMapperTests
 
         var result = HomeConnectStateMapper.MapEventItems(items);
 
-        Assert.True(((JsonElement)result["RemoteControlActive"]).GetBoolean());
+        Assert.True(((JsonElement)result.First(r => r.CapabilityKey == "RemoteControlActive").Value).GetBoolean());
     }
 
     [Fact]

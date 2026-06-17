@@ -8,7 +8,7 @@ public sealed record DeviceResponse(
     Guid RoomId,
     string? RoomName,
     string CommunicationType,
-    List<CapabilityType> Capabilities,
+    List<CapabilityDescriptor> Capabilities,
     Dictionary<string, object>? State,
     bool? Online,
     Dictionary<string, string>? Settings,

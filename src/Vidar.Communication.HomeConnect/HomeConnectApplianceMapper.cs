@@ -19,11 +19,19 @@ public static class HomeConnectApplianceMapper
         if (appliance.Vib is not null)
             metadata["vib"] = appliance.Vib;
 
+        var capabilities = new List<CapabilityDescriptor>
+        {
+            new() { Key = "switch", Label = "Power", Unit = UnitType.OnOff, Commandable = true },
+            new() { Key = "operationState", Label = "Operation State", Unit = UnitType.Text },
+            new() { Key = "remainingTime", Label = "Remaining Time", Unit = UnitType.Number },
+            new() { Key = "progress", Label = "Progress", Unit = UnitType.Percent },
+        };
+
         return new DeviceDiscovered(
             DeviceId: Guid.NewGuid(),
             CommunicationType: "homeconnect",
             NativeId: appliance.HaId,
-            Capabilities: [CapabilityType.Switch, CapabilityType.Extras],
+            Capabilities: capabilities,
             Metadata: metadata);
     }
 }

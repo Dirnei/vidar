@@ -20,17 +20,17 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
   const state = device.state ?? {};
 
   async function handleSwitch(value: boolean) {
-    await sendCommand(device.id, { capability: 'Switch', value });
+    await sendCommand(device.id, { capabilityKey: 'switch', value });
     onStateChange?.();
   }
 
   async function handleDimmer(value: number) {
-    await sendCommand(device.id, { capability: 'Dimmer', value });
+    await sendCommand(device.id, { capabilityKey: 'dimmer', value });
     onStateChange?.();
   }
 
   async function handleCover(value: number) {
-    await sendCommand(device.id, { capability: 'Cover', value });
+    await sendCommand(device.id, { capabilityKey: 'cover', value });
     onStateChange?.();
   }
 
@@ -50,23 +50,23 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
   function renderControls() {
     const items: React.ReactNode[] = [];
 
-    if (device.capabilities.includes('Light')) {
-      const lightState = state['Light'] as Record<string, unknown> | undefined;
+    if (device.capabilities.some(c => c.key === 'light')) {
+      const lightState = state['light'] as Record<string, unknown> | undefined;
       const isOn = lightState?.on === true;
       items.push(
-        <ToggleSwitch key="light" checked={isOn} onChange={v => sendCommand(device.id, { capability: 'Light', value: v }).then(() => onStateChange?.())} />
+        <ToggleSwitch key="light" checked={isOn} onChange={v => sendCommand(device.id, { capabilityKey: 'light', value: v }).then(() => onStateChange?.())} />
       );
     }
 
-    if (device.capabilities.includes('Switch') && !device.capabilities.includes('Light')) {
-      const isOn = Boolean(state['Switch']);
+    if (device.capabilities.some(c => c.key === 'switch') && !device.capabilities.some(c => c.key === 'light')) {
+      const isOn = Boolean(state['switch']);
       items.push(
         <ToggleSwitch key="switch" checked={isOn} onChange={handleSwitch} />
       );
     }
 
-    if (device.capabilities.includes('Dimmer') && !device.capabilities.includes('Light')) {
-      const level = typeof state['Dimmer'] === 'number' ? (state['Dimmer'] as number) : 0;
+    if (device.capabilities.some(c => c.key === 'dimmer') && !device.capabilities.some(c => c.key === 'light')) {
+      const level = typeof state['dimmer'] === 'number' ? (state['dimmer'] as number) : 0;
       items.push(
         <div key="dimmer" style={{ width: 110 }}>
           <SliderControl value={level} className="slider-dimmer" accentColor="var(--accent-primary)" onCommit={handleDimmer} />
@@ -74,8 +74,8 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
       );
     }
 
-    if (device.capabilities.includes('Cover')) {
-      const pos = typeof state['Cover'] === 'number' ? (state['Cover'] as number) : 0;
+    if (device.capabilities.some(c => c.key === 'cover')) {
+      const pos = typeof state['cover'] === 'number' ? (state['cover'] as number) : 0;
       items.push(
         <div key="cover" style={{ width: 110 }}>
           <SliderControl value={pos} className="slider-cover" accentColor="var(--accent-teal)" onCommit={handleCover} />
@@ -83,15 +83,15 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
       );
     }
 
-    if (device.capabilities.includes('Motion')) {
-      const detected = Boolean(state['Motion']);
+    if (device.capabilities.some(c => c.key === 'motion')) {
+      const detected = Boolean(state['motion']);
       items.push(
         <StatusDot key="motion" active={detected} label={detected ? 'Detected' : 'Clear'} />
       );
     }
 
-    if (device.capabilities.includes('Temperature')) {
-      const temp = state['Temperature'];
+    if (device.capabilities.some(c => c.key === 'temperature')) {
+      const temp = state['temperature'];
       items.push(
         <span key="temp" style={{ fontSize: 13, color: temp != null ? 'var(--accent-red)' : 'var(--text-muted)' }}>
           {temp != null ? `${Number(temp).toFixed(1)} °C` : '— °C'}
@@ -99,8 +99,8 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
       );
     }
 
-    if (device.capabilities.includes('Power')) {
-      const power = state['Power'];
+    if (device.capabilities.some(c => c.key === 'power')) {
+      const power = state['power'];
       items.push(
         <span key="power" style={{ fontSize: 13, color: power != null ? 'var(--accent-blue)' : 'var(--text-muted)' }}>
           {power != null ? `${Number(power).toFixed(1)} W` : '— W'}
@@ -108,8 +108,8 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
       );
     }
 
-    if (device.capabilities.includes('Energy')) {
-      const energy = state['Energy'];
+    if (device.capabilities.some(c => c.key === 'energy')) {
+      const energy = state['energy'];
       items.push(
         <span key="energy" style={{ fontSize: 13, color: energy != null ? 'var(--accent-green)' : 'var(--text-muted)' }}>
           {energy != null ? `${Number(energy).toFixed(2)} kWh` : '— kWh'}
@@ -117,8 +117,8 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
       );
     }
 
-    if (device.capabilities.includes('Humidity')) {
-      const hum = typeof state['Humidity'] === 'number' ? (state['Humidity'] as number) : 0;
+    if (device.capabilities.some(c => c.key === 'humidity')) {
+      const hum = typeof state['humidity'] === 'number' ? (state['humidity'] as number) : 0;
       items.push(
         <div key="hum" style={{ width: 80 }}>
           <ProgressBar value={hum} color="var(--accent-blue)" label={`${Math.round(hum)}%`} />
@@ -126,8 +126,8 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
       );
     }
 
-    if (device.capabilities.includes('Contact')) {
-      const closed = state['Contact'] === true;
+    if (device.capabilities.some(c => c.key === 'contact')) {
+      const closed = state['contact'] === true;
       items.push(
         <span key="contact" style={{ fontSize: 12, fontWeight: 500, color: closed ? 'var(--accent-teal)' : 'var(--accent-red)' }}>
           {closed ? 'Closed' : 'Open'}
@@ -135,8 +135,8 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
       );
     }
 
-    if (device.capabilities.includes('Battery')) {
-      const battery = state['Battery'];
+    if (device.capabilities.some(c => c.key === 'battery')) {
+      const battery = state['battery'];
       if (battery != null) {
         const level = Number(battery);
         items.push(
@@ -147,8 +147,8 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
       }
     }
 
-    if (device.capabilities.includes('Presence')) {
-      const present = state['Presence'] === true;
+    if (device.capabilities.some(c => c.key === 'presence')) {
+      const present = state['presence'] === true;
       items.push(
         <span key="presence" style={{ fontSize: 12, fontWeight: 500, color: present ? 'var(--accent-green)' : 'var(--text-muted)' }}>
           {present ? 'Home' : 'Away'}
@@ -187,7 +187,7 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
         )}
         {device.capabilities.length > 0 && (
           <div className="device-caps">
-            {device.capabilities.join(' · ')}
+            {device.capabilities.map(c => c.label).join(' · ')}
           </div>
         )}
       </div>

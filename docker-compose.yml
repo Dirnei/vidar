@@ -84,6 +84,19 @@ services:
       - VIDAR_HOSTNAME=vidar-comm-homeconnect
       - VIDAR_AKKA_PORT=4057
 
+  vidar-comm-e3dc:
+    build:
+      context: .
+      dockerfile: src/Vidar.Communication.E3dc/Dockerfile
+    depends_on:
+      - lighthouse
+    env_file:
+      - .env
+    environment:
+      - VIDAR_CLUSTER_SEED=lighthouse:4053
+      - VIDAR_HOSTNAME=vidar-comm-e3dc
+      - VIDAR_AKKA_PORT=4058
+
   mongodb:
     image: mongo:8
     volumes:

@@ -30,8 +30,9 @@ public sealed class UniFiBridgeActorWebhookTests : TestKit
     {
         var shardProxy = CreateTestProbe();
         var webhookRegistry = CreateTestProbe();
+        var pluginRegistry = CreateTestProbe();
 
-        Sys.ActorOf(UniFiBridgeActor.Props(shardProxy.Ref, webhookRegistry.Ref, "http://localhost:1"), "unifi-bridge");
+        Sys.ActorOf(UniFiBridgeActor.Props(shardProxy.Ref, webhookRegistry.Ref, "http://localhost:1", pluginRegistry.Ref), "unifi-bridge");
 
         var registrations = new[]
         {
@@ -50,9 +51,10 @@ public sealed class UniFiBridgeActorWebhookTests : TestKit
     {
         var shardProxy = CreateTestProbe();
         var webhookRegistry = CreateTestProbe();
+        var pluginRegistry = CreateTestProbe();
 
         var bridge = Sys.ActorOf(
-            UniFiBridgeActor.Props(shardProxy.Ref, webhookRegistry.Ref, "http://localhost:1"), "unifi-bridge-2");
+            UniFiBridgeActor.Props(shardProxy.Ref, webhookRegistry.Ref, "http://localhost:1", pluginRegistry.Ref), "unifi-bridge-2");
 
         // drain initial registration
         webhookRegistry.ExpectMsg<RegisterWebhookListener>(TimeSpan.FromSeconds(10));
@@ -76,9 +78,10 @@ public sealed class UniFiBridgeActorWebhookTests : TestKit
     {
         var shardProxy = CreateTestProbe();
         var webhookRegistry = CreateTestProbe();
+        var pluginRegistry = CreateTestProbe();
 
         var bridge = Sys.ActorOf(
-            UniFiBridgeActor.Props(shardProxy.Ref, webhookRegistry.Ref, "http://localhost:1"), "bridge-ack");
+            UniFiBridgeActor.Props(shardProxy.Ref, webhookRegistry.Ref, "http://localhost:1", pluginRegistry.Ref), "bridge-ack");
 
         // drain initial registrations
         webhookRegistry.ExpectMsg<RegisterWebhookListener>(TimeSpan.FromSeconds(10));

@@ -7,6 +7,7 @@ const navItems = [
   { to: '/discovered', label: 'Setup', icon: '⊕', end: true },
   { to: '/applications', label: 'Applications', icon: '⧉', end: true },
   { to: '/webhooks', label: 'Webhooks', icon: '↯', end: true },
+  { to: '/threshold-rules', label: 'Thresholds', icon: '⏛', end: true },
 ];
 
 export function SideNav() {

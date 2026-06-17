@@ -37,7 +37,7 @@ public sealed class SseController : ControllerBase
                 var data = JsonSerializer.Serialize(new
                 {
                     deviceId = msg.DeviceId,
-                    capability = msg.Capability.ToString(),
+                    capability = msg.CapabilityKey,
                     value = msg.Value,
                     timestamp = msg.Timestamp
                 });

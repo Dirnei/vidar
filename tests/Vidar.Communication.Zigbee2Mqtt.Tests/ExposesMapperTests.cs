@@ -10,8 +10,7 @@ public class ExposesMapperTests
     {
         var json = """[{"type":"light","features":[{"type":"binary","name":"state","access":7},{"type":"numeric","name":"brightness","access":7}]}]""";
         var caps = ExposesMapper.MapCapabilities(JsonDocument.Parse(json).RootElement);
-        Assert.Contains(CapabilityType.Switch, caps);
-        Assert.Contains(CapabilityType.Dimmer, caps);
+        Assert.Contains(caps, c => c.Key == "light");
     }
 
     [Fact]
@@ -19,8 +18,8 @@ public class ExposesMapperTests
     {
         var json = """[{"type":"binary","name":"occupancy","access":1},{"type":"numeric","name":"temperature","access":1}]""";
         var caps = ExposesMapper.MapCapabilities(JsonDocument.Parse(json).RootElement);
-        Assert.Contains(CapabilityType.Motion, caps);
-        Assert.Contains(CapabilityType.Temperature, caps);
+        Assert.Contains(caps, c => c.Key == "motion");
+        Assert.Contains(caps, c => c.Key == "temperature");
     }
 
     [Fact]
@@ -28,7 +27,7 @@ public class ExposesMapperTests
     {
         var json = """[{"type":"cover","features":[{"type":"binary","name":"state","access":7},{"type":"numeric","name":"position","access":7}]}]""";
         var caps = ExposesMapper.MapCapabilities(JsonDocument.Parse(json).RootElement);
-        Assert.Contains(CapabilityType.Cover, caps);
+        Assert.Contains(caps, c => c.Key == "cover");
     }
 
     [Fact]
@@ -36,8 +35,8 @@ public class ExposesMapperTests
     {
         var json = """[{"type":"numeric","name":"power","access":1,"unit":"W"},{"type":"numeric","name":"energy","access":1,"unit":"kWh"}]""";
         var caps = ExposesMapper.MapCapabilities(JsonDocument.Parse(json).RootElement);
-        Assert.Contains(CapabilityType.Power, caps);
-        Assert.Contains(CapabilityType.Energy, caps);
+        Assert.Contains(caps, c => c.Key == "power");
+        Assert.Contains(caps, c => c.Key == "energy");
     }
 
     [Fact]
@@ -45,6 +44,6 @@ public class ExposesMapperTests
     {
         var json = """[{"type":"update","features":[{"type":"binary","name":"update_available","access":1},{"type":"numeric","name":"update_progress","access":1}]}]""";
         var caps = ExposesMapper.MapCapabilities(JsonDocument.Parse(json).RootElement);
-        Assert.Contains(CapabilityType.Update, caps);
+        Assert.Contains(caps, c => c.Key == "update");
     }
 }

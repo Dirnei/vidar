@@ -36,13 +36,14 @@ public sealed class DiscoveryManagerActor : ReceiveActor
                 d.NativeId == msg.NativeId && d.CommunicationType == msg.CommunicationType);
             if (configured != null)
             {
-                var newCaps = msg.Capabilities.Where(c => !configured.Capabilities.Contains(c)).ToList();
+                var existingKeys = configured.Capabilities.Select(c => c.Key).ToHashSet();
+                var newCaps = msg.Capabilities.Where(c => !existingKeys.Contains(c.Key)).ToList();
                 if (newCaps.Count > 0)
                 {
                     configured.Capabilities.AddRange(newCaps);
                     await deviceRepo.UpdateAsync(configured);
                     _log.Info("Synced {Count} new capabilities to configured device {NativeId}: {Caps}",
-                        newCaps.Count, msg.NativeId, string.Join(",", newCaps));
+                        newCaps.Count, msg.NativeId, string.Join(",", newCaps.Select(c => c.Key)));
                 }
             }
         });

@@ -6,4 +6,4 @@ public sealed record RegisterDeviceForPolling(
     string NativeId,
     string Host,
     int Generation,
-    List<CapabilityType> Capabilities);
+    List<CapabilityDescriptor> Capabilities);

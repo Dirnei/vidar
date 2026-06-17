@@ -1,9 +1,8 @@
 using System.Text.Json;
-using Vidar.Core.Capabilities;
 
 namespace Vidar.Communication.Shelly;
 
-public record ShellyCapabilityValue(CapabilityType Capability, object Value);
+public record ShellyCapabilityValue(string CapabilityKey, object Value);
 
 public static class ShellyStateMapper
 {
@@ -14,15 +13,15 @@ public static class ShellyStateMapper
         var results = new List<ShellyCapabilityValue>();
 
         if (element.TryGetProperty("output", out var output) && (output.ValueKind == JsonValueKind.True || output.ValueKind == JsonValueKind.False))
-            results.Add(new ShellyCapabilityValue(CapabilityType.Switch, output.GetBoolean()));
+            results.Add(new ShellyCapabilityValue("switch", output.GetBoolean()));
 
         if (element.TryGetProperty("apower", out var apower) && apower.ValueKind == JsonValueKind.Number)
-            results.Add(new ShellyCapabilityValue(CapabilityType.Power, apower.GetDouble()));
+            results.Add(new ShellyCapabilityValue("power", apower.GetDouble()));
 
         if (element.TryGetProperty("aenergy", out var aenergy) && aenergy.ValueKind == JsonValueKind.Object)
         {
             if (aenergy.TryGetProperty("total", out var total) && total.ValueKind == JsonValueKind.Number)
-                results.Add(new ShellyCapabilityValue(CapabilityType.Energy, total.GetDouble() / 1000.0));
+                results.Add(new ShellyCapabilityValue("energy", total.GetDouble() / 1000.0));
         }
 
         return results;
@@ -33,7 +32,7 @@ public static class ShellyStateMapper
         var results = new List<ShellyCapabilityValue>();
 
         if (element.TryGetProperty("current_pos", out var pos) && pos.ValueKind == JsonValueKind.Number)
-            results.Add(new ShellyCapabilityValue(CapabilityType.Cover, pos.GetInt32()));
+            results.Add(new ShellyCapabilityValue("cover", pos.GetInt32()));
 
         return results;
     }
@@ -43,7 +42,7 @@ public static class ShellyStateMapper
         var results = new List<ShellyCapabilityValue>();
 
         if (element.TryGetProperty("tC", out var tC) && tC.ValueKind == JsonValueKind.Number)
-            results.Add(new ShellyCapabilityValue(CapabilityType.Temperature, tC.GetDouble()));
+            results.Add(new ShellyCapabilityValue("temperature", tC.GetDouble()));
 
         return results;
     }
@@ -58,10 +57,10 @@ public static class ShellyStateMapper
         var results = new List<ShellyCapabilityValue>();
 
         if (roller.TryGetProperty("current_pos", out var pos) && pos.ValueKind == JsonValueKind.Number)
-            results.Add(new ShellyCapabilityValue(CapabilityType.Cover, pos.GetInt32()));
+            results.Add(new ShellyCapabilityValue("cover", pos.GetInt32()));
 
         if (roller.TryGetProperty("power", out var power) && power.ValueKind == JsonValueKind.Number)
-            results.Add(new ShellyCapabilityValue(CapabilityType.Power, power.GetDouble()));
+            results.Add(new ShellyCapabilityValue("power", power.GetDouble()));
 
         return results;
     }
@@ -78,12 +77,12 @@ public static class ShellyStateMapper
             tmp.TryGetProperty("tC", out var tC) &&
             tC.ValueKind == JsonValueKind.Number)
         {
-            results.Add(new ShellyCapabilityValue(CapabilityType.Temperature, tC.GetDouble()));
+            results.Add(new ShellyCapabilityValue("temperature", tC.GetDouble()));
         }
         else if (root.TryGetProperty("temperature", out var temp) &&
                  temp.ValueKind == JsonValueKind.Number)
         {
-            results.Add(new ShellyCapabilityValue(CapabilityType.Temperature, temp.GetDouble()));
+            results.Add(new ShellyCapabilityValue("temperature", temp.GetDouble()));
         }
 
         return results;

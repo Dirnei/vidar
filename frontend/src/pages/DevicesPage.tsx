@@ -53,7 +53,7 @@ export function DevicesPage() {
     return devicesWithMeta.filter(d =>
       d.name.toLowerCase().includes(q) ||
       d.communicationType.toLowerCase().includes(q) ||
-      d.capabilities.join(' ').toLowerCase().includes(q)
+      d.capabilities.map(c => c.label).join(' ').toLowerCase().includes(q)
     );
   }, [devicesWithMeta, search]);
 
@@ -61,7 +61,7 @@ export function DevicesPage() {
   const filtered = useMemo(() => {
     return searchFiltered.filter(d => {
       if (filters.room.size > 0 && !filters.room.has(d.roomName)) return false;
-      if (filters.capability.size > 0 && !d.capabilities.some(c => filters.capability.has(c))) return false;
+      if (filters.capability.size > 0 && !d.capabilities.some(c => filters.capability.has(c.key))) return false;
       if (filters.protocol.size > 0 && !filters.protocol.has(d.communicationType)) return false;
       if (filters.status.size > 0) {
         const status = d.online === false ? 'Offline' : 'Online';
@@ -75,7 +75,7 @@ export function DevicesPage() {
   const filterSections = useMemo((): FilterSection[] => {
     // For room counts: apply capability + protocol + status filters
     const forRoom = searchFiltered.filter(d => {
-      if (filters.capability.size > 0 && !d.capabilities.some(c => filters.capability.has(c))) return false;
+      if (filters.capability.size > 0 && !d.capabilities.some(c => filters.capability.has(c.key))) return false;
       if (filters.protocol.size > 0 && !filters.protocol.has(d.communicationType)) return false;
       if (filters.status.size > 0) {
         const s = d.online === false ? 'Offline' : 'Online';
@@ -98,7 +98,7 @@ export function DevicesPage() {
     // For protocol counts: apply room + capability + status filters
     const forProtocol = searchFiltered.filter(d => {
       if (filters.room.size > 0 && !filters.room.has(d.roomName)) return false;
-      if (filters.capability.size > 0 && !d.capabilities.some(c => filters.capability.has(c))) return false;
+      if (filters.capability.size > 0 && !d.capabilities.some(c => filters.capability.has(c.key))) return false;
       if (filters.status.size > 0) {
         const s = d.online === false ? 'Offline' : 'Online';
         if (!filters.status.has(s)) return false;
@@ -109,7 +109,7 @@ export function DevicesPage() {
     // For status counts: apply room + capability + protocol filters
     const forStatus = searchFiltered.filter(d => {
       if (filters.room.size > 0 && !filters.room.has(d.roomName)) return false;
-      if (filters.capability.size > 0 && !d.capabilities.some(c => filters.capability.has(c))) return false;
+      if (filters.capability.size > 0 && !d.capabilities.some(c => filters.capability.has(c.key))) return false;
       if (filters.protocol.size > 0 && !filters.protocol.has(d.communicationType)) return false;
       return true;
     });
@@ -124,7 +124,7 @@ export function DevicesPage() {
     const capabilityCounts = new Map<string, number>();
     for (const d of forCapability) {
       for (const cap of d.capabilities) {
-        capabilityCounts.set(cap, (capabilityCounts.get(cap) ?? 0) + 1);
+        capabilityCounts.set(cap.key, (capabilityCounts.get(cap.key) ?? 0) + 1);
       }
     }
 

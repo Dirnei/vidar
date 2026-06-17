@@ -62,6 +62,19 @@ const APP_DEFS: AppDef[] = [
       { key: 'hostBaseUrl', label: 'Vidar Host URL', placeholder: 'http://vidar-host:8080', defaultValue: 'http://vidar-host:8080', type: 'text' },
     ],
   },
+  {
+    id: 'e3dc',
+    icon: '⚡',
+    description: 'E3/DC S10 home energy storage system via RSCP protocol.',
+    fields: [
+      { key: 'host', label: 'E3DC IP Address', type: 'text' },
+      { key: 'port', label: 'RSCP Port', type: 'text' },
+      { key: 'user', label: 'E3DC Username', type: 'text' },
+      { key: 'password', label: 'E3DC Password', type: 'password' },
+      { key: 'rscpKey', label: 'RSCP Encryption Key', type: 'password' },
+      { key: 'pollingInterval', label: 'Polling Interval (seconds)', type: 'text' },
+    ],
+  },
 ];
 
 // ---- Status colors ----
@@ -349,12 +362,15 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
     setSettings(next);
   }, [app, fields]);
 
-  async function handleSave() {
+  async function handleSave(overrides?: { enabled?: boolean }) {
     setSaving(true);
     setSaveError(null);
     setSaved(false);
     try {
-      await saveApplication(app.id, { enabled, settings });
+      await saveApplication(app.id, {
+        enabled: overrides?.enabled ?? enabled,
+        settings,
+      });
       setSaved(true);
       onSaved();
       setTimeout(() => setSaved(false), 2000);
@@ -363,6 +379,11 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleToggle(value: boolean) {
+    setEnabled(value);
+    handleSave({ enabled: value });
   }
 
   const sColor = statusColor(app.status);
@@ -381,7 +402,7 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
         <span style={deviceCountStyle}>
           {app.deviceCount} device{app.deviceCount !== 1 ? 's' : ''}
         </span>
-        <ToggleSwitch checked={enabled} onChange={setEnabled} />
+        <ToggleSwitch checked={enabled} onChange={handleToggle} />
       </div>
 
       {/* Description */}
@@ -508,7 +529,7 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
           className="btn-primary"
           disabled={saving}
           style={{ opacity: saving ? 0.6 : 1 }}
-          onClick={handleSave}
+          onClick={() => handleSave()}
         >
           {saving ? 'Saving…' : 'Save'}
         </button>

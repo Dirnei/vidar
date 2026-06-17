@@ -11,8 +11,9 @@ public sealed class HomeConnectBridgeActorOAuthTests : TestKit
     {
         var shardProxy = CreateTestProbe();
         var webhookRegistry = CreateTestProbe();
+        var pluginRegistry = CreateTestProbe();
         var bridge = Sys.ActorOf(
-            HomeConnectBridgeActor.Props(shardProxy, webhookRegistry));
+            HomeConnectBridgeActor.Props(shardProxy, webhookRegistry, pluginRegistry));
 
         var callback = new OAuthCallbackReceived(
             "homeconnect", "test-code", "test-state", DateTimeOffset.UtcNow);

@@ -45,9 +45,9 @@ public static class BsonClassMapRegistration
                 cm.MapIdProperty(g => g.Id);
             });
 
-            var statesDictSerializer = new DictionaryInterfaceImplementerSerializer<Dictionary<CapabilityType, object>>(
+            var statesDictSerializer = new DictionaryInterfaceImplementerSerializer<Dictionary<string, object>>(
                 DictionaryRepresentation.Document,
-                new EnumSerializer<CapabilityType>(BsonType.String),
+                new StringSerializer(),
                 new ObjectSerializer(ObjectSerializer.AllAllowedTypes));
 
             BsonClassMap.RegisterClassMap<DeviceState>(cm =>
@@ -76,6 +76,26 @@ public static class BsonClassMapRegistration
                 cm.AutoMap();
                 cm.SetIgnoreExtraElements(true);
                 cm.MapIdProperty(c => c.Id);
+            });
+
+            BsonClassMap.RegisterClassMap<CapabilityDescriptor>(cm =>
+            {
+                cm.AutoMap();
+                cm.SetIgnoreExtraElements(true);
+            });
+
+            BsonClassMap.RegisterClassMap<ThresholdRule>(cm =>
+            {
+                cm.AutoMap();
+                cm.MapIdProperty(r => r.Id);
+                cm.SetIgnoreExtraElements(true);
+            });
+
+            BsonClassMap.RegisterClassMap<ThresholdEventLog>(cm =>
+            {
+                cm.AutoMap();
+                cm.MapIdProperty(e => e.Id);
+                cm.SetIgnoreExtraElements(true);
             });
 
             _registered = true;

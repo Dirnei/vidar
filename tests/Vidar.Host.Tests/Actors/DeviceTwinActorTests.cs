@@ -56,10 +56,10 @@ public sealed class DeviceTwinActorTests : TestKit
         historyRepo.AddStateEntryAsync(Arg.Any<StateHistoryEntry>()).Returns(Task.CompletedTask);
 
         var actor = Sys.ActorOf(
-            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo, historyRepo),
+            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo, historyRepo, ActorRefs.Nobody),
             $"device-twin-{deviceId}");
 
-        var update = new DeviceStateUpdate(deviceId, CapabilityType.Switch, true);
+        var update = new DeviceStateUpdate(deviceId, "switch", true);
 
         // Act
         actor.Tell(update);
@@ -68,8 +68,49 @@ public sealed class DeviceTwinActorTests : TestKit
         await Task.Delay(500);
         await stateRepo.Received(1).UpsertAsync(Arg.Is<DeviceState>(s =>
             s.DeviceId == deviceId &&
-            s.States.ContainsKey(CapabilityType.Switch) &&
-            (bool)s.States[CapabilityType.Switch] == true));
+            s.States.ContainsKey("switch") &&
+            (bool)s.States["switch"] == true));
+    }
+
+    [Fact]
+    public async Task Command_RoutesToPluginRegistry()
+    {
+        // Arrange
+        var deviceId = Guid.NewGuid();
+        var stateRepo = Substitute.For<IDeviceStateRepository>();
+        var deviceRepo = Substitute.For<IDeviceRepository>();
+        var historyRepo = Substitute.For<IHistoryRepository>();
+
+        var config = new DeviceConfiguration
+        {
+            Id = deviceId,
+            Name = "Test Device",
+            CommunicationType = "shelly",
+            NativeId = "shelly-1",
+            Capabilities = new List<CapabilityDescriptor>(),
+            Settings = new Dictionary<string, string>()
+        };
+        stateRepo.GetByDeviceIdAsync(deviceId).Returns((DeviceState?)null);
+        deviceRepo.GetByIdAsync(deviceId).Returns(config);
+        historyRepo.AddCommandEntryAsync(Arg.Any<CommandHistoryEntry>()).Returns(Task.CompletedTask);
+
+        var pluginRegistryProbe = CreateTestProbe();
+        var actor = Sys.ActorOf(
+            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo, historyRepo, pluginRegistryProbe),
+            $"device-twin-cmd-{deviceId}");
+
+        // Wait for config to load
+        await Task.Delay(300);
+
+        var command = new DeviceCommand(deviceId, "shelly", "shelly-1", "switch", true);
+
+        // Act
+        actor.Tell(command);
+
+        // Assert
+        pluginRegistryProbe.ExpectMsg<RouteToPlugin>(
+            msg => msg.PluginId == "shelly" && msg.Message is DeviceCommand,
+            TimeSpan.FromSeconds(3));
     }
 
     /// <summary>
@@ -107,10 +148,10 @@ public sealed class DeviceTwinActorTests : TestKit
         historyRepo.AddStateEntryAsync(Arg.Any<StateHistoryEntry>()).Returns(Task.CompletedTask);
 
         var actor = Sys.ActorOf(
-            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo, historyRepo),
+            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo, historyRepo, ActorRefs.Nobody),
             $"device-twin-pubsub-{deviceId}");
 
-        var update = new DeviceStateUpdate(deviceId, CapabilityType.Temperature, 21.5);
+        var update = new DeviceStateUpdate(deviceId, "temperature", 21.5);
 
         // Act
         actor.Tell(update);
@@ -118,7 +159,7 @@ public sealed class DeviceTwinActorTests : TestKit
         // Assert — expect the DeviceStateChanged message on the subscribed probe
         var changed = probe.ExpectMsg<DeviceStateChanged>(TimeSpan.FromSeconds(5));
         Assert.Equal(deviceId, changed.DeviceId);
-        Assert.Equal(CapabilityType.Temperature, changed.Capability);
+        Assert.Equal("temperature", changed.CapabilityKey);
         Assert.Equal(21.5, changed.Value);
 
         await Task.CompletedTask;

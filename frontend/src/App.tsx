@@ -8,6 +8,7 @@ import { DeviceDetailPage } from './pages/DeviceDetailPage';
 import { GroupDetailPage } from './pages/GroupDetailPage';
 import { ApplicationsPage } from './pages/ApplicationsPage';
 import { WebhooksPage } from './pages/WebhooksPage';
+import { ThresholdRulesPage } from './pages/ThresholdRulesPage';
 
 export default function App() {
   return (
@@ -22,6 +23,7 @@ export default function App() {
           <Route path="discovered" element={<DiscoveredPage />} />
           <Route path="applications" element={<ApplicationsPage />} />
           <Route path="webhooks" element={<WebhooksPage />} />
+          <Route path="threshold-rules" element={<ThresholdRulesPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

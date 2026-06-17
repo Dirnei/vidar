@@ -1,4 +1,4 @@
-import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry, Application, WebhookRoute, WebhookEventPage } from '../types';
+import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry, Application, WebhookRoute, WebhookEventPage, ThresholdRule, ThresholdEventPage } from '../types';
 
 const BASE = '/api';
 
@@ -168,4 +168,28 @@ export async function getWebhookPayload(payloadId: string): Promise<string> {
   const res = await fetch(`${BASE}/webhooks/payloads/${payloadId}`);
   if (!res.ok) throw new Error(`${res.status}`);
   return res.text();
+}
+
+// --- Threshold Rules ---
+
+export function getThresholdRules(): Promise<ThresholdRule[]> {
+  return request('/threshold-rules');
+}
+
+export function createThresholdRule(data: Omit<ThresholdRule, 'id'>): Promise<ThresholdRule> {
+  return request('/threshold-rules', { method: 'POST', body: JSON.stringify(data) });
+}
+
+export function updateThresholdRule(id: string, data: Omit<ThresholdRule, 'id'>): Promise<void> {
+  return request(`/threshold-rules/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+
+export function deleteThresholdRule(id: string): Promise<void> {
+  return request(`/threshold-rules/${id}`, { method: 'DELETE' });
+}
+
+// --- Threshold Events ---
+
+export function getThresholdEvents(skip = 0, take = 20): Promise<ThresholdEventPage> {
+  return request(`/threshold-events?skip=${skip}&take=${take}`);
 }

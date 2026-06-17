@@ -5,15 +5,15 @@ namespace Vidar.Communication.HomeConnect;
 
 public static class HomeConnectStateMapper
 {
-    public static Dictionary<string, object> MapEventItems(IReadOnlyList<EventItem> items)
+    public static List<(string CapabilityKey, object Value)> MapEventItems(IReadOnlyList<EventItem> items)
     {
-        var result = new Dictionary<string, object>();
+        var result = new List<(string, object)>();
 
         foreach (var item in items)
         {
             var key = SimplifyKey(item.Key);
             var value = SimplifyValue(item.Value);
-            result[key] = value;
+            result.Add((key, value));
         }
 
         return result;
