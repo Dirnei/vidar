@@ -10,7 +10,7 @@
     <PackageReference Include="Akka.Hosting" Version="1.5.68" />
     <PackageReference Include="Akka.Remote.Hosting" Version="1.5.68" />
     <PackageReference Include="Akka.Streams" Version="1.5.68" />
-    <PackageReference Include="E3dc.Net" Version="*" />
+    <PackageReference Include="E3dc.Net" Version="0.1.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.2" />
   </ItemGroup>
 

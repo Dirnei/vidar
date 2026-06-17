@@ -6,6 +6,6 @@ public sealed record DiscoveredDeviceResponse(
     Guid Id,
     string CommunicationType,
     string NativeId,
-    List<CapabilityType> Capabilities,
+    List<CapabilityDescriptor> Capabilities,
     Dictionary<string, string> Metadata,
     DateTime DiscoveredAt);

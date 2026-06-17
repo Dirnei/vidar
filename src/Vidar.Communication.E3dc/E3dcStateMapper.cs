@@ -1,5 +1,4 @@
 using E3dc;
-using Vidar.Core.Capabilities;
 using Vidar.Core.Messages;
 
 namespace Vidar.Communication.E3dc;
@@ -10,17 +9,14 @@ public static class E3dcStateMapper
     {
         return
         [
-            new DeviceStateUpdate(deviceId, CapabilityType.SolarProduction, snapshot.PvWatts),
-            new DeviceStateUpdate(deviceId, CapabilityType.GridPower, snapshot.GridWatts),
-            new DeviceStateUpdate(deviceId, CapabilityType.Consumption, snapshot.HomeWatts),
-            new DeviceStateUpdate(deviceId, CapabilityType.Battery, (double)snapshot.Soc),
-            new DeviceStateUpdate(deviceId, CapabilityType.Extras, new Dictionary<string, object>
-            {
-                ["batteryWatts"] = snapshot.BatteryWatts,
-                ["additionalWatts"] = snapshot.AdditionalWatts,
-                ["autarky"] = (double)snapshot.Autarky,
-                ["selfConsumption"] = (double)snapshot.SelfConsumption,
-            })
+            new DeviceStateUpdate(deviceId, "solarProduction", snapshot.PvWatts),
+            new DeviceStateUpdate(deviceId, "gridPower", snapshot.GridWatts),
+            new DeviceStateUpdate(deviceId, "consumption", snapshot.HomeWatts),
+            new DeviceStateUpdate(deviceId, "batteryCharge", (double)snapshot.Soc),
+            new DeviceStateUpdate(deviceId, "batteryPower", snapshot.BatteryWatts),
+            new DeviceStateUpdate(deviceId, "additionalPower", snapshot.AdditionalWatts),
+            new DeviceStateUpdate(deviceId, "autarky", (double)snapshot.Autarky),
+            new DeviceStateUpdate(deviceId, "selfConsumption", (double)snapshot.SelfConsumption),
         ];
     }
 }

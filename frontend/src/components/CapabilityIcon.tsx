@@ -1,3 +1,5 @@
+import type { CapabilityDescriptor } from '../types';
+
 interface Props {
   capability: string;
   size?: number;
@@ -9,7 +11,7 @@ export function CapabilityIcon({ capability, size = 16, color }: Props) {
   const s = { width: size, height: size, flexShrink: 0 } as const;
 
   switch (capability) {
-    case 'Cover':
+    case 'cover':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round">
           <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -18,14 +20,14 @@ export function CapabilityIcon({ capability, size = 16, color }: Props) {
           <line x1="12" y1="15" x2="12" y2="21" />
         </svg>
       );
-    case 'Switch':
+    case 'switch':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round">
           <circle cx="12" cy="14" r="8" />
           <line x1="12" y1="6" x2="12" y2="2" />
         </svg>
       );
-    case 'Dimmer':
+    case 'dimmer':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round">
           <circle cx="12" cy="12" r="4" />
@@ -39,7 +41,7 @@ export function CapabilityIcon({ capability, size = 16, color }: Props) {
           <line x1="17.66" y1="6.34" x2="19.78" y2="4.22" />
         </svg>
       );
-    case 'Light':
+    case 'light':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M9 18h6" />
@@ -47,13 +49,13 @@ export function CapabilityIcon({ capability, size = 16, color }: Props) {
           <path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14" />
         </svg>
       );
-    case 'Temperature':
+    case 'temperature':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z" />
         </svg>
       );
-    case 'Motion':
+    case 'motion':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round">
           <path d="M17 4a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" fill={c} stroke="none" />
@@ -62,13 +64,13 @@ export function CapabilityIcon({ capability, size = 16, color }: Props) {
           <path d="M10 22c3-3 7-9 7-16" />
         </svg>
       );
-    case 'Power':
+    case 'power':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
         </svg>
       );
-    case 'Energy':
+    case 'energy':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="1" y="6" width="18" height="12" rx="2" />
@@ -77,48 +79,48 @@ export function CapabilityIcon({ capability, size = 16, color }: Props) {
           <line x1="11" y1="10" x2="11" y2="14" />
         </svg>
       );
-    case 'Humidity':
+    case 'humidity':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" />
         </svg>
       );
-    case 'Contact':
+    case 'contact':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="3" y="3" width="7" height="18" rx="1" />
           <rect x="14" y="3" width="7" height="18" rx="1" />
         </svg>
       );
-    case 'Action':
+    case 'action':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="10" />
           <circle cx="12" cy="12" r="3" fill={c} />
         </svg>
       );
-    case 'Battery':
+    case 'battery':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="1" y="6" width="18" height="12" rx="2" />
           <line x1="23" y1="10" x2="23" y2="14" />
         </svg>
       );
-    case 'Camera':
+    case 'camera':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
           <circle cx="12" cy="13" r="4" />
         </svg>
       );
-    case 'Presence':
+    case 'presence':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="8" r="4" />
           <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" />
         </svg>
       );
-    case 'Update':
+    case 'update':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -126,7 +128,7 @@ export function CapabilityIcon({ capability, size = 16, color }: Props) {
           <line x1="12" y1="15" x2="12" y2="3" />
         </svg>
       );
-    case 'SolarProduction':
+    case 'solarProduction':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <circle cx="12" cy="12" r="5" />
@@ -140,7 +142,7 @@ export function CapabilityIcon({ capability, size = 16, color }: Props) {
           <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
         </svg>
       );
-    case 'GridPower':
+    case 'gridPower':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M18 4v16" />
@@ -149,7 +151,7 @@ export function CapabilityIcon({ capability, size = 16, color }: Props) {
           <path d="M2 16h20" />
         </svg>
       );
-    case 'Consumption':
+    case 'consumption':
       return (
         <svg style={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
@@ -168,30 +170,33 @@ export function CapabilityIcon({ capability, size = 16, color }: Props) {
 
 function accentFor(cap: string): string {
   switch (cap) {
-    case 'Switch': case 'Dimmer': case 'Light': return 'var(--accent-primary)';
-    case 'Cover': return 'var(--accent-teal)';
-    case 'Temperature': return 'var(--accent-red)';
-    case 'Motion': return 'var(--accent-green)';
-    case 'Power': return 'var(--accent-blue)';
-    case 'Energy': return 'var(--accent-green)';
-    case 'Humidity': return 'var(--accent-blue)';
-    case 'Contact': return 'var(--accent-teal)';
-    case 'Action': return 'var(--accent-primary)';
-    case 'Battery': return 'var(--accent-green)';
-    case 'Presence': return 'var(--accent-green)';
-    case 'Camera': return 'var(--accent-blue)';
-    case 'Update': return 'var(--accent-primary)';
-    case 'SolarProduction': return 'var(--accent-yellow, #f59e0b)';
-    case 'GridPower': return 'var(--accent-blue)';
-    case 'Consumption': return 'var(--accent-red)';
+    case 'switch': case 'dimmer': case 'light': return 'var(--accent-primary)';
+    case 'cover': return 'var(--accent-teal)';
+    case 'temperature': return 'var(--accent-red)';
+    case 'motion': return 'var(--accent-green)';
+    case 'power': return 'var(--accent-blue)';
+    case 'energy': return 'var(--accent-green)';
+    case 'humidity': return 'var(--accent-blue)';
+    case 'contact': return 'var(--accent-teal)';
+    case 'action': return 'var(--accent-primary)';
+    case 'battery': return 'var(--accent-green)';
+    case 'presence': return 'var(--accent-green)';
+    case 'camera': return 'var(--accent-blue)';
+    case 'update': return 'var(--accent-primary)';
+    case 'solarProduction': return 'var(--accent-yellow, #f59e0b)';
+    case 'gridPower': return 'var(--accent-blue)';
+    case 'consumption': return 'var(--accent-red)';
     default: return 'var(--text-muted)';
   }
 }
 
-export function primaryCapabilityIcon(capabilities: string[]): string {
-  const priority = ['Camera', 'Light', 'Cover', 'Switch', 'Dimmer', 'Contact', 'Motion', 'Temperature', 'Humidity', 'Power', 'Energy', 'SolarProduction', 'GridPower', 'Consumption', 'Action', 'Battery', 'Presence'];
+export function primaryCapabilityIcon(capabilities: CapabilityDescriptor[] | string[]): string {
+  const keys: string[] = capabilities.length > 0 && typeof capabilities[0] === 'object'
+    ? (capabilities as CapabilityDescriptor[]).map(c => c.key)
+    : capabilities as string[];
+  const priority = ['camera', 'light', 'cover', 'switch', 'dimmer', 'contact', 'motion', 'temperature', 'humidity', 'power', 'energy', 'solarProduction', 'gridPower', 'consumption', 'action', 'battery', 'presence'];
   for (const p of priority) {
-    if (capabilities.includes(p)) return p;
+    if (keys.includes(p)) return p;
   }
-  return capabilities[0] ?? 'Switch';
+  return keys[0] ?? 'switch';
 }

@@ -152,7 +152,7 @@ export function CreateGroupModal({ rooms, defaultRoomId, onConfirm, onCancel }: 
                     />
                     <span style={{ color: 'var(--text-primary)' }}>{d.name}</span>
                     <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-muted)' }}>
-                      {d.capabilities.join(' · ')}
+                      {d.capabilities.map(c => c.label).join(' · ')}
                     </span>
                   </label>
                 ))}

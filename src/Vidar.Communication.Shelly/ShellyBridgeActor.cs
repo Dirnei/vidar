@@ -1,71 +1,41 @@
 using Akka.Actor;
-using Akka.Cluster;
-using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
 using System.Text.Json;
 using Vidar.Core.Capabilities;
 using Vidar.Core.Messages;
+using Vidar.Core.Plugins;
 
 namespace Vidar.Communication.Shelly;
 
-public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
+public sealed class ShellyBridgeActor : PluginActorBase
 {
-    private readonly ILoggingAdapter _log = Context.GetLogger();
     private readonly ShellyHttpClient _httpClient;
-    private readonly IActorRef _shardProxy;
-    private readonly IActorRef _pluginRegistry;
     private readonly Dictionary<string, ShellyDevice> _devices = new();
-
-    public ITimerScheduler Timers { get; set; } = null!;
 
     private sealed class PollTick { public static readonly PollTick Instance = new(); }
 
-    public static Props Props(ShellyHttpClient httpClient, IActorRef shardProxy, IActorRef pluginRegistry) =>
-        Akka.Actor.Props.Create(() => new ShellyBridgeActor(httpClient, shardProxy, pluginRegistry));
+    protected override string PluginId => "shelly";
 
-    public ShellyBridgeActor(ShellyHttpClient httpClient, IActorRef shardProxy, IActorRef pluginRegistry)
+    public static Props Props(ShellyHttpClient httpClient, IActorRef pluginRegistry, IActorRef shardProxy) =>
+        Akka.Actor.Props.Create(() => new ShellyBridgeActor(httpClient, pluginRegistry, shardProxy));
+
+    public ShellyBridgeActor(ShellyHttpClient httpClient, IActorRef pluginRegistry, IActorRef shardProxy)
+        : base(pluginRegistry, shardProxy)
     {
         _httpClient = httpClient;
-        _shardProxy = shardProxy;
-        _pluginRegistry = pluginRegistry;
 
         Receive<RegisterShellyDevice>(msg =>
         {
             _devices[msg.Device.NativeId] = msg.Device;
-            _log.Info("Registered Shelly device: {NativeId} at {Host}", msg.Device.NativeId, msg.Device.Host);
-        });
-
-        Receive<PluginRegistered>(msg =>
-        {
-            foreach (var reg in msg.Registrations)
-            {
-                var device = new ShellyDevice
-                {
-                    NativeId = reg.NativeId,
-                    Host = reg.Host,
-                    Generation = reg.Generation,
-                    Capabilities = reg.Capabilities,
-                    VidarDeviceId = reg.DeviceId
-                };
-                _devices[device.NativeId] = device;
-            }
-            _log.Info("Plugin registered with {Count} devices, enabled={Enabled}",
-                msg.Registrations.Count, msg.Enabled);
-            PublishStatus();
+            Log.Info("Registered Shelly device: {NativeId} at {Host}", msg.Device.NativeId, msg.Device.Host);
         });
 
         Receive<PollTick>(_ => PollAllDevices());
         Receive<PollFailed>(HandlePollFailed);
-        Receive<ClusterEvent.CurrentClusterState>(_ => { });
-        Receive<ClusterEvent.MemberUp>(msg =>
-        {
-            if (msg.Member.HasRole("host"))
-                _pluginRegistry.Tell(new RegisterPlugin("shelly", Self));
-        });
 
         ReceiveAsync<DiscoverShellyDevice>(async msg =>
         {
-            _log.Info("Manual Shelly discovery requested for host {Host}", msg.Host);
+            Log.Info("Manual Shelly discovery requested for host {Host}", msg.Host);
             try
             {
                 var statusDoc = await _httpClient.GetStatusAsync(msg.Host);
@@ -73,25 +43,25 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
 
                 if (statusDoc == null)
                 {
-                    _log.Warning("Could not reach Shelly device at {Host}", msg.Host);
+                    Log.Warning("Could not reach Shelly device at {Host}", msg.Host);
                     return;
                 }
 
                 var root = statusDoc.RootElement;
-                var capabilities = new List<CapabilityType>();
+                var capabilities = new List<CapabilityDescriptor>();
 
                 if (root.TryGetProperty("switch:0", out _))
                 {
-                    capabilities.Add(CapabilityType.Switch);
-                    capabilities.Add(CapabilityType.Power);
-                    capabilities.Add(CapabilityType.Energy);
+                    capabilities.Add(new CapabilityDescriptor { Key = "switch", Label = "Switch", Unit = UnitType.OnOff, Commandable = true });
+                    capabilities.Add(new CapabilityDescriptor { Key = "power", Label = "Power", Unit = UnitType.Watts });
+                    capabilities.Add(new CapabilityDescriptor { Key = "energy", Label = "Energy", Unit = UnitType.WattHours });
                 }
                 if (root.TryGetProperty("cover:0", out _))
-                    capabilities.Add(CapabilityType.Cover);
+                    capabilities.Add(new CapabilityDescriptor { Key = "cover", Label = "Cover", Unit = UnitType.Percent, Commandable = true, Min = 0, Max = 100 });
                 if (root.TryGetProperty("temperature:0", out _))
-                    capabilities.Add(CapabilityType.Temperature);
+                    capabilities.Add(new CapabilityDescriptor { Key = "temperature", Label = "Temperature", Unit = UnitType.Celsius });
                 if (root.TryGetProperty("humidity:0", out _))
-                    capabilities.Add(CapabilityType.Humidity);
+                    capabilities.Add(new CapabilityDescriptor { Key = "humidity", Label = "Humidity", Unit = UnitType.Percent });
 
                 var metadata = new Dictionary<string, string> { ["host"] = msg.Host };
                 string nativeId = msg.Host;
@@ -108,10 +78,7 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
                 }
 
                 var deviceId = Guid.NewGuid();
-                var discovered = new DeviceDiscovered(deviceId, "shelly", nativeId, capabilities, metadata);
-
-                var mediator = DistributedPubSub.Get(Context.System).Mediator;
-                mediator.Tell(new Publish("device-discovered", discovered));
+                Discover(deviceId, nativeId, capabilities, metadata);
 
                 var device = new ShellyDevice
                 {
@@ -122,12 +89,12 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
                 };
                 Self.Tell(new RegisterShellyDevice(device));
 
-                _log.Info("Shelly device discovered at {Host}: NativeId={NativeId}, Capabilities={Caps}",
-                    msg.Host, nativeId, string.Join(",", capabilities));
+                Log.Info("Shelly device discovered at {Host}: NativeId={NativeId}, Capabilities={Caps}",
+                    msg.Host, nativeId, string.Join(",", capabilities.Select(c => c.Key)));
             }
             catch (Exception ex)
             {
-                _log.Warning(ex, "Failed to probe Shelly device at {Host}", msg.Host);
+                Log.Warning(ex, "Failed to probe Shelly device at {Host}", msg.Host);
             }
         });
 
@@ -140,28 +107,28 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
 
             if (device == null)
             {
-                _log.Warning("No Shelly device found for DeviceId {DeviceId} / NativeId {NativeId}",
+                Log.Warning("No Shelly device found for DeviceId {DeviceId} / NativeId {NativeId}",
                     cmd.DeviceId, cmd.NativeId);
                 return;
             }
 
             try
             {
-                _log.Info("Command value type: {Type}, value: {Value}", cmd.Value?.GetType().FullName ?? "null", cmd.Value);
+                Log.Info("Command value type: {Type}, value: {Value}", cmd.Value?.GetType().FullName ?? "null", cmd.Value);
                 var numericValue = cmd.Value != null ? CoerceToInt(cmd.Value) : null;
                 var boolValue = cmd.Value != null ? CoerceToBool(cmd.Value) : null;
-                _log.Info("Coerced: numeric={Numeric}, bool={Bool}", numericValue?.ToString() ?? "null", boolValue?.ToString() ?? "null");
+                Log.Info("Coerced: numeric={Numeric}, bool={Bool}", numericValue?.ToString() ?? "null", boolValue?.ToString() ?? "null");
 
                 if (device.Generation == 1)
                 {
-                    if (cmd.Capability == CapabilityType.Switch && boolValue.HasValue)
+                    if (cmd.CapabilityKey == "switch" && boolValue.HasValue)
                         await _httpClient.Gen1SetSwitchAsync(device.Host, 0, boolValue.Value);
-                    else if (cmd.Capability == CapabilityType.Cover)
+                    else if (cmd.CapabilityKey == "cover")
                     {
                         if (numericValue.HasValue)
                         {
                             var result = await _httpClient.Gen1SetCoverPositionAsync(device.Host, numericValue.Value);
-                            _log.Info("Gen1 cover response from {Host}: {Response}", device.Host, result);
+                            Log.Info("Gen1 cover response from {Host}: {Response}", device.Host, result);
                         }
                         else if (cmd.Value is string dir)
                         {
@@ -172,34 +139,40 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
                 }
                 else
                 {
-                    if (cmd.Capability == CapabilityType.Switch && boolValue.HasValue)
+                    if (cmd.CapabilityKey == "switch" && boolValue.HasValue)
                         await _httpClient.SetSwitchAsync(device.Host, 0, boolValue.Value);
-                    else if (cmd.Capability == CapabilityType.Cover && numericValue.HasValue)
+                    else if (cmd.CapabilityKey == "cover" && numericValue.HasValue)
                         await _httpClient.SetCoverPositionAsync(device.Host, 0, numericValue.Value);
                 }
 
-                _log.Info("Executed {Capability} command on {NativeId} (Gen{Gen})", cmd.Capability, device.NativeId, device.Generation);
+                Log.Info("Executed {CapabilityKey} command on {NativeId} (Gen{Gen})", cmd.CapabilityKey, device.NativeId, device.Generation);
             }
             catch (Exception ex)
             {
-                _log.Warning(ex, "Failed to execute command on Shelly device {Host}", device.Host);
+                Log.Warning(ex, "Failed to execute command on Shelly device {Host}", device.Host);
             }
         });
     }
 
-    protected override void PreStart()
+    protected override void OnPluginRegistered(bool enabled, Dictionary<string, string> settings,
+        List<RegisterDeviceForPolling> registrations)
     {
-        base.PreStart();
-        Cluster.Get(Context.System).Subscribe(Self, typeof(ClusterEvent.MemberUp));
-        _pluginRegistry.Tell(new RegisterPlugin("shelly", Self));
-        Timers.StartPeriodicTimer("poll", PollTick.Instance, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
-    }
-
-    private void PublishStatus()
-    {
-        var mediator = DistributedPubSub.Get(Context.System).Mediator;
-        mediator.Tell(new Publish("application-status",
-            new ApplicationStatusUpdate("shelly", "running", _devices.Count)));
+        foreach (var reg in registrations)
+        {
+            var device = new ShellyDevice
+            {
+                NativeId = reg.NativeId,
+                Host = reg.Host,
+                Generation = reg.Generation,
+                Capabilities = reg.Capabilities,
+                VidarDeviceId = reg.DeviceId
+            };
+            _devices[device.NativeId] = device;
+        }
+        Log.Info("Plugin registered with {Count} devices, enabled={Enabled}", registrations.Count, enabled);
+        PublishStatus("running", _devices.Count);
+        if (enabled)
+            Timers.StartPeriodicTimer("poll", PollTick.Instance, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
     }
 
     private void PollAllDevices()
@@ -210,7 +183,7 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
             PollDeviceAsync(device).PipeTo(Self, failure: ex => new PollFailed(device.NativeId, ex));
         }
 
-        PublishStatus();
+        PublishStatus("running", _devices.Count);
     }
 
     private async Task PollDeviceAsync(ShellyDevice device)
@@ -233,41 +206,26 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
         if (doc == null) return;
 
         var root = doc.RootElement;
+        var keys = device.Capabilities.Select(c => c.Key).ToHashSet();
 
-        foreach (var cap in device.Capabilities)
+        if (keys.Contains("switch") || keys.Contains("power") || keys.Contains("energy"))
         {
-            List<ShellyCapabilityValue> updates;
-            switch (cap)
-            {
-                case CapabilityType.Switch:
-                case CapabilityType.Power:
-                case CapabilityType.Energy:
-                    if (root.TryGetProperty("switch:0", out var sw))
-                    {
-                        updates = ShellyStateMapper.MapSwitchStatus(sw);
-                        SendUpdates(deviceId, updates);
-                    }
-                    else if (root.TryGetProperty("pm1:0", out var pm))
-                    {
-                        updates = ShellyStateMapper.MapSwitchStatus(pm);
-                        SendUpdates(deviceId, updates);
-                    }
-                    break;
-                case CapabilityType.Cover:
-                    if (root.TryGetProperty("cover:0", out var cover))
-                    {
-                        updates = ShellyStateMapper.MapCoverStatus(cover);
-                        SendUpdates(deviceId, updates);
-                    }
-                    break;
-                case CapabilityType.Temperature:
-                    if (root.TryGetProperty("temperature:0", out var temp))
-                    {
-                        updates = ShellyStateMapper.MapTemperatureStatus(temp);
-                        SendUpdates(deviceId, updates);
-                    }
-                    break;
-            }
+            if (root.TryGetProperty("switch:0", out var sw))
+                SendUpdates(deviceId, ShellyStateMapper.MapSwitchStatus(sw));
+            else if (root.TryGetProperty("pm1:0", out var pm))
+                SendUpdates(deviceId, ShellyStateMapper.MapSwitchStatus(pm));
+        }
+
+        if (keys.Contains("cover"))
+        {
+            if (root.TryGetProperty("cover:0", out var cover))
+                SendUpdates(deviceId, ShellyStateMapper.MapCoverStatus(cover));
+        }
+
+        if (keys.Contains("temperature"))
+        {
+            if (root.TryGetProperty("temperature:0", out var temp))
+                SendUpdates(deviceId, ShellyStateMapper.MapTemperatureStatus(temp));
         }
     }
 
@@ -277,46 +235,38 @@ public sealed class ShellyBridgeActor : ReceiveActor, IWithTimers
         if (doc == null) return;
 
         var root = doc.RootElement;
+        var keys = device.Capabilities.Select(c => c.Key).ToHashSet();
         bool temperatureSent = false;
 
-        foreach (var cap in device.Capabilities)
+        if (keys.Contains("cover") || keys.Contains("power"))
         {
-            switch (cap)
+            if (root.TryGetProperty("rollers", out var rollers) &&
+                rollers.ValueKind == JsonValueKind.Array &&
+                rollers.GetArrayLength() > 0)
             {
-                case CapabilityType.Cover:
-                case CapabilityType.Power:
-                    if (root.TryGetProperty("rollers", out var rollers) &&
-                        rollers.ValueKind == JsonValueKind.Array &&
-                        rollers.GetArrayLength() > 0)
-                    {
-                        var updates = ShellyStateMapper.MapGen1RollerStatus(rollers[0]);
-                        SendUpdates(deviceId, updates);
-                    }
-                    break;
-                case CapabilityType.Temperature:
-                    if (!temperatureSent)
-                    {
-                        var updates = ShellyStateMapper.MapGen1Temperature(root);
-                        SendUpdates(deviceId, updates);
-                        temperatureSent = true;
-                    }
-                    break;
+                SendUpdates(deviceId, ShellyStateMapper.MapGen1RollerStatus(rollers[0]));
             }
+        }
+
+        if (keys.Contains("temperature") && !temperatureSent)
+        {
+            SendUpdates(deviceId, ShellyStateMapper.MapGen1Temperature(root));
+            temperatureSent = true;
         }
     }
 
     private void SendUpdates(Guid deviceId, List<ShellyCapabilityValue> updates)
     {
         foreach (var u in updates)
-            _shardProxy.Tell(new DeviceStateUpdate(deviceId, u.Capability, u.Value));
+            ReportState(deviceId, u.CapabilityKey, u.Value);
     }
 
     private void HandlePollFailed(PollFailed msg)
     {
-        _log.Warning(msg.Exception, "Failed to poll Shelly device {NativeId}", msg.NativeId);
+        Log.Warning(msg.Exception, "Failed to poll Shelly device {NativeId}", msg.NativeId);
         if (_devices.TryGetValue(msg.NativeId, out var device) && device.VidarDeviceId.HasValue)
         {
-            _shardProxy.Tell(new DeviceOffline(device.VidarDeviceId.Value));
+            ReportOffline(device.VidarDeviceId.Value);
         }
     }
 

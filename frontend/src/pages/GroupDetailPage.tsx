@@ -127,7 +127,7 @@ export function GroupDetailPage() {
 
   async function cmd(capability: string, value: unknown) {
     if (!id) return;
-    await sendGroupCommand(id, { capability, value });
+    await sendGroupCommand(id, { capabilityKey: capability, value });
     await loadGroup();
   }
 
@@ -286,7 +286,7 @@ export function GroupDetailPage() {
                       />
                       <span style={{ color: 'var(--text-primary)' }}>{d.name}</span>
                       <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-muted)' }}>
-                        {d.capabilities.join(' · ')}
+                        {d.capabilities.map(c => c.label).join(' · ')}
                       </span>
                     </label>
                   ))}
@@ -410,13 +410,13 @@ function handleBlur(e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) {
 
 function capAccentColor(cap: string): string {
   switch (cap) {
-    case 'Switch': case 'Dimmer': case 'Light': return 'var(--accent-primary)';
-    case 'Cover': return 'var(--accent-teal)';
-    case 'Temperature': return 'var(--accent-red)';
-    case 'Motion': return 'var(--accent-green)';
-    case 'Power': return 'var(--accent-blue)';
-    case 'Energy': return 'var(--accent-green)';
-    case 'Humidity': return 'var(--accent-blue)';
+    case 'switch': case 'dimmer': case 'light': return 'var(--accent-primary)';
+    case 'cover': return 'var(--accent-teal)';
+    case 'temperature': return 'var(--accent-red)';
+    case 'motion': return 'var(--accent-green)';
+    case 'power': return 'var(--accent-blue)';
+    case 'energy': return 'var(--accent-green)';
+    case 'humidity': return 'var(--accent-blue)';
     default: return 'var(--accent-primary)';
   }
 }
@@ -457,14 +457,14 @@ function renderCapabilityCard(
   const accent = capAccentColor(cap);
 
   switch (cap) {
-    case 'Switch': {
-      const isOn = Boolean(state['Switch']);
+    case 'switch': {
+      const isOn = Boolean(state['switch']);
       return (
         <div key={cap} style={capCardStyle}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Switch" size={13} />Switch</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="switch" size={13} />Switch</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 6 }}>
-            <ToggleSwitch checked={isOn} onChange={v => cmd('Switch', v)} />
+            <ToggleSwitch checked={isOn} onChange={v => cmd('switch', v)} />
             <span style={{ fontSize: 14, fontWeight: 500, color: isOn ? 'var(--accent-primary)' : 'var(--text-muted)' }}>
               {isOn ? 'On' : 'Off'}
             </span>
@@ -472,30 +472,30 @@ function renderCapabilityCard(
         </div>
       );
     }
-    case 'Dimmer': {
-      const level = typeof state['Dimmer'] === 'number' ? (state['Dimmer'] as number) : 0;
+    case 'dimmer': {
+      const level = typeof state['dimmer'] === 'number' ? (state['dimmer'] as number) : 0;
       return (
         <div key={cap} style={capCardStyle}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Dimmer" size={13} />Dimmer</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="dimmer" size={13} />Dimmer</div>
           <div style={capValueStyle('var(--accent-primary)')}>{Math.round(level)}%</div>
           <div style={{ marginTop: 12 }}>
-            <SliderControl value={level} className="slider-dimmer" accentColor="var(--accent-primary)" onCommit={v => cmd('Dimmer', v)} />
+            <SliderControl value={level} className="slider-dimmer" accentColor="var(--accent-primary)" onCommit={v => cmd('dimmer', v)} />
           </div>
         </div>
       );
     }
-    case 'Light': {
-      const lightState = state['Light'] as Record<string, unknown> | undefined;
+    case 'light': {
+      const lightState = state['light'] as Record<string, unknown> | undefined;
       const isOn = lightState?.on === true;
       const brightness = typeof lightState?.brightness === 'number' ? (lightState.brightness as number) : 0;
       const hasBrightness = lightState?.brightness !== undefined;
       return (
         <div key={cap} style={capCardStyle}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Light" size={13} />Light</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="light" size={13} />Light</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 6 }}>
-            <ToggleSwitch checked={isOn} onChange={v => cmd('Light', v)} />
+            <ToggleSwitch checked={isOn} onChange={v => cmd('light', v)} />
             <span style={{ fontSize: 14, fontWeight: 500, color: isOn ? 'var(--accent-primary)' : 'var(--text-muted)' }}>
               {isOn ? (hasBrightness ? `${Math.round(brightness)}%` : 'On') : 'Off'}
             </span>
@@ -503,18 +503,18 @@ function renderCapabilityCard(
           {hasBrightness && (
             <div style={{ marginTop: 14 }}>
               <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 6 }}>Brightness</div>
-              <SliderControl value={brightness} className="slider-dimmer" accentColor="var(--accent-primary)" onCommit={v => cmd('Light', v)} />
+              <SliderControl value={brightness} className="slider-dimmer" accentColor="var(--accent-primary)" onCommit={v => cmd('light', v)} />
             </div>
           )}
         </div>
       );
     }
-    case 'Cover': {
-      const pos = typeof state['Cover'] === 'number' ? (state['Cover'] as number) : 0;
+    case 'cover': {
+      const pos = typeof state['cover'] === 'number' ? (state['cover'] as number) : 0;
       return (
         <div key={cap} style={capCardStyle}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Cover" size={13} />Cover</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="cover" size={13} />Cover</div>
           <div style={capValueStyle('var(--accent-teal)')}>{Math.round(pos)}%</div>
           <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
             {[['Close', 0], ['50%', 50], ['Open', 100]].map(([label, val]) => (
@@ -523,72 +523,72 @@ function renderCapabilityCard(
                 style={coverBtnStyle}
                 onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent-teal-dim)'; e.currentTarget.style.borderColor = 'var(--accent-teal)'; }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.borderColor = 'var(--border-default)'; }}
-                onClick={() => cmd('Cover', val)}
+                onClick={() => cmd('cover', val)}
               >
                 {label}
               </button>
             ))}
           </div>
           <div style={{ marginTop: 12 }}>
-            <SliderControl value={pos} className="slider-cover" accentColor="var(--accent-teal)" onCommit={v => cmd('Cover', v)} />
+            <SliderControl value={pos} className="slider-cover" accentColor="var(--accent-teal)" onCommit={v => cmd('cover', v)} />
           </div>
         </div>
       );
     }
-    case 'Temperature': {
-      const temp = state['Temperature'];
+    case 'temperature': {
+      const temp = state['temperature'];
       return (
         <div key={cap} style={capCardStyle}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Temperature" size={13} />Temperature</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="temperature" size={13} />Temperature</div>
           <div style={capValueStyle(temp != null ? 'var(--accent-red)' : 'var(--text-muted)')}>
             {temp != null ? `${Number(temp).toFixed(1)} °C` : '— °C'}
           </div>
         </div>
       );
     }
-    case 'Motion': {
-      const detected = Boolean(state['Motion']);
+    case 'motion': {
+      const detected = Boolean(state['motion']);
       return (
         <div key={cap} style={capCardStyle}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Motion" size={13} />Motion</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="motion" size={13} />Motion</div>
           <div style={{ marginTop: 8 }}>
             <StatusDot active={detected} label={detected ? 'Detected' : 'Clear'} />
           </div>
         </div>
       );
     }
-    case 'Power': {
-      const power = state['Power'];
+    case 'power': {
+      const power = state['power'];
       return (
         <div key={cap} style={capCardStyle}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Power" size={13} />Power</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="power" size={13} />Power</div>
           <div style={capValueStyle(power != null ? 'var(--accent-blue)' : 'var(--text-muted)')}>
             {power != null ? `${Number(power).toFixed(1)} W` : '— W'}
           </div>
         </div>
       );
     }
-    case 'Energy': {
-      const energy = state['Energy'];
+    case 'energy': {
+      const energy = state['energy'];
       return (
         <div key={cap} style={capCardStyle}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Energy" size={13} />Energy</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="energy" size={13} />Energy</div>
           <div style={capValueStyle(energy != null ? 'var(--accent-green)' : 'var(--text-muted)')}>
             {energy != null ? `${Number(energy).toFixed(2)} kWh` : '— kWh'}
           </div>
         </div>
       );
     }
-    case 'Humidity': {
-      const hum = typeof state['Humidity'] === 'number' ? (state['Humidity'] as number) : 0;
+    case 'humidity': {
+      const hum = typeof state['humidity'] === 'number' ? (state['humidity'] as number) : 0;
       return (
         <div key={cap} style={capCardStyle}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Humidity" size={13} />Humidity</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="humidity" size={13} />Humidity</div>
           <div style={{ ...capValueStyle('var(--accent-blue)'), marginBottom: 12 }}>{Math.round(hum)}%</div>
           <ProgressBar value={hum} color="var(--accent-blue)" />
         </div>

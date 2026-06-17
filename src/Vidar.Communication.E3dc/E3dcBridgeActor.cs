@@ -1,6 +1,4 @@
 using Akka.Actor;
-using Akka.Cluster;
-using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
 using E3dc;
 using E3dc.Client;
@@ -9,23 +7,17 @@ using E3dc.Messages;
 using E3dc.Messages.Responses;
 using Vidar.Core.Capabilities;
 using Vidar.Core.Messages;
+using Vidar.Core.Plugins;
 
 namespace Vidar.Communication.E3dc;
 
-public sealed class E3dcBridgeActor : ReceiveActor, IWithTimers
+public sealed class E3dcBridgeActor : PluginActorBase
 {
-    private readonly ILoggingAdapter _log = Context.GetLogger();
-    private readonly IActorRef _shardProxy;
-    private readonly IActorRef _pluginRegistry;
-    private readonly IActorRef _mediator;
-
     private RscpClient? _client;
     private IDisposable? _subscription;
     private Guid _deviceId;
     private bool _discovered;
     private Dictionary<string, string> _settings = new();
-
-    public ITimerScheduler Timers { get; set; } = null!;
 
     private sealed class StatusTick { public static readonly StatusTick Instance = new(); }
 
@@ -35,33 +27,16 @@ public sealed class E3dcBridgeActor : ReceiveActor, IWithTimers
         Ems.BatSoc, Ems.Autarky, Ems.SelfConsumption
     ];
 
-    public static Props Props(IActorRef shardProxy, IActorRef pluginRegistry) =>
-        Akka.Actor.Props.Create(() => new E3dcBridgeActor(shardProxy, pluginRegistry));
+    protected override string PluginId => "e3dc";
 
-    public E3dcBridgeActor(IActorRef shardProxy, IActorRef pluginRegistry)
+    public static Props Props(IActorRef pluginRegistry, IActorRef shardProxy) =>
+        Akka.Actor.Props.Create(() => new E3dcBridgeActor(pluginRegistry, shardProxy));
+
+    public E3dcBridgeActor(IActorRef pluginRegistry, IActorRef shardProxy)
+        : base(pluginRegistry, shardProxy)
     {
-        _shardProxy = shardProxy;
-        _pluginRegistry = pluginRegistry;
-        _mediator = DistributedPubSub.Get(Context.System).Mediator;
-
-        Receive<PluginRegistered>(OnPluginRegistered);
-        Receive<IntegrationConfigChanged>(OnConfigChanged);
-        Receive<RegisterDeviceForPolling>(OnRegisterDevice);
         Receive<SnapshotReceived>(OnSnapshot);
         Receive<StatusTick>(_ => OnStatusTick());
-        Receive<ClusterEvent.CurrentClusterState>(_ => { });
-        Receive<ClusterEvent.MemberUp>(msg =>
-        {
-            if (msg.Member.HasRole("host"))
-                _pluginRegistry.Tell(new RegisterPlugin("e3dc", Self));
-        });
-    }
-
-    protected override void PreStart()
-    {
-        base.PreStart();
-        Cluster.Get(Context.System).Subscribe(Self, typeof(ClusterEvent.MemberUp));
-        _pluginRegistry.Tell(new RegisterPlugin("e3dc", Self));
     }
 
     protected override void PostStop()
@@ -70,26 +45,25 @@ public sealed class E3dcBridgeActor : ReceiveActor, IWithTimers
         base.PostStop();
     }
 
-    private void OnPluginRegistered(PluginRegistered msg)
+    protected override void OnPluginRegistered(bool enabled, Dictionary<string, string> settings,
+        List<RegisterDeviceForPolling> registrations)
     {
-        foreach (var reg in msg.Registrations)
+        foreach (var reg in registrations)
         {
             _deviceId = reg.DeviceId;
-            _log.Info("Registered E3DC device {DeviceId}", reg.DeviceId);
+            Log.Info("Registered E3DC device {DeviceId}", reg.DeviceId);
         }
 
-        if (msg.Enabled)
-            StartClient(msg.Settings);
+        if (enabled)
+            StartClient(settings);
         else
-            _log.Info("E3DC plugin registered but disabled");
+            Log.Info("E3DC plugin registered but disabled");
     }
 
-    private void OnConfigChanged(IntegrationConfigChanged msg)
+    protected override void OnConfigChanged(bool enabled, Dictionary<string, string> settings)
     {
-        if (msg.IntegrationId != "e3dc") return;
-
-        if (msg.Enabled)
-            StartClient(msg.Settings);
+        if (enabled)
+            StartClient(settings);
         else
         {
             DisposeClient();
@@ -97,10 +71,9 @@ public sealed class E3dcBridgeActor : ReceiveActor, IWithTimers
         }
     }
 
-    private void OnRegisterDevice(RegisterDeviceForPolling msg)
+    protected override void OnDeviceRegistered(Guid deviceId, string nativeId, RegisterDeviceForPolling registration)
     {
-        if (msg.CommunicationType != "e3dc") return;
-        _deviceId = msg.DeviceId;
+        _deviceId = deviceId;
     }
 
     private void StartClient(Dictionary<string, string> settings)
@@ -111,7 +84,7 @@ public sealed class E3dcBridgeActor : ReceiveActor, IWithTimers
         var host = settings.GetValueOrDefault("host", "");
         if (string.IsNullOrEmpty(host))
         {
-            _log.Warning("E3DC host not configured — staying idle");
+            Log.Warning("E3DC host not configured — staying idle");
             PublishStatus("error", 0, "Host not configured");
             return;
         }
@@ -137,7 +110,7 @@ public sealed class E3dcBridgeActor : ReceiveActor, IWithTimers
                 self.Tell(new SnapshotReceived(snapshot));
         });
 
-        _log.Info("E3DC client started, polling {Host}:{Port} every {Interval}s", host, port, pollSeconds);
+        Log.Info("E3DC client started, polling {Host}:{Port} every {Interval}s", host, port, pollSeconds);
 
         Timers.StartPeriodicTimer("status", StatusTick.Instance, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30));
     }
@@ -156,7 +129,7 @@ public sealed class E3dcBridgeActor : ReceiveActor, IWithTimers
 
         var updates = E3dcStateMapper.MapSnapshot(_deviceId, msg.Snapshot);
         foreach (var update in updates)
-            _shardProxy.Tell(update);
+            ReportState(update.DeviceId, update.CapabilityKey, update.Value);
     }
 
     private void DiscoverDevice(Dictionary<string, string> settings)
@@ -165,20 +138,24 @@ public sealed class E3dcBridgeActor : ReceiveActor, IWithTimers
         var host = settings.GetValueOrDefault("host", "unknown");
         var deviceId = _deviceId != Guid.Empty ? _deviceId : Guid.NewGuid();
 
-        var discovered = new DeviceDiscovered(
-            deviceId,
-            "e3dc",
-            $"e3dc-{host}",
-            new List<CapabilityType> { CapabilityType.SolarProduction, CapabilityType.GridPower,
-                CapabilityType.Consumption, CapabilityType.Battery, CapabilityType.Extras },
-            new Dictionary<string, string>
-            {
-                ["host"] = host,
-                ["model"] = "S10 Pro",
-                ["manufacturer"] = "E3/DC"
-            });
+        var capabilities = new List<CapabilityDescriptor>
+        {
+            new() { Key = "solarProduction", Label = "Solar Production", Unit = UnitType.Watts },
+            new() { Key = "gridPower", Label = "Grid Power", Unit = UnitType.Watts },
+            new() { Key = "consumption", Label = "Consumption", Unit = UnitType.Watts },
+            new() { Key = "batteryCharge", Label = "Battery Charge", Unit = UnitType.Percent, Min = 0, Max = 100 },
+            new() { Key = "batteryPower", Label = "Battery Power", Unit = UnitType.Watts },
+            new() { Key = "additionalPower", Label = "Additional Power", Unit = UnitType.Watts },
+            new() { Key = "autarky", Label = "Autarky", Unit = UnitType.Percent, Min = 0, Max = 100 },
+            new() { Key = "selfConsumption", Label = "Self Consumption", Unit = UnitType.Percent, Min = 0, Max = 100 },
+        };
 
-        _mediator.Tell(new Publish("device-discovered", discovered));
+        Discover(deviceId, $"e3dc-{host}", capabilities, new Dictionary<string, string>
+        {
+            ["host"] = host,
+            ["model"] = "S10 Pro",
+            ["manufacturer"] = "E3/DC"
+        });
     }
 
     private void DisposeClient()
@@ -188,12 +165,6 @@ public sealed class E3dcBridgeActor : ReceiveActor, IWithTimers
         _subscription = null;
         _client?.DisposeAsync().GetAwaiter().GetResult();
         _client = null;
-    }
-
-    private void PublishStatus(string status, int deviceCount, string? error = null)
-    {
-        _mediator.Tell(new Publish("application-status",
-            new ApplicationStatusUpdate("e3dc", status, deviceCount, error)));
     }
 
     private sealed record SnapshotReceived(global::E3dc.EmsPowerSnapshot Snapshot);

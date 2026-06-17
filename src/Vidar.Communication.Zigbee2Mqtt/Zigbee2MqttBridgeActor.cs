@@ -1,7 +1,5 @@
 using System.Threading.Channels;
 using Akka.Actor;
-using Akka.Cluster;
-using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
 using Akka.Streams;
 using Akka.Streams.Dsl;
@@ -11,25 +9,23 @@ using System.Security;
 using System.Text.Json;
 using Vidar.Core.Capabilities;
 using Vidar.Core.Messages;
+using Vidar.Core.Plugins;
 
 namespace Vidar.Communication.Zigbee2Mqtt;
 
-public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
+public sealed class Zigbee2MqttBridgeActor : PluginActorBase
 {
-    public ITimerScheduler Timers { get; set; } = null!;
+    protected override string PluginId => "zigbee2mqtt";
 
-    private readonly ILoggingAdapter _log = Context.GetLogger();
     private readonly IMaterializer _materializer;
     private readonly Zigbee2MqttConfig _defaultConfig;
     private Zigbee2MqttConfig _config;
-    private readonly IActorRef _shardProxy;
-    private readonly IActorRef _pluginRegistry;
 
     // Z2M device tracking
     private readonly Dictionary<string, Zigbee2MqttDevice> _devicesByFriendlyName = new();
     private readonly Dictionary<string, Zigbee2MqttDevice> _devicesByIeeeAddress = new();
 
-    // Config cache: ieeeAddress → configured device GUID
+    // Config cache: ieeeAddress -> configured device GUID
     private readonly Dictionary<string, Guid> _configuredDevices = new();
 
     // MQTT client
@@ -44,15 +40,14 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
     private sealed class CheckConnection { public static readonly CheckConnection Instance = new(); }
     private sealed class RepublishDiscoveries { public static readonly RepublishDiscoveries Instance = new(); }
     public static Props Props(Zigbee2MqttConfig config, IActorRef shardProxy, IActorRef pluginRegistry) =>
-        Akka.Actor.Props.Create(() => new Zigbee2MqttBridgeActor(config, shardProxy, pluginRegistry));
+        Akka.Actor.Props.Create(() => new Zigbee2MqttBridgeActor(config, pluginRegistry, shardProxy));
 
-    public Zigbee2MqttBridgeActor(Zigbee2MqttConfig config, IActorRef shardProxy, IActorRef pluginRegistry)
+    public Zigbee2MqttBridgeActor(Zigbee2MqttConfig config, IActorRef pluginRegistry, IActorRef shardProxy)
+        : base(pluginRegistry, shardProxy)
     {
         _materializer = Context.Materializer();
         _defaultConfig = config;
         _config = config;
-        _shardProxy = shardProxy;
-        _pluginRegistry = pluginRegistry;
 
         ReceiveAsync<ConnectToBroker>(_ => ConnectAsync());
 
@@ -60,43 +55,7 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
         {
             if (_mqttClient == null || !_mqttClient.IsConnected())
             {
-                _log.Warning("MQTT client not connected, reconnecting...");
-                Self.Tell(ConnectToBroker.Instance);
-            }
-        });
-
-        // Config cache update — from Host when a device is configured
-        Receive<RegisterDeviceForPolling>(msg =>
-        {
-            if (msg.CommunicationType != "zigbee2mqtt") return;
-            var isNew = !_configuredDevices.TryGetValue(msg.NativeId, out var existing) || existing != msg.DeviceId;
-            _configuredDevices[msg.NativeId] = msg.DeviceId;
-
-            if (isNew)
-            {
-                _log.Info("Config cache updated: {NativeId} → {DeviceId}", msg.NativeId, msg.DeviceId);
-                if (_devicesByIeeeAddress.TryGetValue(msg.NativeId, out var device))
-                    RequestDeviceState(device);
-            }
-        });
-
-        Receive<PluginRegistered>(msg =>
-        {
-            // Process registrations
-            foreach (var reg in msg.Registrations)
-                _configuredDevices[reg.NativeId] = reg.DeviceId;
-            _log.Info("Plugin registered with {Count} devices", msg.Registrations.Count);
-
-            // Process config (same logic as IntegrationConfigChanged handler)
-            if (msg.Enabled)
-            {
-                var s = msg.Settings;
-                _config = new Zigbee2MqttConfig(
-                    MqttHost: s.GetValueOrDefault("mqttHost") ?? _defaultConfig.MqttHost,
-                    MqttPort: int.TryParse(s.GetValueOrDefault("mqttPort"), out var p) ? p : _defaultConfig.MqttPort,
-                    MqttUser: s.GetValueOrDefault("mqttUser") ?? _defaultConfig.MqttUser,
-                    MqttPassword: s.GetValueOrDefault("mqttPassword") ?? _defaultConfig.MqttPassword,
-                    BaseTopic: s.GetValueOrDefault("baseTopic") ?? _defaultConfig.BaseTopic);
+                Log.Warning("MQTT client not connected, reconnecting...");
                 Self.Tell(ConnectToBroker.Instance);
             }
         });
@@ -112,45 +71,62 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
 
         // Discovery republish
         Receive<RepublishDiscoveries>(_ => PublishDiscoveries());
+    }
 
-        Receive<ClusterEvent.CurrentClusterState>(_ => { });
-        Receive<ClusterEvent.MemberUp>(msg =>
+    protected override void OnPluginRegistered(bool enabled, Dictionary<string, string> settings,
+        List<RegisterDeviceForPolling> registrations)
+    {
+        Log.Info("Plugin registered with {Count} devices", registrations.Count);
+
+        if (enabled)
         {
-            if (msg.Member.HasRole("host"))
-                _pluginRegistry.Tell(new RegisterPlugin("zigbee2mqtt", Self));
-        });
-
-        // Integration config updates from ApplicationConfig system
-        Receive<IntegrationConfigChanged>(msg =>
-        {
-            if (msg.IntegrationId != "zigbee2mqtt") return;
-            _log.Info("Received IntegrationConfigChanged for zigbee2mqtt, enabled={Enabled}", msg.Enabled);
-
-            if (!msg.Enabled)
-            {
-                _ = DisconnectAsync();
-                PublishStatus("stopped");
-                return;
-            }
-
-            var s = msg.Settings;
-            _config = new Zigbee2MqttConfig(
-                MqttHost: s.GetValueOrDefault("mqttHost") ?? _defaultConfig.MqttHost,
-                MqttPort: int.TryParse(s.GetValueOrDefault("mqttPort"), out var p) ? p : _defaultConfig.MqttPort,
-                MqttUser: s.GetValueOrDefault("mqttUser") ?? _defaultConfig.MqttUser,
-                MqttPassword: s.GetValueOrDefault("mqttPassword") ?? _defaultConfig.MqttPassword,
-                BaseTopic: s.GetValueOrDefault("baseTopic") ?? _defaultConfig.BaseTopic);
-
+            ApplySettings(settings);
             Self.Tell(ConnectToBroker.Instance);
-        });
+        }
+    }
 
+    protected override void OnConfigChanged(bool enabled, Dictionary<string, string> settings)
+    {
+        Log.Info("Received config change for zigbee2mqtt, enabled={Enabled}", enabled);
+
+        if (!enabled)
+        {
+            _ = DisconnectAsync();
+            PublishStatus("stopped", _devicesByIeeeAddress.Count);
+            return;
+        }
+
+        ApplySettings(settings);
+        Self.Tell(ConnectToBroker.Instance);
+    }
+
+    protected override void OnDeviceRegistered(Guid deviceId, string nativeId,
+        RegisterDeviceForPolling registration)
+    {
+        var isNew = !_configuredDevices.TryGetValue(nativeId, out var existing) || existing != deviceId;
+        _configuredDevices[nativeId] = deviceId;
+
+        if (isNew)
+        {
+            Log.Info("Config cache updated: {NativeId} -> {DeviceId}", nativeId, deviceId);
+            if (_devicesByIeeeAddress.TryGetValue(nativeId, out var device))
+                RequestDeviceState(device);
+        }
+    }
+
+    private void ApplySettings(Dictionary<string, string> s)
+    {
+        _config = new Zigbee2MqttConfig(
+            MqttHost: s.GetValueOrDefault("mqttHost") ?? _defaultConfig.MqttHost,
+            MqttPort: int.TryParse(s.GetValueOrDefault("mqttPort"), out var p) ? p : _defaultConfig.MqttPort,
+            MqttUser: s.GetValueOrDefault("mqttUser") ?? _defaultConfig.MqttUser,
+            MqttPassword: s.GetValueOrDefault("mqttPassword") ?? _defaultConfig.MqttPassword,
+            BaseTopic: s.GetValueOrDefault("baseTopic") ?? _defaultConfig.BaseTopic);
     }
 
     protected override void PreStart()
     {
         base.PreStart();
-        Cluster.Get(Context.System).Subscribe(Self, typeof(ClusterEvent.MemberUp));
-        _pluginRegistry.Tell(new RegisterPlugin("zigbee2mqtt", Self));
         Self.Tell(ConnectToBroker.Instance);
         Timers.StartPeriodicTimer("republish", RepublishDiscoveries.Instance,
             TimeSpan.FromSeconds(15), TimeSpan.FromSeconds(30));
@@ -222,27 +198,27 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
             var self = Self;
             _mqttClient.OnDisconnectReceived += (_, _) =>
             {
-                _log.Warning("MQTT disconnected, will reconnect...");
+                Log.Warning("MQTT disconnected, will reconnect...");
                 self.Tell(ConnectToBroker.Instance);
             };
 
             var connectResult = await _mqttClient.ConnectAsync();
-            _log.Info("MQTT connect result: {Result}", connectResult.ReasonCode);
+            Log.Info("MQTT connect result: {Result}", connectResult.ReasonCode);
 
             await _mqttClient.SubscribeAsync($"{_config.BaseTopic}/#", QualityOfService.AtLeastOnceDelivery);
-            _log.Info("Connected to MQTT broker at {Host}:{Port}, subscribed to {BaseTopic}/#",
+            Log.Info("Connected to MQTT broker at {Host}:{Port}, subscribed to {BaseTopic}/#",
                 _config.MqttHost, _config.MqttPort, _config.BaseTopic);
 
             // Start streams
             StartInboundStream();
             StartOutboundStream();
 
-            PublishStatus("running");
+            PublishStatus("running", _devicesByIeeeAddress.Count);
         }
         catch (Exception ex)
         {
-            _log.Error(ex, "Failed to connect to MQTT broker at {Host}:{Port}", _config.MqttHost, _config.MqttPort);
-            PublishStatus("error", ex.Message);
+            Log.Error(ex, "Failed to connect to MQTT broker at {Host}:{Port}", _config.MqttHost, _config.MqttPort);
+            PublishStatus("error", _devicesByIeeeAddress.Count, ex.Message);
         }
     }
 
@@ -262,7 +238,7 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
                     if (t.Relative == "bridge/devices")
                     {
                         bridgeActor.Tell(new ProcessDeviceList(t.Payload));
-                        return (Updates: (List<(Guid DeviceId, CapabilityType Cap, object Value)>?)null, t.Relative);
+                        return (Updates: (List<(Guid DeviceId, string CapabilityKey, object Value)>?)null, t.Relative);
                     }
                     if (t.Relative.StartsWith("bridge/") || t.Relative.Contains("/set") ||
                         t.Relative.Contains("/get") || t.Relative.Contains("/availability"))
@@ -277,13 +253,13 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
                         return (Updates: null, t.Relative);
 
                     var mapped = Zigbee2MqttStateMapper.MapState(t.Payload, device.Capabilities);
-                    var updates = mapped.Select(u => (deviceId, u.Capability, u.Value)).ToList();
-                    return (Updates: (List<(Guid, CapabilityType, object)>?)updates, t.Relative);
+                    var updates = mapped.Select(u => (deviceId, u.CapabilityKey, u.Value)).ToList();
+                    return (Updates: (List<(Guid, string, object)>?)updates, t.Relative);
                 })
                 .Where(t => t.Updates != null))
             .SelectMany(t => t.Updates!)
-            .To(Sink.ForEach<(Guid DeviceId, CapabilityType Cap, object Value)>(u =>
-                _shardProxy.Tell(new DeviceStateUpdate(u.DeviceId, u.Cap, u.Value))))
+            .To(Sink.ForEach<(Guid DeviceId, string CapabilityKey, object Value)>(u =>
+                ShardProxy.Tell(new DeviceStateUpdate(u.DeviceId, u.CapabilityKey, u.Value))))
             .Run(materializer);
     }
 
@@ -301,7 +277,7 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
                     _configuredDevices.TryGetValue(d.IeeeAddress, out var id) && id == cmd.DeviceId);
                 if (device == null) return (Topic: (string?)null, Payload: (string?)null);
 
-                var payload = BuildCommandPayload(cmd.Capability, cmd.Value);
+                var payload = BuildCommandPayload(cmd.CapabilityKey, cmd.Value);
                 if (payload == null) return (Topic: null, Payload: null);
 
                 return (Topic: (string?)$"{baseTopic}/{device.FriendlyName}/set", Payload: (string?)payload);
@@ -310,7 +286,7 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
             .SelectAsync(1, async t =>
             {
                 await mqttClient.PublishAsync(t.Topic!, t.Payload!, QualityOfService.AtMostOnceDelivery);
-                _log.Info("Sent command to {Topic}: {Payload}", t.Topic, t.Payload);
+                Log.Info("Sent command to {Topic}: {Payload}", t.Topic, t.Payload);
                 return t;
             })
             .To(Sink.Ignore<(string?, string?)>())
@@ -321,7 +297,6 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
 
     private sealed record ProcessDeviceList(string Payload);
 
-    // Register handler in constructor — need to add this
     private void HandleDeviceList(string payload)
     {
         try
@@ -339,7 +314,7 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
                 if (deviceEl.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "Coordinator")
                     continue;
 
-                var capabilities = new List<CapabilityType>();
+                var capabilities = new List<CapabilityDescriptor>();
                 var lightFeatures = new HashSet<string>();
                 var actionValues = new List<string>();
                 if (deviceEl.TryGetProperty("definition", out var definition) &&
@@ -351,9 +326,9 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
                     actionValues = ExposesMapper.ExtractActionValues(exposes);
                 }
 
-                if (!capabilities.Contains(CapabilityType.Update) &&
+                if (!capabilities.Any(c => c.Key == "update") &&
                     deviceEl.TryGetProperty("software_build_id", out _))
-                    capabilities.Add(CapabilityType.Update);
+                    capabilities.Add(new CapabilityDescriptor { Key = "update", Label = "Update", Unit = UnitType.Text });
 
                 var metadata = new Dictionary<string, string>();
                 if (deviceEl.TryGetProperty("manufacturer", out var mfr) && mfr.GetString() != null)
@@ -401,56 +376,45 @@ public sealed class Zigbee2MqttBridgeActor : ReceiveActor, IWithTimers
                 }
             }
 
-            _log.Info("Z2M device list processed: {Count} devices tracked", _devicesByIeeeAddress.Count);
-            PublishStatus("running");
+            Log.Info("Z2M device list processed: {Count} devices tracked", _devicesByIeeeAddress.Count);
+            PublishStatus("running", _devicesByIeeeAddress.Count);
         }
         catch (Exception ex)
         {
-            _log.Warning(ex, "Failed to parse Zigbee2MQTT device list");
+            Log.Warning(ex, "Failed to parse Zigbee2MQTT device list");
         }
     }
 
     private void PublishDiscoveries()
     {
         if (_devicesByIeeeAddress.Count == 0) return;
-        var mediator = DistributedPubSub.Get(Context.System).Mediator;
         foreach (var device in _devicesByIeeeAddress.Values)
         {
             var id = _configuredDevices.GetValueOrDefault(device.IeeeAddress, Guid.NewGuid());
-            var discovered = new DeviceDiscovered(id, "zigbee2mqtt", device.IeeeAddress,
-                device.Capabilities, device.Metadata);
-            mediator.Tell(new Publish("device-discovered", discovered));
+            Discover(id, device.IeeeAddress, device.Capabilities, device.Metadata);
         }
     }
 
     private void RequestDeviceState(Zigbee2MqttDevice device)
     {
         if (_mqttClient == null || !_mqttClient.IsConnected()) return;
-        if (!device.Capabilities.Contains(CapabilityType.Light) &&
-            !device.Capabilities.Contains(CapabilityType.Switch) &&
-            !device.Capabilities.Contains(CapabilityType.Cover))
+        if (!device.Capabilities.Any(c => c.Key == "light") &&
+            !device.Capabilities.Any(c => c.Key == "switch") &&
+            !device.Capabilities.Any(c => c.Key == "cover"))
             return;
         var topic = $"{_config.BaseTopic}/{device.FriendlyName}/get";
         _ = _mqttClient.PublishAsync(topic, "{\"state\":\"\"}", QualityOfService.AtMostOnceDelivery);
     }
 
-    private void PublishStatus(string status, string? error = null)
+    private static string? BuildCommandPayload(string capabilityKey, object value)
     {
-        var deviceCount = _devicesByIeeeAddress.Count;
-        var mediator = DistributedPubSub.Get(Context.System).Mediator;
-        mediator.Tell(new Publish("application-status",
-            new ApplicationStatusUpdate("zigbee2mqtt", status, deviceCount, error)));
-    }
-
-    private static string? BuildCommandPayload(CapabilityType capability, object value)
-    {
-        return capability switch
+        return capabilityKey switch
         {
-            CapabilityType.Switch => JsonSerializer.Serialize(new { state = CoerceToBool(value) == true ? "ON" : "OFF" }),
-            CapabilityType.Dimmer => CoerceToNumber(value) is { } b ? JsonSerializer.Serialize(new { brightness = (int)(b / 100.0 * 254.0) }) : null,
-            CapabilityType.Light => BuildLightPayload(value),
-            CapabilityType.Cover => CoerceToNumber(value) is { } p ? JsonSerializer.Serialize(new { position = (int)p }) : null,
-            CapabilityType.Update => BuildUpdatePayload(value),
+            "switch" => JsonSerializer.Serialize(new { state = CoerceToBool(value) == true ? "ON" : "OFF" }),
+            "dimmer" => CoerceToNumber(value) is { } b ? JsonSerializer.Serialize(new { brightness = (int)(b / 100.0 * 254.0) }) : null,
+            "light" => BuildLightPayload(value),
+            "cover" => CoerceToNumber(value) is { } p ? JsonSerializer.Serialize(new { position = (int)p }) : null,
+            "update" => BuildUpdatePayload(value),
             _ => null
         };
     }

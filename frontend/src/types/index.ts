@@ -4,12 +4,33 @@ export interface Room {
   isHome?: boolean;
 }
 
+export type ValueKind = 'Numeric' | 'Boolean' | 'String';
+
+export type UnitType =
+  | 'Watts' | 'Kilowatts'
+  | 'WattHours' | 'KilowattHours'
+  | 'Celsius' | 'Fahrenheit'
+  | 'Percent'
+  | 'Lux'
+  | 'Number'
+  | 'OnOff' | 'OpenClosed' | 'Detected' | 'YesNo'
+  | 'Text' | 'Url';
+
+export interface CapabilityDescriptor {
+  key: string;
+  label: string;
+  unit: UnitType;
+  commandable: boolean;
+  min?: number;
+  max?: number;
+}
+
 export interface Device {
   id: string;
   name: string;
   roomId: string | null;
   communicationType: string;
-  capabilities: string[];
+  capabilities: CapabilityDescriptor[];
   state: Record<string, unknown>;
   metadata: Record<string, string>;
   online?: boolean;
@@ -33,12 +54,12 @@ export interface DiscoveredDevice {
   id: string;
   nativeId: string;
   communicationType: string;
-  capabilities: string[];
+  capabilities: CapabilityDescriptor[];
   metadata: Record<string, string>;
 }
 
 export interface CommandPayload {
-  capability: string;
+  capabilityKey: string;
   value: unknown;
 }
 
@@ -47,26 +68,6 @@ export interface ConfigurePayload {
   roomId: string;
 }
 
-export type Capability =
-  | 'Switch'
-  | 'Dimmer'
-  | 'Cover'
-  | 'Temperature'
-  | 'Motion'
-  | 'Power'
-  | 'Energy'
-  | 'Humidity'
-  | 'Light'
-  | 'Contact'
-  | 'Action'
-  | 'Battery'
-  | 'Presence'
-  | 'Camera'
-  | 'Update'
-  | 'SolarProduction'
-  | 'GridPower'
-  | 'Consumption'
-  | 'Extras';
 
 export interface StateHistoryEntry {
   capability: string;
@@ -136,4 +137,48 @@ export interface WebhookHandledEvent {
   status: 'handled' | 'failed';
   error: string | null;
   handledAt: string;
+}
+
+export interface ThresholdRule {
+  id: string;
+  name: string;
+  deviceId: string;
+  capabilityKey: string;
+  operator: ThresholdOperator;
+  value: number;
+  stringValue: string | null;
+  eventName: string;
+  enabled: boolean;
+}
+
+export type ThresholdOperator =
+  | 'GreaterThan'
+  | 'LessThan'
+  | 'GreaterThanOrEqual'
+  | 'LessThanOrEqual'
+  | 'CrossesAbove'
+  | 'CrossesBelow'
+  | 'BecomesTrue'
+  | 'BecomesFalse'
+  | 'Changes'
+  | 'Equals'
+  | 'NotEquals';
+
+export interface ThresholdEventLog {
+  id: string;
+  ruleId: string;
+  ruleName: string;
+  eventName: string;
+  deviceId: string;
+  capabilityKey: string;
+  currentValue: number;
+  thresholdValue: number;
+  stringValue: string | null;
+  operator: ThresholdOperator;
+  firedAt: string;
+}
+
+export interface ThresholdEventPage {
+  items: ThresholdEventLog[];
+  totalCount: number;
 }

@@ -64,9 +64,7 @@ public sealed class DevicesController : ControllerBase
             stateMap.TryGetValue(d.Id, out var state);
             roomMap.TryGetValue(d.RoomId, out var roomName);
             deviceGroupMap.TryGetValue(d.Id, out var groupInfo);
-            var stateDict = state?.States.ToDictionary(
-                kvp => kvp.Key.ToString(),
-                kvp => kvp.Value);
+            var stateDict = state?.States;
             return new DeviceResponse(d.Id, d.Name, d.RoomId, roomName, d.CommunicationType, d.Capabilities, stateDict, state?.Online, d.Settings,
                 groupInfo.GroupId == Guid.Empty ? null : groupInfo.GroupId,
                 groupInfo.GroupName);
@@ -83,7 +81,7 @@ public sealed class DevicesController : ControllerBase
 
         var state = await _stateRepo.GetByDeviceIdAsync(id);
         var room = await _roomRepo.GetByIdAsync(device.RoomId);
-        var stateDict = state?.States.ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value);
+        var stateDict = state?.States;
 
         var groups = await _groupRepo.GetAllAsync();
         var group = groups.FirstOrDefault(g => g.DeviceIds.Contains(id));
@@ -102,9 +100,9 @@ public sealed class DevicesController : ControllerBase
 
         // Unwrap JsonElement to a primitive so it survives Akka serialization
         var value = UnwrapJsonElement(request.Value) ?? request.Value;
-        var command = new DeviceCommand(id, device.CommunicationType, device.NativeId, request.Capability, value);
+        var command = new DeviceCommand(id, device.CommunicationType, device.NativeId, request.CapabilityKey, value);
         _logger.LogInformation("Sending command {Capability}={Value} ({Type}) to device {DeviceId}",
-            request.Capability, value, value?.GetType().Name ?? "null", id);
+            request.CapabilityKey, value, value?.GetType().Name ?? "null", id);
         var region = _twinRegion.ActorRef;
         region.Tell(command);
         return Accepted();

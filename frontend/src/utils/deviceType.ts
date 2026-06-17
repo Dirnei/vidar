@@ -17,14 +17,14 @@ export type DeviceType =
 export function deriveDeviceType(capabilities: string[], metadata?: Record<string, string>): DeviceType {
   const caps = new Set(capabilities);
 
-  if (caps.has('Camera')) return 'Camera';
-  if (caps.has('Light')) return 'Light';
-  if (caps.has('Cover')) return 'Cover';
-  if (caps.has('Switch') && !caps.has('Light')) return 'Switch';
-  if (caps.has('Contact')) return 'Contact Sensor';
-  if (caps.has('Motion') && !caps.has('Switch') && !caps.has('Light')) return 'Motion Sensor';
-  if (caps.has('Action')) return 'Remote';
-  if (caps.has('Presence')) return 'Client';
+  if (caps.has('camera')) return 'Camera';
+  if (caps.has('light')) return 'Light';
+  if (caps.has('cover')) return 'Cover';
+  if (caps.has('switch') && !caps.has('light')) return 'Switch';
+  if (caps.has('contact')) return 'Contact Sensor';
+  if (caps.has('motion') && !caps.has('switch') && !caps.has('light')) return 'Motion Sensor';
+  if (caps.has('action')) return 'Remote';
+  if (caps.has('presence')) return 'Client';
 
   if (metadata) {
     const features = metadata.features ?? '';
@@ -33,9 +33,9 @@ export function deriveDeviceType(capabilities: string[], metadata?: Record<strin
     if (features.includes('access_point')) return 'Network AccessPoint';
   }
 
-  if ((caps.has('Power') || caps.has('Energy')) && !caps.has('Switch') && !caps.has('Light') && !caps.has('Cover'))
+  if ((caps.has('power') || caps.has('energy')) && !caps.has('switch') && !caps.has('light') && !caps.has('cover'))
     return 'Power Monitor';
-  if ((caps.has('Temperature') || caps.has('Humidity')) && !caps.has('Switch') && !caps.has('Light') && !caps.has('Cover'))
+  if ((caps.has('temperature') || caps.has('humidity')) && !caps.has('switch') && !caps.has('light') && !caps.has('cover'))
     return 'Sensor';
 
   return 'Unknown';

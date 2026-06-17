@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import type { Device, Room, StateHistoryEntry, CommandHistoryEntry } from '../types';
+import type { Device, Room, StateHistoryEntry, CommandHistoryEntry, CapabilityDescriptor } from '../types';
 import { getDevice, getRooms, sendCommand, updateDeviceSettings, deleteDevice, getDeviceStateHistory, getDeviceCommandHistory } from '../api/client';
 import { subscribeDeviceState } from '../api/sse';
 import { ToggleSwitch } from '../components/ToggleSwitch';
@@ -135,7 +135,7 @@ export function DeviceDetailPage() {
 
   async function cmd(capability: string, value: unknown) {
     if (!id) return;
-    await sendCommand(id, { capability, value });
+    await sendCommand(id, { capabilityKey: capability, value });
     await loadDevice();
   }
 
@@ -202,7 +202,7 @@ export function DeviceDetailPage() {
           <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 6 }}>
             {device.communicationType}
             {device.capabilities.length > 0 && ' · '}
-            {device.capabilities.join(' · ')}
+            {device.capabilities.map(c => c.label).join(' · ')}
           </div>
         </div>
       ) : (
@@ -335,30 +335,12 @@ export function DeviceDetailPage() {
             Expert View
           </div>
 
-          {state['Extras'] != null && typeof state['Extras'] === 'object' && (
-            <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: '0.06em', fontFamily: 'var(--font-body)' }}>
-                Raw Data
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {Object.entries(state['Extras'] as Record<string, unknown>).map(([k, v]) => (
-                  <div key={k} style={{ display: 'flex', gap: 10, fontSize: 12 }}>
-                    <span style={{ color: 'var(--text-muted)', minWidth: 180, flexShrink: 0 }}>{k}</span>
-                    <span style={{ color: 'var(--text-secondary)', wordBreak: 'break-all' }}>
-                      {typeof v === 'string' && (v.startsWith('{') || v.startsWith('[')) ? v : String(v)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase' as const, letterSpacing: '0.06em', fontFamily: 'var(--font-body)' }}>
               Capabilities
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-              {device.capabilities.join(', ')}
+              {device.capabilities.map(c => c.label).join(', ')}
             </div>
           </div>
 
@@ -593,19 +575,19 @@ function CameraSnapshot({ deviceId }: { deviceId: string }) {
 
 function capAccentColor(cap: string): string {
   switch (cap) {
-    case 'Switch': case 'Dimmer': case 'Light': return 'var(--accent-primary)';
-    case 'Cover': return 'var(--accent-teal)';
-    case 'Temperature': return 'var(--accent-red)';
-    case 'Motion': return 'var(--accent-green)';
-    case 'Power': return 'var(--accent-blue)';
-    case 'Energy': return 'var(--accent-green)';
-    case 'Humidity': return 'var(--accent-blue)';
-    case 'Camera': return 'var(--accent-blue)';
-    case 'Update': return 'var(--accent-primary)';
-    case 'SolarProduction': return 'var(--accent-yellow, #f59e0b)';
-    case 'GridPower': return 'var(--accent-blue)';
-    case 'Consumption': return 'var(--accent-red)';
-    case 'Battery': return 'var(--accent-green)';
+    case 'switch': case 'dimmer': case 'light': return 'var(--accent-primary)';
+    case 'cover': return 'var(--accent-teal)';
+    case 'temperature': return 'var(--accent-red)';
+    case 'motion': return 'var(--accent-green)';
+    case 'power': return 'var(--accent-blue)';
+    case 'energy': return 'var(--accent-green)';
+    case 'humidity': return 'var(--accent-blue)';
+    case 'camera': return 'var(--accent-blue)';
+    case 'update': return 'var(--accent-primary)';
+    case 'solarProduction': return 'var(--accent-yellow, #f59e0b)';
+    case 'gridPower': return 'var(--accent-blue)';
+    case 'consumption': return 'var(--accent-red)';
+    case 'battery': return 'var(--accent-green)';
     default: return 'var(--accent-primary)';
   }
 }
@@ -639,24 +621,24 @@ const coverBtnStyle: React.CSSProperties = {
 };
 
 function renderCapabilityCard(
-  cap: string,
+  cap: CapabilityDescriptor,
   state: Record<string, unknown>,
   cmd: (capability: string, value: unknown) => void,
   device: Device,
   updateSent?: boolean,
   setUpdateSent?: (v: boolean) => void,
 ) {
-  const accent = capAccentColor(cap);
+  const accent = capAccentColor(cap.key);
 
-  switch (cap) {
-    case 'Switch': {
-      const isOn = Boolean(state['Switch']);
+  switch (cap.key) {
+    case 'switch': {
+      const isOn = Boolean(state['switch']);
       return (
-        <div key={cap} style={capCardStyle}>
+        <div key={cap.key} style={capCardStyle}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Switch" size={13} />Switch</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="switch" size={13} />Switch</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 6 }}>
-            <ToggleSwitch checked={isOn} onChange={v => cmd('Switch', v)} />
+            <ToggleSwitch checked={isOn} onChange={v => cmd('switch', v)} />
             <span style={{ fontSize: 14, fontWeight: 500, color: isOn ? 'var(--accent-primary)' : 'var(--text-muted)' }}>
               {isOn ? 'On' : 'Off'}
             </span>
@@ -664,21 +646,21 @@ function renderCapabilityCard(
         </div>
       );
     }
-    case 'Dimmer': {
-      const level = typeof state['Dimmer'] === 'number' ? (state['Dimmer'] as number) : 0;
+    case 'dimmer': {
+      const level = typeof state['dimmer'] === 'number' ? (state['dimmer'] as number) : 0;
       return (
-        <div key={cap} style={capCardStyle}>
+        <div key={cap.key} style={capCardStyle}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Dimmer" size={13} />Dimmer</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="dimmer" size={13} />Dimmer</div>
           <div style={capValueStyle('var(--accent-primary)')}>{Math.round(level)}%</div>
           <div style={{ marginTop: 12 }}>
-            <SliderControl value={level} className="slider-dimmer" accentColor="var(--accent-primary)" onCommit={v => cmd('Dimmer', v)} />
+            <SliderControl value={level} className="slider-dimmer" accentColor="var(--accent-primary)" onCommit={v => cmd('dimmer', v)} />
           </div>
         </div>
       );
     }
-    case 'Light': {
-      const lightState = state['Light'] as Record<string, unknown> | undefined;
+    case 'light': {
+      const lightState = state['light'] as Record<string, unknown> | undefined;
       const isOn = lightState?.on === true;
       const brightness = typeof lightState?.brightness === 'number' ? (lightState.brightness as number) : 0;
       const hasBrightness = lightState?.brightness !== undefined;
@@ -689,11 +671,11 @@ function renderCapabilityCard(
       const hasColor = lightState?.color_x !== undefined || lightState?.color_h !== undefined;
       const colorMode = lightState?.color_mode as string | undefined;
       return (
-        <div key={cap} style={{ ...capCardStyle, gridColumn: (hasColor || hasColorTemp) ? 'span 2' : undefined }}>
+        <div key={cap.key} style={{ ...capCardStyle, gridColumn: (hasColor || hasColorTemp) ? 'span 2' : undefined }}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Light" size={13} />Light</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="light" size={13} />Light</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 6 }}>
-            <ToggleSwitch checked={isOn} onChange={v => cmd('Light', v)} />
+            <ToggleSwitch checked={isOn} onChange={v => cmd('light', v)} />
             <span style={{ fontSize: 14, fontWeight: 500, color: isOn ? 'var(--accent-primary)' : 'var(--text-muted)' }}>
               {isOn ? (hasBrightness ? `${Math.round(brightness)}%` : 'On') : 'Off'}
             </span>
@@ -701,7 +683,7 @@ function renderCapabilityCard(
           {hasBrightness && (
             <div style={{ marginTop: 14 }}>
               <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 6 }}>Brightness</div>
-              <SliderControl value={brightness} className="slider-dimmer" accentColor="var(--accent-primary)" onCommit={v => cmd('Light', v)} />
+              <SliderControl value={brightness} className="slider-dimmer" accentColor="var(--accent-primary)" onCommit={v => cmd('light', v)} />
             </div>
           )}
           <div style={{ display: 'flex', gap: 20, marginTop: 16, flexWrap: 'wrap' }}>
@@ -711,7 +693,7 @@ function renderCapabilityCard(
                 <ColorWheel
                   hue={colorH}
                   saturation={colorS}
-                  onCommit={(h, s) => cmd('Light', JSON.stringify({ color: { hue: h, saturation: s } }))}
+                  onCommit={(h, s) => cmd('light', JSON.stringify({ color: { hue: h, saturation: s } }))}
                 />
               </div>
             )}
@@ -720,7 +702,7 @@ function renderCapabilityCard(
                 <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.06em', color: colorMode === 'color_temp' ? 'var(--accent-primary)' : 'var(--text-muted)', marginBottom: 8 }}>Color Temperature</div>
                 <ColorTempSlider
                   value={colorTemp}
-                  onCommit={v => cmd('Light', JSON.stringify({ color_temp: v }))}
+                  onCommit={v => cmd('light', JSON.stringify({ color_temp: v }))}
                 />
               </div>
             )}
@@ -728,12 +710,12 @@ function renderCapabilityCard(
         </div>
       );
     }
-    case 'Cover': {
-      const pos = typeof state['Cover'] === 'number' ? (state['Cover'] as number) : 0;
+    case 'cover': {
+      const pos = typeof state['cover'] === 'number' ? (state['cover'] as number) : 0;
       return (
-        <div key={cap} style={capCardStyle}>
+        <div key={cap.key} style={capCardStyle}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Cover" size={13} />Cover</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="cover" size={13} />Cover</div>
           <div style={capValueStyle('var(--accent-teal)')}>{Math.round(pos)}%</div>
           <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
             {[['Close', 0], ['50%', 50], ['Open', 100]].map(([label, val]) => (
@@ -742,84 +724,84 @@ function renderCapabilityCard(
                 style={coverBtnStyle}
                 onMouseEnter={e => { e.currentTarget.style.background = 'var(--accent-teal-dim)'; e.currentTarget.style.borderColor = 'var(--accent-teal)'; }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.borderColor = 'var(--border-default)'; }}
-                onClick={() => cmd('Cover', val)}
+                onClick={() => cmd('cover', val)}
               >
                 {label}
               </button>
             ))}
           </div>
           <div style={{ marginTop: 12 }}>
-            <SliderControl value={pos} className="slider-cover" accentColor="var(--accent-teal)" onCommit={v => cmd('Cover', v)} />
+            <SliderControl value={pos} className="slider-cover" accentColor="var(--accent-teal)" onCommit={v => cmd('cover', v)} />
           </div>
         </div>
       );
     }
-    case 'Temperature': {
-      const temp = state['Temperature'];
+    case 'temperature': {
+      const temp = state['temperature'];
       return (
-        <div key={cap} style={capCardStyle}>
+        <div key={cap.key} style={capCardStyle}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Temperature" size={13} />Temperature</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="temperature" size={13} />Temperature</div>
           <div style={capValueStyle(temp != null ? 'var(--accent-red)' : 'var(--text-muted)')}>
             {temp != null ? `${Number(temp).toFixed(1)} °C` : '— °C'}
           </div>
         </div>
       );
     }
-    case 'Motion': {
-      const detected = Boolean(state['Motion']);
+    case 'motion': {
+      const detected = Boolean(state['motion']);
       return (
-        <div key={cap} style={capCardStyle}>
+        <div key={cap.key} style={capCardStyle}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Motion" size={13} />Motion</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="motion" size={13} />Motion</div>
           <div style={{ marginTop: 8 }}>
             <StatusDot active={detected} label={detected ? 'Detected' : 'Clear'} />
           </div>
         </div>
       );
     }
-    case 'Power': {
-      const power = state['Power'];
+    case 'power': {
+      const power = state['power'];
       return (
-        <div key={cap} style={capCardStyle}>
+        <div key={cap.key} style={capCardStyle}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Power" size={13} />Power</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="power" size={13} />Power</div>
           <div style={capValueStyle(power != null ? 'var(--accent-blue)' : 'var(--text-muted)')}>
             {power != null ? `${Number(power).toFixed(1)} W` : '— W'}
           </div>
         </div>
       );
     }
-    case 'Energy': {
-      const energy = state['Energy'];
+    case 'energy': {
+      const energy = state['energy'];
       return (
-        <div key={cap} style={capCardStyle}>
+        <div key={cap.key} style={capCardStyle}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Energy" size={13} />Energy</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="energy" size={13} />Energy</div>
           <div style={capValueStyle(energy != null ? 'var(--accent-green)' : 'var(--text-muted)')}>
             {energy != null ? `${Number(energy).toFixed(2)} kWh` : '— kWh'}
           </div>
         </div>
       );
     }
-    case 'Humidity': {
-      const hum = typeof state['Humidity'] === 'number' ? (state['Humidity'] as number) : 0;
+    case 'humidity': {
+      const hum = typeof state['humidity'] === 'number' ? (state['humidity'] as number) : 0;
       return (
-        <div key={cap} style={capCardStyle}>
+        <div key={cap.key} style={capCardStyle}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Humidity" size={13} />Humidity</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="humidity" size={13} />Humidity</div>
           <div style={{ ...capValueStyle('var(--accent-blue)'), marginBottom: 12 }}>{Math.round(hum)}%</div>
           <ProgressBar value={hum} color="var(--accent-blue)" />
         </div>
       );
     }
-    case 'Action': {
-      const lastAction = state['Action'] as string | undefined;
+    case 'action': {
+      const lastAction = state['action'] as string | undefined;
       const actionValues = device.settings?.action_values?.split(',').filter(Boolean) ?? [];
       return (
-        <div key={cap} style={{ ...capCardStyle, gridColumn: actionValues.length > 5 ? 'span 2' : undefined }}>
+        <div key={cap.key} style={{ ...capCardStyle, gridColumn: actionValues.length > 5 ? 'span 2' : undefined }}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Action" size={13} />Last Action</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="action" size={13} />Last Action</div>
           <div style={capValueStyle(lastAction ? 'var(--accent-primary)' : 'var(--text-muted)')}>
             {lastAction ?? '—'}
           </div>
@@ -845,12 +827,12 @@ function renderCapabilityCard(
         </div>
       );
     }
-    case 'Camera': {
-      const rtspUrl = state['Camera'] as string | undefined;
+    case 'camera': {
+      const rtspUrl = state['camera'] as string | undefined;
       return (
-        <div key={cap} style={{ ...capCardStyle, gridColumn: 'span 2' }}>
+        <div key={cap.key} style={{ ...capCardStyle, gridColumn: 'span 2' }}>
           <Indicator color="var(--accent-blue)" />
-          <div style={capLabelStyle}><CapabilityIcon capability="Camera" size={13} />Camera</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="camera" size={13} />Camera</div>
           <CameraSnapshot deviceId={device.id} />
           {rtspUrl && (
             <div style={{ marginTop: 12 }}>
@@ -878,12 +860,12 @@ function renderCapabilityCard(
         </div>
       );
     }
-    case 'SolarProduction': {
-      const watts = typeof state['SolarProduction'] === 'number' ? (state['SolarProduction'] as number) : null;
+    case 'solarProduction': {
+      const watts = typeof state['solarProduction'] === 'number' ? (state['solarProduction'] as number) : null;
       return (
-        <div key={cap} style={capCardStyle}>
+        <div key={cap.key} style={capCardStyle}>
           <Indicator color="var(--accent-yellow, #f59e0b)" />
-          <div style={capLabelStyle}><CapabilityIcon capability="SolarProduction" size={13} />Solar Production</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="solarProduction" size={13} />Solar Production</div>
           <div style={capValueStyle(watts != null ? 'var(--accent-yellow, #f59e0b)' : 'var(--text-muted)')}>
             {watts != null ? `${Math.round(watts)} W` : '— W'}
           </div>
@@ -895,13 +877,13 @@ function renderCapabilityCard(
         </div>
       );
     }
-    case 'GridPower': {
-      const watts = typeof state['GridPower'] === 'number' ? (state['GridPower'] as number) : null;
+    case 'gridPower': {
+      const watts = typeof state['gridPower'] === 'number' ? (state['gridPower'] as number) : null;
       const exporting = watts != null && watts > 0;
       return (
-        <div key={cap} style={capCardStyle}>
+        <div key={cap.key} style={capCardStyle}>
           <Indicator color="var(--accent-blue)" />
-          <div style={capLabelStyle}><CapabilityIcon capability="GridPower" size={13} />Grid</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="gridPower" size={13} />Grid</div>
           <div style={capValueStyle(watts != null ? 'var(--accent-blue)' : 'var(--text-muted)')}>
             {watts != null ? `${Math.abs(Math.round(watts))} W` : '— W'}
           </div>
@@ -913,12 +895,12 @@ function renderCapabilityCard(
         </div>
       );
     }
-    case 'Consumption': {
-      const watts = typeof state['Consumption'] === 'number' ? (state['Consumption'] as number) : null;
+    case 'consumption': {
+      const watts = typeof state['consumption'] === 'number' ? (state['consumption'] as number) : null;
       return (
-        <div key={cap} style={capCardStyle}>
+        <div key={cap.key} style={capCardStyle}>
           <Indicator color="var(--accent-red)" />
-          <div style={capLabelStyle}><CapabilityIcon capability="Consumption" size={13} />Consumption</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="consumption" size={13} />Consumption</div>
           <div style={capValueStyle(watts != null ? 'var(--accent-red)' : 'var(--text-muted)')}>
             {watts != null ? `${Math.round(watts)} W` : '— W'}
           </div>
@@ -930,16 +912,16 @@ function renderCapabilityCard(
         </div>
       );
     }
-    case 'Battery': {
-      const raw = state['Battery'];
+    case 'battery': {
+      const raw = state[cap.key];
       const level = typeof raw === 'number' ? raw : null;
-      const batteryWatts = typeof (state['Extras'] as Record<string, unknown>)?.['batteryWatts'] === 'number'
-        ? ((state['Extras'] as Record<string, unknown>)['batteryWatts'] as number) : null;
+      const batteryWatts = typeof state['batteryPower'] === 'number'
+        ? (state['batteryPower'] as number) : null;
       const charging = batteryWatts != null && batteryWatts > 0;
       return (
-        <div key={cap} style={capCardStyle}>
+        <div key={cap.key} style={capCardStyle}>
           <Indicator color="var(--accent-green)" />
-          <div style={capLabelStyle}><CapabilityIcon capability="Battery" size={13} />Battery</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="battery" size={13} />Battery</div>
           <div style={capValueStyle(level != null ? 'var(--accent-green)' : 'var(--text-muted)')}>
             {level != null ? `${Math.round(level)}%` : '—'}
           </div>
@@ -956,40 +938,13 @@ function renderCapabilityCard(
         </div>
       );
     }
-    case 'Extras': {
-      const extras = state['Extras'];
-      if (extras == null || typeof extras !== 'object') {
-        return <React.Fragment key={cap} />;
-      }
-      const entries = Object.entries(extras as Record<string, unknown>)
-        .filter(([k]) => k !== 'batteryWatts' && k !== 'additionalWatts');
-      if (entries.length === 0) return <React.Fragment key={cap} />;
-      return (
-        <div key={cap} style={capCardStyle}>
-          <Indicator color="var(--accent-primary)" />
-          <div style={capLabelStyle}>Details</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {entries.map(([k, v]) => (
-              <div key={k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)', textTransform: 'capitalize' }}>
-                  {k.replace(/([A-Z])/g, ' $1').trim()}
-                </span>
-                <span style={{ fontSize: 14, fontWeight: 600, fontFamily: 'var(--font-heading)', color: 'var(--text-primary)' }}>
-                  {typeof v === 'number' ? (v > 1 ? Math.round(v).toLocaleString() : v.toFixed(1)) + (k.includes('autarky') || k.includes('onsumption') ? '%' : '') : String(v)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    }
-    case 'Presence': {
-      const present = state['Presence'] === true;
+    case 'presence': {
+      const present = state['presence'] === true;
       const ip = device.settings?.ip;
       return (
-        <div key={cap} style={capCardStyle}>
+        <div key={cap.key} style={capCardStyle}>
           <Indicator color="var(--accent-green)" />
-          <div style={capLabelStyle}><CapabilityIcon capability="Presence" size={13} />Presence</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="presence" size={13} />Presence</div>
           <div style={capValueStyle(present ? 'var(--accent-green)' : 'var(--text-muted)')}>
             {present ? 'Home' : 'Away'}
           </div>
@@ -1018,8 +973,8 @@ function renderCapabilityCard(
         </div>
       );
     }
-    case 'Update': {
-      const update = state['Update'] as Record<string, unknown> | undefined;
+    case 'update': {
+      const update = state['update'] as Record<string, unknown> | undefined;
       const updateState = (update?.state as string) ?? 'idle';
       const installedVersion = update?.installed_version;
       const latestVersion = update?.latest_version;
@@ -1027,9 +982,9 @@ function renderCapabilityCard(
       const isAvailable = updateState === 'available';
       const isUpdating = updateState === 'updating' || updateState === 'downloading';
       return (
-        <div key={cap} style={capCardStyle}>
+        <div key={cap.key} style={capCardStyle}>
           <Indicator color={isAvailable ? 'var(--accent-primary)' : isUpdating ? 'var(--accent-blue)' : 'var(--border-subtle)'} />
-          <div style={capLabelStyle}><CapabilityIcon capability="Update" size={13} />Firmware Update</div>
+          <div style={capLabelStyle}><CapabilityIcon capability="update" size={13} />Firmware Update</div>
           <div style={capValueStyle(isAvailable ? 'var(--accent-primary)' : isUpdating ? 'var(--accent-blue)' : 'var(--text-muted)')}>
             {isUpdating ? 'Updating…' : isAvailable ? 'Update Available' : 'Up to Date'}
           </div>
@@ -1055,7 +1010,7 @@ function renderCapabilityCard(
               style={{ marginTop: 12, fontSize: 12, padding: '8px 16px' }}
               onClick={async () => {
                 setUpdateSent?.(true);
-                await cmd('Update', 'update');
+                await cmd('update', 'update');
               }}
             >
               Install Update
@@ -1077,11 +1032,11 @@ function renderCapabilityCard(
       );
     }
     default: {
-      const val = state[cap];
+      const val = state[cap.key];
       return (
-        <div key={cap} style={capCardStyle}>
+        <div key={cap.key} style={capCardStyle}>
           <Indicator color={accent} />
-          <div style={capLabelStyle}>{cap}</div>
+          <div style={capLabelStyle}>{cap.label}</div>
           <div style={capValueStyle()}>{val != null ? String(val) : '—'}</div>
         </div>
       );

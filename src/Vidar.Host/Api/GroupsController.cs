@@ -122,9 +122,9 @@ public sealed class GroupsController : ControllerBase
         {
             var device = await _deviceRepo.GetByIdAsync(deviceId);
             if (device == null) continue;
-            var command = new DeviceCommand(deviceId, device.CommunicationType, device.NativeId, request.Capability, value);
+            var command = new DeviceCommand(deviceId, device.CommunicationType, device.NativeId, request.CapabilityKey, value);
             _logger.LogInformation("Sending command {Capability}={Value} to device {DeviceId} (group {GroupId})",
-                request.Capability, value, deviceId, id);
+                request.CapabilityKey, value, deviceId, id);
             region.Tell(command);
         }
 
@@ -164,10 +164,10 @@ public sealed class GroupsController : ControllerBase
         }
         else
         {
-            var capSets = members.Select(d => d.Capabilities.Select(c => c.ToString()).ToHashSet()).ToList();
-            var intersection = capSets[0];
+            var capSets = members.Select(d => d.Capabilities.Select(c => c.Key).ToHashSet()).ToList();
+            var intersection = new HashSet<string>(capSets[0]);
             for (var i = 1; i < capSets.Count; i++)
-                intersection = [.. intersection.Intersect(capSets[i])];
+                intersection.IntersectWith(capSets[i]);
             capabilities = [.. intersection];
         }
 
@@ -183,8 +183,8 @@ public sealed class GroupsController : ControllerBase
             {
                 var capSet = new HashSet<string>(capabilities);
                 state = leaderState.States
-                    .Where(kvp => capSet.Contains(kvp.Key.ToString()))
-                    .ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value);
+                    .Where(kvp => capSet.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             }
         }
 

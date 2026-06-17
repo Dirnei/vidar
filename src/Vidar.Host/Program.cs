@@ -36,6 +36,7 @@ builder.Services.AddSingleton<IWebhookRouteCache, WebhookRouteCache>();
 builder.Services.AddSingleton<IWebhookPayloadRepository>(new MongoWebhookPayloadRepository(database));
 builder.Services.AddSingleton<IWebhookEventRepository>(new MongoWebhookEventRepository(database));
 builder.Services.AddSingleton<IThresholdRuleRepository>(new MongoThresholdRuleRepository(database));
+builder.Services.AddSingleton<IThresholdEventLogRepository>(new MongoThresholdEventLogRepository(database));
 builder.Services.AddHttpClient("shelly", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(5);
@@ -111,7 +112,8 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
                 WebhookPayloadCleanupActor.Props(webhookPayloads, webhookRetention, TimeSpan.FromHours(1)),
                 "webhook-payload-cleanup");
             var thresholdRuleRepo = sp.GetRequiredService<IThresholdRuleRepository>();
-            var thresholdEvaluator = system.ActorOf(ThresholdEvaluatorActor.Props(thresholdRuleRepo), "threshold-evaluator");
+            var thresholdEventLogRepo = sp.GetRequiredService<IThresholdEventLogRepository>();
+            var thresholdEvaluator = system.ActorOf(ThresholdEvaluatorActor.Props(thresholdRuleRepo, thresholdEventLogRepo), "threshold-evaluator");
             registry.Register<ThresholdEvaluatorActor>(thresholdEvaluator);
         });
 });
@@ -124,6 +126,12 @@ var app = builder.Build();
     if (await roomRepo.GetByIdAsync(RoomConfiguration.HomeId) == null)
         await roomRepo.CreateAsync(new RoomConfiguration { Id = RoomConfiguration.HomeId, Name = "Home", IsHome = true });
 }
+
+{
+    var db = app.Services.GetRequiredService<IMongoDatabase>();
+    await DataMigration.MigrateIfNeededAsync(db);
+}
+
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapControllers();

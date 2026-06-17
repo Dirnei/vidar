@@ -43,13 +43,13 @@ public sealed class PluginRegistryActorTests : TestKit
             new()
             {
                 Id = Guid.NewGuid(), Name = "Switch1", CommunicationType = "shelly",
-                NativeId = "shelly1", Capabilities = [CapabilityType.Switch],
+                NativeId = "shelly1", Capabilities = [new CapabilityDescriptor { Key = "switch", Label = "Switch", Unit = UnitType.OnOff, Commandable = true }],
                 Settings = new Dictionary<string, string> { ["host"] = "192.168.1.10", ["generation"] = "2" }
             },
             new()
             {
                 Id = Guid.NewGuid(), Name = "Z2M Sensor", CommunicationType = "zigbee2mqtt",
-                NativeId = "sensor1", Capabilities = [CapabilityType.Temperature]
+                NativeId = "sensor1", Capabilities = [new CapabilityDescriptor { Key = "temperature", Label = "Temperature", Unit = UnitType.Celsius }]
             }
         };
         _deviceRepo.GetAllAsync().Returns(devices);
@@ -97,7 +97,7 @@ public sealed class PluginRegistryActorTests : TestKit
         registry.Tell(new RegisterPlugin("shelly", pluginProbe));
         pluginProbe.ExpectMsg<PluginRegistered>();
 
-        var command = new DeviceCommand(Guid.NewGuid(), "shelly", "device1", CapabilityType.Switch, true);
+        var command = new DeviceCommand(Guid.NewGuid(), "shelly", "device1", "switch", true);
         registry.Tell(new RouteToPlugin("shelly", command));
 
         pluginProbe.ExpectMsg<DeviceCommand>(msg => msg.NativeId == "device1");
@@ -161,7 +161,7 @@ public sealed class PluginRegistryActorTests : TestKit
         registry.Tell(new RegisterPlugin("shelly", pluginProbe));
         pluginProbe.ExpectMsg<PluginRegistered>();
 
-        var reg = new RegisterDeviceForPolling(Guid.NewGuid(), "shelly", "dev1", "192.168.1.5", 2, [CapabilityType.Switch]);
+        var reg = new RegisterDeviceForPolling(Guid.NewGuid(), "shelly", "dev1", "192.168.1.5", 2, [new CapabilityDescriptor { Key = "switch", Label = "Switch", Unit = UnitType.OnOff, Commandable = true }]);
         registry.Tell(new RouteToPlugin("shelly", reg));
 
         pluginProbe.ExpectMsg<RegisterDeviceForPolling>(msg => msg.NativeId == "dev1");

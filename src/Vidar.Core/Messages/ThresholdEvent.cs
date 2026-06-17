@@ -1,6 +1,4 @@
-using Vidar.Core.Capabilities;
 using Vidar.Core.Model;
-
 namespace Vidar.Core.Messages;
 
 public sealed record ThresholdEvent(
@@ -8,8 +6,7 @@ public sealed record ThresholdEvent(
     string RuleName,
     string EventName,
     Guid DeviceId,
-    CapabilityType Capability,
-    string? MetricKey,
+    string CapabilityKey,
     double CurrentValue,
     double ThresholdValue,
     ThresholdOperator Operator,

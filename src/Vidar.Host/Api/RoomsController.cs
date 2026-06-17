@@ -78,7 +78,7 @@ public sealed class RoomsController : ControllerBase
         var response = devices.Select(d =>
         {
             stateMap.TryGetValue(d.Id, out var state);
-            var stateDict = state?.States.ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value);
+            var stateDict = state?.States;
             return new DeviceResponse(d.Id, d.Name, d.RoomId, room.Name, d.CommunicationType, d.Capabilities, stateDict, state?.Online, d.Settings, null, null);
         }).ToList();
         return Ok(response);
@@ -118,10 +118,10 @@ public sealed class RoomsController : ControllerBase
         }
         else
         {
-            var capSets = members.Select(d => d.Capabilities.Select(c => c.ToString()).ToHashSet()).ToList();
-            var intersection = capSets[0];
+            var capSets = members.Select(d => d.Capabilities.Select(c => c.Key).ToHashSet()).ToList();
+            var intersection = new HashSet<string>(capSets[0]);
             for (var i = 1; i < capSets.Count; i++)
-                intersection = intersection.Intersect(capSets[i]).ToHashSet();
+                intersection.IntersectWith(capSets[i]);
             capabilities = [.. intersection];
         }
 
@@ -137,8 +137,8 @@ public sealed class RoomsController : ControllerBase
             {
                 var capSet = new HashSet<string>(capabilities);
                 state = leaderState.States
-                    .Where(kvp => capSet.Contains(kvp.Key.ToString()))
-                    .ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value);
+                    .Where(kvp => capSet.Contains(kvp.Key))
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             }
         }
 

@@ -1,7 +1,6 @@
 using Akka.Actor;
 using Akka.Event;
 using Vidar.Core.Messages;
-using Vidar.Core.Capabilities;
 
 namespace Vidar.Communication.UniFi.Webhooks;
 
@@ -78,13 +77,10 @@ public sealed class ProtectAlarmWebhookHandlerActor : ReceiveActor
             var nativeId = $"protect-{trigger.Device}";
             if (!_configuredDevices.TryGetValue(nativeId, out var deviceId)) continue;
 
-            _shardProxy.Tell(new DeviceStateUpdate(deviceId, CapabilityType.Extras, new Dictionary<string, object>
-            {
-                ["alarm"] = alarm.AlarmName,
-                ["trigger"] = trigger.Key,
-                ["value"] = trigger.Value ?? "",
-                ["timestamp"] = alarm.Timestamp.ToString("O"),
-            }));
+            _shardProxy.Tell(new DeviceStateUpdate(deviceId, "alarm", alarm.AlarmName));
+            _shardProxy.Tell(new DeviceStateUpdate(deviceId, "alarmTrigger", trigger.Key));
+            if (trigger.Value != null)
+                _shardProxy.Tell(new DeviceStateUpdate(deviceId, "alarmValue", trigger.Value));
         }
 
         Acknowledge(msg.PayloadId, WebhookHandleStatus.Handled, null);

@@ -3,35 +3,35 @@ using Vidar.Core.Capabilities;
 
 namespace Vidar.Communication.Zigbee2Mqtt;
 
-public record Zigbee2MqttCapabilityValue(CapabilityType Capability, object Value);
+public record Zigbee2MqttCapabilityValue(string CapabilityKey, object Value);
 
 public static class Zigbee2MqttStateMapper
 {
-    private static readonly Dictionary<string, CapabilityType> NameMap = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, string> NameMap = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["state"] = CapabilityType.Switch,
-        ["brightness"] = CapabilityType.Dimmer,
-        ["position"] = CapabilityType.Cover,
-        ["temperature"] = CapabilityType.Temperature,
-        ["occupancy"] = CapabilityType.Motion,
-        ["power"] = CapabilityType.Power,
-        ["energy"] = CapabilityType.Energy,
-        ["humidity"] = CapabilityType.Humidity,
-        ["contact"] = CapabilityType.Contact,
-        ["action"] = CapabilityType.Action,
-        ["battery"] = CapabilityType.Battery,
+        ["state"] = "switch",
+        ["brightness"] = "dimmer",
+        ["position"] = "cover",
+        ["temperature"] = "temperature",
+        ["occupancy"] = "motion",
+        ["power"] = "power",
+        ["energy"] = "energy",
+        ["humidity"] = "humidity",
+        ["contact"] = "contact",
+        ["action"] = "action",
+        ["battery"] = "battery",
     };
 
-    public static List<Zigbee2MqttCapabilityValue> MapState(string json, IReadOnlyList<CapabilityType> knownCapabilities)
+    public static List<Zigbee2MqttCapabilityValue> MapState(string json, IReadOnlyList<CapabilityDescriptor> knownCapabilities)
     {
         var result = new List<Zigbee2MqttCapabilityValue>();
-        var knownSet = new HashSet<CapabilityType>(knownCapabilities);
+        var knownKeys = new HashSet<string>(knownCapabilities.Select(c => c.Key));
 
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
-        // Light is composite: combines state + brightness + color into one value
-        if (knownSet.Contains(CapabilityType.Light))
+        // Light is composite
+        if (knownKeys.Contains("light"))
         {
             var lightState = new Dictionary<string, object>();
 
@@ -61,11 +61,10 @@ public static class Zigbee2MqttStateMapper
                 lightState["color_mode"] = modeProp.GetString()!;
 
             if (lightState.Count > 0)
-                result.Add(new Zigbee2MqttCapabilityValue(CapabilityType.Light, lightState));
+                result.Add(new Zigbee2MqttCapabilityValue("light", lightState));
         }
 
-        // Update is composite like Light; always parse if present (OTA support
-        // may not appear in exposes but does appear in device state)
+        // Update is composite
         if (root.TryGetProperty("update", out var updateProp) &&
             updateProp.ValueKind == JsonValueKind.Object)
         {
@@ -79,66 +78,46 @@ public static class Zigbee2MqttStateMapper
             if (updateProp.TryGetProperty("progress", out var prog) && prog.ValueKind == JsonValueKind.Number)
                 updateState["progress"] = prog.GetDouble();
             if (updateState.Count > 0)
-                result.Add(new Zigbee2MqttCapabilityValue(CapabilityType.Update, updateState));
+                result.Add(new Zigbee2MqttCapabilityValue("update", updateState));
         }
-
-        var extras = new Dictionary<string, object>();
 
         foreach (var prop in root.EnumerateObject())
         {
-            if (prop.Name == "update")
-                continue;
+            if (prop.Name == "update") continue;
 
-            if (NameMap.TryGetValue(prop.Name, out var cap) && knownSet.Contains(cap))
+            if (NameMap.TryGetValue(prop.Name, out var capKey) && knownKeys.Contains(capKey))
             {
-                if (knownSet.Contains(CapabilityType.Light) && (cap == CapabilityType.Switch || cap == CapabilityType.Dimmer))
+                // Skip switch/dimmer when light is present (they're part of the composite)
+                if (knownKeys.Contains("light") && (capKey == "switch" || capKey == "dimmer"))
                     continue;
 
-                object? value = cap switch
+                object? value = capKey switch
                 {
-                    CapabilityType.Switch => MapSwitchValue(prop.Value),
-                    CapabilityType.Dimmer => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
-                    CapabilityType.Cover => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetInt32() : null,
-                    CapabilityType.Temperature => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
-                    CapabilityType.Motion => prop.Value.ValueKind == JsonValueKind.True || prop.Value.ValueKind == JsonValueKind.False
-                        ? prop.Value.GetBoolean() : null,
-                    CapabilityType.Power => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
-                    CapabilityType.Energy => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
-                    CapabilityType.Humidity => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
-                    CapabilityType.Contact => prop.Value.ValueKind == JsonValueKind.True || prop.Value.ValueKind == JsonValueKind.False
-                        ? prop.Value.GetBoolean() : null,
-                    CapabilityType.Action => prop.Value.ValueKind == JsonValueKind.String ? prop.Value.GetString() : null,
-                    CapabilityType.Battery => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
+                    "switch" => MapSwitchValue(prop.Value),
+                    "dimmer" => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
+                    "cover" => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetInt32() : null,
+                    "temperature" => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
+                    "motion" => prop.Value.ValueKind is JsonValueKind.True or JsonValueKind.False ? prop.Value.GetBoolean() : null,
+                    "power" => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
+                    "energy" => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
+                    "humidity" => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
+                    "contact" => prop.Value.ValueKind is JsonValueKind.True or JsonValueKind.False ? prop.Value.GetBoolean() : null,
+                    "action" => prop.Value.ValueKind == JsonValueKind.String ? prop.Value.GetString() : null,
+                    "battery" => prop.Value.ValueKind == JsonValueKind.Number ? prop.Value.GetDouble() : null,
                     _ => null
                 };
 
                 if (value != null)
-                    result.Add(new Zigbee2MqttCapabilityValue(cap, value));
-                continue;
+                    result.Add(new Zigbee2MqttCapabilityValue(capKey, value));
             }
-
-            // Capture unmapped properties as extras
-            extras[prop.Name] = prop.Value.ValueKind switch
-            {
-                JsonValueKind.Number => prop.Value.GetDouble(),
-                JsonValueKind.String => prop.Value.GetString()!,
-                JsonValueKind.True => true,
-                JsonValueKind.False => false,
-                JsonValueKind.Object => prop.Value.GetRawText(),
-                JsonValueKind.Array => prop.Value.GetRawText(),
-                _ => prop.Value.GetRawText()
-            };
         }
-
-        if (extras.Count > 0)
-            result.Add(new Zigbee2MqttCapabilityValue(CapabilityType.Extras, extras));
 
         return result;
     }
 
     private static object? MapSwitchValue(JsonElement element)
     {
-        if (element.ValueKind == JsonValueKind.True || element.ValueKind == JsonValueKind.False)
+        if (element.ValueKind is JsonValueKind.True or JsonValueKind.False)
             return element.GetBoolean();
         if (element.ValueKind == JsonValueKind.String)
         {

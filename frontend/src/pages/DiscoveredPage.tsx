@@ -59,7 +59,7 @@ export function DiscoveredPage() {
 
   // Derive device type for each discovered device
   const devicesWithType = useMemo(
-    () => discovered.map(d => ({ ...d, deviceType: deriveDeviceType(d.capabilities, d.metadata) })),
+    () => discovered.map(d => ({ ...d, deviceType: deriveDeviceType(d.capabilities.map(c => c.key), d.metadata) })),
     [discovered],
   );
 
@@ -70,7 +70,7 @@ export function DiscoveredPage() {
     return devicesWithType.filter(d => {
       const name = (d.metadata?.name ?? d.metadata?.friendly_name ?? d.nativeId).toLowerCase();
       const nid = d.nativeId.toLowerCase();
-      const caps = d.capabilities.join(' ').toLowerCase();
+      const caps = d.capabilities.map(c => c.label).join(' ').toLowerCase();
       return name.includes(q) || nid.includes(q) || caps.includes(q) ||
         Object.values(d.metadata || {}).some(v => v.toLowerCase().includes(q));
     });
@@ -81,7 +81,7 @@ export function DiscoveredPage() {
     return searchFiltered.filter(d => {
       if (filters.protocol.size > 0 && !filters.protocol.has(d.communicationType)) return false;
       if (filters.deviceType.size > 0 && !filters.deviceType.has(d.deviceType)) return false;
-      if (filters.capability.size > 0 && !d.capabilities.some(c => filters.capability.has(c))) return false;
+      if (filters.capability.size > 0 && !d.capabilities.some(c => filters.capability.has(c.key))) return false;
       return true;
     });
   }, [searchFiltered, filters]);
@@ -91,14 +91,14 @@ export function DiscoveredPage() {
     // Items passing protocol + capability filters (for device type counts)
     const forDeviceType = searchFiltered.filter(d => {
       if (filters.protocol.size > 0 && !filters.protocol.has(d.communicationType)) return false;
-      if (filters.capability.size > 0 && !d.capabilities.some(c => filters.capability.has(c))) return false;
+      if (filters.capability.size > 0 && !d.capabilities.some(c => filters.capability.has(c.key))) return false;
       return true;
     });
 
     // Items passing deviceType + capability filters (for protocol counts)
     const forProtocol = searchFiltered.filter(d => {
       if (filters.deviceType.size > 0 && !filters.deviceType.has(d.deviceType)) return false;
-      if (filters.capability.size > 0 && !d.capabilities.some(c => filters.capability.has(c))) return false;
+      if (filters.capability.size > 0 && !d.capabilities.some(c => filters.capability.has(c.key))) return false;
       return true;
     });
 
@@ -125,7 +125,7 @@ export function DiscoveredPage() {
     const capabilityCounts = new Map<string, number>();
     for (const d of forCapability) {
       for (const cap of d.capabilities) {
-        capabilityCounts.set(cap, (capabilityCounts.get(cap) ?? 0) + 1);
+        capabilityCounts.set(cap.key, (capabilityCounts.get(cap.key) ?? 0) + 1);
       }
     }
 
@@ -338,7 +338,7 @@ export function DiscoveredPage() {
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                       {d.capabilities.map((cap) => (
                         <span
-                          key={cap}
+                          key={cap.key}
                           style={{
                             display: 'inline-flex', alignItems: 'center', gap: 4,
                             padding: '2px 9px', borderRadius: 4, fontSize: 11, fontWeight: 500,
@@ -346,8 +346,8 @@ export function DiscoveredPage() {
                             border: '1px solid var(--border-subtle)',
                           }}
                         >
-                          <CapabilityIcon capability={cap} size={11} />
-                          {cap}
+                          <CapabilityIcon capability={cap.key} size={11} />
+                          {cap.label}
                         </span>
                       ))}
                     </div>
@@ -373,7 +373,7 @@ export function DiscoveredPage() {
             <ConfigureDeviceModal
               rooms={rooms}
               defaultName={configuring.metadata?.name ?? configuring.metadata?.friendly_name}
-              defaultRoomId={configuring.capabilities.includes('Presence') ? rooms.find(r => r.isHome)?.id : undefined}
+              defaultRoomId={configuring.capabilities.some(c => c.key === 'presence') ? rooms.find(r => r.isHome)?.id : undefined}
               onConfirm={handleConfigure}
               onCancel={() => setConfiguring(null)}
             />

@@ -1,7 +1,6 @@
 using Akka.Actor;
 using Akka.Event;
 using Vidar.Core.Messages;
-using Vidar.Core.Capabilities;
 
 namespace Vidar.Communication.UniFi.Webhooks;
 
@@ -78,9 +77,9 @@ public sealed class NetworkWebhookHandlerActor : ReceiveActor
                 var isDisconnect = evt.Name.Contains("disconnect", StringComparison.OrdinalIgnoreCase);
 
                 if (isConnect)
-                    _shardProxy.Tell(new DeviceStateUpdate(deviceId, CapabilityType.Presence, true));
+                    _shardProxy.Tell(new DeviceStateUpdate(deviceId, "presence", true));
                 else if (isDisconnect)
-                    _shardProxy.Tell(new DeviceStateUpdate(deviceId, CapabilityType.Presence, false));
+                    _shardProxy.Tell(new DeviceStateUpdate(deviceId, "presence", false));
             }
         }
 

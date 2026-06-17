@@ -5,33 +5,34 @@ namespace Vidar.Communication.Zigbee2Mqtt;
 
 public static class ExposesMapper
 {
-    private static readonly Dictionary<string, CapabilityType> NameMap = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, Func<CapabilityDescriptor>> DescriptorMap = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["state"] = CapabilityType.Switch,
-        ["brightness"] = CapabilityType.Dimmer,
-        ["position"] = CapabilityType.Cover,
-        ["temperature"] = CapabilityType.Temperature,
-        ["occupancy"] = CapabilityType.Motion,
-        ["power"] = CapabilityType.Power,
-        ["energy"] = CapabilityType.Energy,
-        ["humidity"] = CapabilityType.Humidity,
-        ["contact"] = CapabilityType.Contact,
-        ["action"] = CapabilityType.Action,
-        ["battery"] = CapabilityType.Battery,
+        ["state"] = () => new() { Key = "switch", Label = "Switch", Unit = UnitType.OnOff, Commandable = true },
+        ["brightness"] = () => new() { Key = "dimmer", Label = "Dimmer", Unit = UnitType.Percent, Commandable = true, Min = 0, Max = 254 },
+        ["position"] = () => new() { Key = "cover", Label = "Cover", Unit = UnitType.Percent, Commandable = true, Min = 0, Max = 100 },
+        ["temperature"] = () => new() { Key = "temperature", Label = "Temperature", Unit = UnitType.Celsius },
+        ["occupancy"] = () => new() { Key = "motion", Label = "Motion", Unit = UnitType.Detected },
+        ["power"] = () => new() { Key = "power", Label = "Power", Unit = UnitType.Watts },
+        ["energy"] = () => new() { Key = "energy", Label = "Energy", Unit = UnitType.WattHours },
+        ["humidity"] = () => new() { Key = "humidity", Label = "Humidity", Unit = UnitType.Percent },
+        ["contact"] = () => new() { Key = "contact", Label = "Contact", Unit = UnitType.OpenClosed },
+        ["action"] = () => new() { Key = "action", Label = "Action", Unit = UnitType.Text },
+        ["battery"] = () => new() { Key = "battery", Label = "Battery", Unit = UnitType.Percent, Min = 0, Max = 100 },
+        ["illuminance_lux"] = () => new() { Key = "illuminance", Label = "Illuminance", Unit = UnitType.Lux },
     };
 
-    public static List<CapabilityType> MapCapabilities(JsonElement exposesArray)
+    public static List<CapabilityDescriptor> MapCapabilities(JsonElement exposesArray)
     {
-        var result = new HashSet<CapabilityType>();
+        var result = new Dictionary<string, CapabilityDescriptor>();
         var lightFeatureNames = new HashSet<string>();
         var actionValues = new List<string>();
         MapExposesArray(exposesArray, result, lightFeatureNames, actionValues);
-        return [.. result];
+        return [.. result.Values];
     }
 
     public static HashSet<string> ExtractLightFeatures(JsonElement exposesArray)
     {
-        var result = new HashSet<CapabilityType>();
+        var result = new Dictionary<string, CapabilityDescriptor>();
         var lightFeatureNames = new HashSet<string>();
         var actionValues = new List<string>();
         MapExposesArray(exposesArray, result, lightFeatureNames, actionValues);
@@ -40,27 +41,27 @@ public static class ExposesMapper
 
     public static List<string> ExtractActionValues(JsonElement exposesArray)
     {
-        var result = new HashSet<CapabilityType>();
+        var result = new Dictionary<string, CapabilityDescriptor>();
         var lightFeatureNames = new HashSet<string>();
         var actionValues = new List<string>();
         MapExposesArray(exposesArray, result, lightFeatureNames, actionValues);
         return actionValues;
     }
 
-    private static void MapExposesArray(JsonElement array, HashSet<CapabilityType> result, HashSet<string> lightFeatures, List<string> actionValues)
+    private static void MapExposesArray(JsonElement array, Dictionary<string, CapabilityDescriptor> result, HashSet<string> lightFeatures, List<string> actionValues)
     {
         foreach (var item in array.EnumerateArray())
             MapExposesItem(item, result, lightFeatures, actionValues);
     }
 
-    private static void MapExposesItem(JsonElement item, HashSet<CapabilityType> result, HashSet<string> lightFeatures, List<string> actionValues)
+    private static void MapExposesItem(JsonElement item, Dictionary<string, CapabilityDescriptor> result, HashSet<string> lightFeatures, List<string> actionValues)
     {
         var type = item.TryGetProperty("type", out var typeProp) ? typeProp.GetString() : null;
 
         switch (type)
         {
             case "light":
-                result.Add(CapabilityType.Light);
+                result.TryAdd("light", new CapabilityDescriptor { Key = "light", Label = "Light", Unit = UnitType.OnOff, Commandable = true });
                 if (item.TryGetProperty("features", out var lf))
                 {
                     foreach (var feature in lf.EnumerateArray())
@@ -72,13 +73,13 @@ public static class ExposesMapper
                 break;
 
             case "cover":
-                result.Add(CapabilityType.Cover);
+                result.TryAdd("cover", new CapabilityDescriptor { Key = "cover", Label = "Cover", Unit = UnitType.Percent, Commandable = true, Min = 0, Max = 100 });
                 if (item.TryGetProperty("features", out var coverFeatures))
                     MapExposesArray(coverFeatures, result, lightFeatures, actionValues);
                 break;
 
             case "update":
-                result.Add(CapabilityType.Update);
+                result.TryAdd("update", new CapabilityDescriptor { Key = "update", Label = "Update", Unit = UnitType.Text });
                 break;
 
             default:
@@ -88,10 +89,11 @@ public static class ExposesMapper
                 if (item.TryGetProperty("name", out var nameProp))
                 {
                     var name = nameProp.GetString();
-                    if (name != null && NameMap.TryGetValue(name, out var cap))
+                    if (name != null && DescriptorMap.TryGetValue(name, out var factory))
                     {
-                        result.Add(cap);
-                        if (cap == CapabilityType.Action &&
+                        var descriptor = factory();
+                        result.TryAdd(descriptor.Key, descriptor);
+                        if (descriptor.Key == "action" &&
                             item.TryGetProperty("values", out var vals) &&
                             vals.ValueKind == JsonValueKind.Array)
                         {

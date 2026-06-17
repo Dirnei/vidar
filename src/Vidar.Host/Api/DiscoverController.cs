@@ -72,7 +72,7 @@ public sealed class DiscoverController : ControllerBase
             statusDoc = null;
         }
 
-        var capabilities = new List<CapabilityType>();
+        var capabilities = new List<CapabilityDescriptor>();
         var metadata = new Dictionary<string, string> { ["host"] = host, ["generation"] = generation.ToString() };
         var nativeId = host;
 
@@ -117,43 +117,43 @@ public sealed class DiscoverController : ControllerBase
             var root = statusDoc.RootElement;
             if (root.TryGetProperty("switch:0", out _))
             {
-                capabilities.Add(CapabilityType.Switch);
-                capabilities.Add(CapabilityType.Power);
-                capabilities.Add(CapabilityType.Energy);
+                capabilities.Add(new CapabilityDescriptor { Key = "switch", Label = "Switch", Unit = UnitType.OnOff, Commandable = true });
+                capabilities.Add(new CapabilityDescriptor { Key = "power", Label = "Power", Unit = UnitType.Watts });
+                capabilities.Add(new CapabilityDescriptor { Key = "energy", Label = "Energy", Unit = UnitType.KilowattHours });
             }
-            if (root.TryGetProperty("pm1:0", out _) && !capabilities.Contains(CapabilityType.Power))
+            if (root.TryGetProperty("pm1:0", out _) && capabilities.All(c => c.Key != "power"))
             {
-                capabilities.Add(CapabilityType.Power);
-                capabilities.Add(CapabilityType.Energy);
+                capabilities.Add(new CapabilityDescriptor { Key = "power", Label = "Power", Unit = UnitType.Watts });
+                capabilities.Add(new CapabilityDescriptor { Key = "energy", Label = "Energy", Unit = UnitType.KilowattHours });
             }
             if (root.TryGetProperty("cover:0", out _))
-                capabilities.Add(CapabilityType.Cover);
+                capabilities.Add(new CapabilityDescriptor { Key = "cover", Label = "Cover", Unit = UnitType.Percent, Commandable = true, Min = 0, Max = 100 });
             if (root.TryGetProperty("temperature:0", out _))
-                capabilities.Add(CapabilityType.Temperature);
+                capabilities.Add(new CapabilityDescriptor { Key = "temperature", Label = "Temperature", Unit = UnitType.Celsius });
             if (root.TryGetProperty("humidity:0", out _))
-                capabilities.Add(CapabilityType.Humidity);
+                capabilities.Add(new CapabilityDescriptor { Key = "humidity", Label = "Humidity", Unit = UnitType.Percent });
         }
         else
         {
             // Gen1: detect from /shelly response and /status
             if (shellyRoot.TryGetProperty("num_rollers", out var rollers) && rollers.GetInt32() > 0)
-                capabilities.Add(CapabilityType.Cover);
-            if (shellyRoot.TryGetProperty("num_outputs", out var outputs) && outputs.GetInt32() > 0 && !capabilities.Contains(CapabilityType.Cover))
+                capabilities.Add(new CapabilityDescriptor { Key = "cover", Label = "Cover", Unit = UnitType.Percent, Commandable = true, Min = 0, Max = 100 });
+            if (shellyRoot.TryGetProperty("num_outputs", out var outputs) && outputs.GetInt32() > 0 && capabilities.All(c => c.Key != "cover"))
             {
-                capabilities.Add(CapabilityType.Switch);
-                capabilities.Add(CapabilityType.Power);
-                capabilities.Add(CapabilityType.Energy);
+                capabilities.Add(new CapabilityDescriptor { Key = "switch", Label = "Switch", Unit = UnitType.OnOff, Commandable = true });
+                capabilities.Add(new CapabilityDescriptor { Key = "power", Label = "Power", Unit = UnitType.Watts });
+                capabilities.Add(new CapabilityDescriptor { Key = "energy", Label = "Energy", Unit = UnitType.KilowattHours });
             }
-            if (shellyRoot.TryGetProperty("num_meters", out var meters) && meters.GetInt32() > 0 && !capabilities.Contains(CapabilityType.Power))
-                capabilities.Add(CapabilityType.Power);
+            if (shellyRoot.TryGetProperty("num_meters", out var meters) && meters.GetInt32() > 0 && capabilities.All(c => c.Key != "power"))
+                capabilities.Add(new CapabilityDescriptor { Key = "power", Label = "Power", Unit = UnitType.Watts });
 
             if (statusDoc != null)
             {
                 var root = statusDoc.RootElement;
                 if (root.TryGetProperty("temperature", out _) || root.TryGetProperty("tmp", out _))
-                    capabilities.Add(CapabilityType.Temperature);
+                    capabilities.Add(new CapabilityDescriptor { Key = "temperature", Label = "Temperature", Unit = UnitType.Celsius });
                 if (root.TryGetProperty("hum", out _))
-                    capabilities.Add(CapabilityType.Humidity);
+                    capabilities.Add(new CapabilityDescriptor { Key = "humidity", Label = "Humidity", Unit = UnitType.Percent });
             }
         }
 
@@ -183,9 +183,9 @@ public sealed class DiscoverController : ControllerBase
         await _discoveredRepo.UpsertAsync(discovered);
 
         _logger.LogInformation("Shelly device discovered: {NativeId} at {Host} with capabilities [{Caps}]",
-            nativeId, host, string.Join(", ", capabilities));
+            nativeId, host, string.Join(", ", capabilities.Select(c => c.Key)));
 
-        return Ok(new { status = "discovered", host, nativeId, capabilities = capabilities.Select(c => c.ToString()).ToList() });
+        return Ok(new { status = "discovered", host, nativeId, capabilities = capabilities.Select(c => c.Key).ToList() });
     }
 }
 

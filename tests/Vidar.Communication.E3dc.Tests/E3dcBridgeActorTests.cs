@@ -28,9 +28,9 @@ public sealed class E3dcBridgeActorTests : TestKit
     [Fact]
     public void ReceivesPluginRegistered_WithoutCrash()
     {
-        var shardProxy = CreateTestProbe();
         var pluginRegistry = CreateTestProbe();
-        var bridge = Sys.ActorOf(E3dcBridgeActor.Props(shardProxy, pluginRegistry));
+        var shardProxy = CreateTestProbe();
+        var bridge = Sys.ActorOf(E3dcBridgeActor.Props(pluginRegistry, shardProxy));
 
         bridge.Tell(new PluginRegistered(
             "e3dc", false, new Dictionary<string, string>(), []), TestActor);
@@ -41,9 +41,9 @@ public sealed class E3dcBridgeActorTests : TestKit
     [Fact]
     public void RegistersWithPluginRegistryOnStart()
     {
-        var shardProxy = CreateTestProbe();
         var pluginRegistry = CreateTestProbe();
-        Sys.ActorOf(E3dcBridgeActor.Props(shardProxy, pluginRegistry));
+        var shardProxy = CreateTestProbe();
+        Sys.ActorOf(E3dcBridgeActor.Props(pluginRegistry, shardProxy));
 
         var msg = pluginRegistry.ExpectMsg<RegisterPlugin>(TimeSpan.FromSeconds(3));
         Assert.Equal("e3dc", msg.PluginId);
@@ -52,9 +52,9 @@ public sealed class E3dcBridgeActorTests : TestKit
     [Fact]
     public void DisabledConfig_DoesNotStartClient()
     {
-        var shardProxy = CreateTestProbe();
         var pluginRegistry = CreateTestProbe();
-        var bridge = Sys.ActorOf(E3dcBridgeActor.Props(shardProxy, pluginRegistry));
+        var shardProxy = CreateTestProbe();
+        var bridge = Sys.ActorOf(E3dcBridgeActor.Props(pluginRegistry, shardProxy));
 
         bridge.Tell(new PluginRegistered(
             "e3dc", false, new Dictionary<string, string>(), []), TestActor);

@@ -1,7 +1,6 @@
 using Akka.Actor;
 using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
-using Vidar.Core.Capabilities;
 using Vidar.Core.Messages;
 using Vidar.Core.Model;
 using Vidar.Host.Persistence;
@@ -12,14 +11,16 @@ public sealed class ThresholdEvaluatorActor : ReceiveActor
 {
     private readonly ILoggingAdapter _log = Context.GetLogger();
     private readonly IActorRef _mediator;
+    private readonly IThresholdEventLogRepository _eventLogRepo;
     private readonly List<ThresholdRule> _rules = [];
-    private readonly Dictionary<(Guid DeviceId, CapabilityType Capability, string? MetricKey), double> _previousValues = new();
+    private readonly Dictionary<(Guid DeviceId, string CapabilityKey), object> _previousValues = new();
 
-    public static Props Props(IThresholdRuleRepository ruleRepo) =>
-        Akka.Actor.Props.Create(() => new ThresholdEvaluatorActor(ruleRepo));
+    public static Props Props(IThresholdRuleRepository ruleRepo, IThresholdEventLogRepository eventLogRepo) =>
+        Akka.Actor.Props.Create(() => new ThresholdEvaluatorActor(ruleRepo, eventLogRepo));
 
-    public ThresholdEvaluatorActor(IThresholdRuleRepository ruleRepo)
+    public ThresholdEvaluatorActor(IThresholdRuleRepository ruleRepo, IThresholdEventLogRepository eventLogRepo)
     {
+        _eventLogRepo = eventLogRepo;
         _mediator = DistributedPubSub.Get(Context.System).Mediator;
 
         Receive<DeviceStateChanged>(OnStateChanged);
@@ -75,43 +76,112 @@ public sealed class ThresholdEvaluatorActor : ReceiveActor
         {
             if (!rule.Enabled) continue;
             if (rule.DeviceId != msg.DeviceId) continue;
-            if (rule.Capability != msg.Capability) continue;
+            if (rule.CapabilityKey != msg.CapabilityKey) continue;
 
-            if (!TryExtractNumericValue(msg.Value, rule.MetricKey, out var currentValue))
-                continue;
-
-            var key = (msg.DeviceId, msg.Capability, rule.MetricKey);
+            var key = (msg.DeviceId, msg.CapabilityKey);
             _previousValues.TryGetValue(key, out var previousValue);
+            var hasPrevious = _previousValues.ContainsKey(key);
 
-            if (ShouldFire(rule.Operator, currentValue, rule.Value, previousValue, _previousValues.ContainsKey(key)))
+            if (!Evaluate(rule, msg.Value, previousValue, hasPrevious, out var currentNumeric))
             {
-                var evt = new ThresholdEvent(
-                    rule.Id, rule.Name, rule.EventName,
-                    msg.DeviceId, msg.Capability, rule.MetricKey,
-                    currentValue, rule.Value, rule.Operator,
-                    DateTimeOffset.UtcNow);
-
-                _mediator.Tell(new Publish("threshold-events", evt));
-                _log.Info("Threshold event fired: {EventName} (rule={RuleName}, value={Value}, threshold={Threshold})",
-                    evt.EventName, evt.RuleName, currentValue, rule.Value);
+                _previousValues[key] = msg.Value;
+                continue;
             }
 
-            _previousValues[key] = currentValue;
+            var evt = new ThresholdEvent(
+                rule.Id, rule.Name, rule.EventName,
+                msg.DeviceId, msg.CapabilityKey,
+                currentNumeric, rule.Value, rule.Operator,
+                DateTimeOffset.UtcNow);
+
+            _mediator.Tell(new Publish("threshold-events", evt));
+
+            var logEntry = new ThresholdEventLog
+            {
+                Id = Guid.NewGuid(),
+                RuleId = rule.Id,
+                RuleName = rule.Name,
+                EventName = rule.EventName,
+                DeviceId = msg.DeviceId,
+                CapabilityKey = msg.CapabilityKey,
+                CurrentValue = currentNumeric,
+                ThresholdValue = rule.Value,
+                StringValue = rule.StringValue,
+                Operator = rule.Operator,
+                FiredAt = evt.FiredAt
+            };
+            _ = _eventLogRepo.InsertAsync(logEntry);
+
+            _log.Info("Threshold event fired: {EventName} (rule={RuleName}, value={Value}, threshold={Threshold})",
+                evt.EventName, evt.RuleName, currentNumeric, rule.Value);
+
+            _previousValues[key] = msg.Value;
         }
     }
 
-    private static bool TryExtractNumericValue(object value, string? metricKey, out double result)
+    private static bool Evaluate(ThresholdRule rule, object currentValue, object? previousValue, bool hasPrevious, out double currentNumeric)
     {
-        result = 0;
+        currentNumeric = 0;
 
-        if (metricKey != null)
+        return rule.Operator switch
         {
-            if (value is IDictionary<string, object> dict && dict.TryGetValue(metricKey, out var inner))
-                return TryConvertToDouble(inner, out result);
-            return false;
-        }
+            // Numeric operators
+            ThresholdOperator.GreaterThan or
+            ThresholdOperator.LessThan or
+            ThresholdOperator.GreaterThanOrEqual or
+            ThresholdOperator.LessThanOrEqual or
+            ThresholdOperator.CrossesAbove or
+            ThresholdOperator.CrossesBelow =>
+                TryConvertToDouble(currentValue, out currentNumeric) &&
+                EvaluateNumeric(rule.Operator, currentNumeric, rule.Value,
+                    hasPrevious && TryConvertToDouble(previousValue!, out var prev) ? prev : 0.0, hasPrevious),
 
-        return TryConvertToDouble(value, out result);
+            // Boolean operators
+            ThresholdOperator.BecomesTrue => EvaluateBoolean(currentValue, previousValue, hasPrevious, true),
+            ThresholdOperator.BecomesFalse => EvaluateBoolean(currentValue, previousValue, hasPrevious, false),
+            ThresholdOperator.Changes => EvaluateChanges(currentValue, previousValue, hasPrevious),
+
+            // String operators
+            ThresholdOperator.Equals => EvaluateStringEquals(currentValue, rule.StringValue, negate: false),
+            ThresholdOperator.NotEquals => EvaluateStringEquals(currentValue, rule.StringValue, negate: true),
+
+            _ => false
+        };
+    }
+
+    private static bool EvaluateNumeric(ThresholdOperator op, double current, double threshold, double previous, bool hasPrevious)
+    {
+        return op switch
+        {
+            ThresholdOperator.GreaterThan => current > threshold,
+            ThresholdOperator.LessThan => current < threshold,
+            ThresholdOperator.GreaterThanOrEqual => current >= threshold,
+            ThresholdOperator.LessThanOrEqual => current <= threshold,
+            ThresholdOperator.CrossesAbove => hasPrevious && previous <= threshold && current > threshold,
+            ThresholdOperator.CrossesBelow => hasPrevious && previous >= threshold && current < threshold,
+            _ => false
+        };
+    }
+
+    private static bool EvaluateBoolean(object currentValue, object? previousValue, bool hasPrevious, bool targetState)
+    {
+        if (!TryConvertToBool(currentValue, out var current)) return false;
+        if (!hasPrevious) return current == targetState;
+        if (!TryConvertToBool(previousValue!, out var previous)) return current == targetState;
+        return current == targetState && previous != targetState;
+    }
+
+    private static bool EvaluateChanges(object currentValue, object? previousValue, bool hasPrevious)
+    {
+        if (!hasPrevious) return false;
+        return !System.Collections.Generic.EqualityComparer<object>.Default.Equals(currentValue, previousValue);
+    }
+
+    private static bool EvaluateStringEquals(object currentValue, string? expected, bool negate)
+    {
+        var current = currentValue?.ToString();
+        var match = string.Equals(current, expected, StringComparison.OrdinalIgnoreCase);
+        return negate ? !match : match;
     }
 
     private static bool TryConvertToDouble(object value, out double result)
@@ -128,18 +198,13 @@ public sealed class ThresholdEvaluatorActor : ReceiveActor
         }
     }
 
-    private static bool ShouldFire(ThresholdOperator op, double current, double threshold, double previous, bool hasPrevious)
+    private static bool TryConvertToBool(object value, out bool result)
     {
-        return op switch
-        {
-            ThresholdOperator.GreaterThan => current > threshold,
-            ThresholdOperator.LessThan => current < threshold,
-            ThresholdOperator.GreaterThanOrEqual => current >= threshold,
-            ThresholdOperator.LessThanOrEqual => current <= threshold,
-            ThresholdOperator.CrossesAbove => hasPrevious && previous <= threshold && current > threshold,
-            ThresholdOperator.CrossesBelow => hasPrevious && previous >= threshold && current < threshold,
-            _ => false
-        };
+        result = false;
+        if (value is bool b) { result = b; return true; }
+        if (value is string s && bool.TryParse(s, out var parsed)) { result = parsed; return true; }
+        if (TryConvertToDouble(value, out var d)) { result = d != 0; return true; }
+        return false;
     }
 
     private sealed record RulesLoaded(List<ThresholdRule> Rules);

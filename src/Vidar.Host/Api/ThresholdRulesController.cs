@@ -1,7 +1,6 @@
 using Akka.Actor;
 using Akka.Hosting;
 using Microsoft.AspNetCore.Mvc;
-using Vidar.Core.Capabilities;
 using Vidar.Core.Messages;
 using Vidar.Core.Model;
 using Vidar.Host.Actors;
@@ -36,10 +35,10 @@ public sealed class ThresholdRulesController : ControllerBase
             Id = Guid.NewGuid(),
             Name = request.Name,
             DeviceId = request.DeviceId,
-            Capability = request.Capability,
-            MetricKey = request.MetricKey,
+            CapabilityKey = request.CapabilityKey,
             Operator = request.Operator,
             Value = request.Value,
+            StringValue = request.StringValue,
             EventName = request.EventName,
             Enabled = request.Enabled
         };
@@ -58,10 +57,10 @@ public sealed class ThresholdRulesController : ControllerBase
             Id = id,
             Name = request.Name,
             DeviceId = request.DeviceId,
-            Capability = request.Capability,
-            MetricKey = request.MetricKey,
+            CapabilityKey = request.CapabilityKey,
             Operator = request.Operator,
             Value = request.Value,
+            StringValue = request.StringValue,
             EventName = request.EventName,
             Enabled = request.Enabled
         };
@@ -85,10 +84,10 @@ public sealed class CreateThresholdRuleRequest
 {
     public required string Name { get; set; }
     public Guid DeviceId { get; set; }
-    public CapabilityType Capability { get; set; }
-    public string? MetricKey { get; set; }
+    public required string CapabilityKey { get; set; }
     public ThresholdOperator Operator { get; set; }
     public double Value { get; set; }
+    public string? StringValue { get; set; }
     public required string EventName { get; set; }
     public bool Enabled { get; set; } = true;
 }

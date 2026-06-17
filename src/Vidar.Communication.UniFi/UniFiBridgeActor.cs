@@ -1,25 +1,19 @@
 using Akka.Actor;
-using Akka.Cluster;
 using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
 using Vidar.Core.Capabilities;
 using Vidar.Core.Messages;
+using Vidar.Core.Plugins;
 using Vidar.Communication.UniFi.Webhooks;
 
 namespace Vidar.Communication.UniFi;
 
-public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
+public sealed class UniFiBridgeActor : PluginActorBase
 {
-    public ITimerScheduler Timers { get; set; } = null!;
-
-    private readonly ILoggingAdapter _log = Context.GetLogger();
-    private readonly IActorRef _shardProxy;
     private readonly IActorRef _webhookRegistry;
     private readonly string _hostUrl;
-    private readonly IActorRef _pluginRegistry;
     private IActorRef _protectHandler = ActorRefs.Nobody;
     private IActorRef _networkHandler = ActorRefs.Nobody;
-    private static readonly HttpClient PayloadClient = new() { Timeout = TimeSpan.FromSeconds(15) };
 
     // Current config — null until received from Host
     private UniFiApiClient? _client;
@@ -34,39 +28,21 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
     private UniFiProtectApiClient? _protectClient;
     private readonly Dictionary<string, (Guid DeviceId, UniFiCamera Camera)> _camerasByMac = new();
 
+    protected override string PluginId => "unifi";
+
     // Internal messages
     private sealed class PollTick { public static readonly PollTick Instance = new(); }
     private sealed class InitialFetch { public static readonly InitialFetch Instance = new(); }
     private sealed class RegisterWebhooks { public static readonly RegisterWebhooks Instance = new(); }
 
     public static Props Props(IActorRef shardProxy, IActorRef webhookRegistry, string hostUrl, IActorRef pluginRegistry) =>
-        Akka.Actor.Props.Create(() => new UniFiBridgeActor(shardProxy, webhookRegistry, hostUrl, pluginRegistry));
+        Akka.Actor.Props.Create(() => new UniFiBridgeActor(webhookRegistry, hostUrl, pluginRegistry, shardProxy));
 
-    public UniFiBridgeActor(IActorRef shardProxy, IActorRef webhookRegistry, string hostUrl, IActorRef pluginRegistry)
+    public UniFiBridgeActor(IActorRef webhookRegistry, string hostUrl, IActorRef pluginRegistry, IActorRef shardProxy)
+        : base(pluginRegistry, shardProxy)
     {
-        _shardProxy = shardProxy;
         _webhookRegistry = webhookRegistry;
         _hostUrl = hostUrl.TrimEnd('/');
-        _pluginRegistry = pluginRegistry;
-
-        // Handle config updates from PluginRegistry
-        Receive<PluginRegistered>(msg =>
-        {
-            foreach (var reg in msg.Registrations)
-                _configuredDevices[reg.NativeId] = reg.DeviceId;
-            _log.Info("Plugin registered with {Count} devices, enabled={Enabled}", msg.Registrations.Count, msg.Enabled);
-
-            if (msg.Enabled)
-                ConfigureAndStart(true, msg.Settings);
-        });
-
-        // Handle runtime config updates
-        Receive<IntegrationConfigChanged>(msg =>
-        {
-            if (msg.IntegrationId != "unifi") return;
-            _log.Info("Received IntegrationConfigChanged for unifi, enabled={Enabled}", msg.Enabled);
-            ConfigureAndStart(msg.Enabled, msg.Settings);
-        });
 
         ReceiveAsync<InitialFetch>(_ => InitialFetchAsync());
         ReceiveAsync<PollTick>(_ => PollAsync());
@@ -94,13 +70,6 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
                     break;
             }
         });
-
-        Receive<ClusterEvent.CurrentClusterState>(_ => { });
-        Receive<ClusterEvent.MemberUp>(msg =>
-        {
-            if (msg.Member.HasRole("host"))
-                _pluginRegistry.Tell(new RegisterPlugin("unifi", Self));
-        });
     }
 
     protected override void PreStart()
@@ -108,19 +77,13 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         base.PreStart();
 
         _protectHandler = Context.ActorOf(
-            ProtectAlarmWebhookHandlerActor.Props(_shardProxy, _webhookRegistry, _hostUrl, _configuredDevices),
+            ProtectAlarmWebhookHandlerActor.Props(ShardProxy, _webhookRegistry, _hostUrl, _configuredDevices),
             "protect-webhook");
         _networkHandler = Context.ActorOf(
-            NetworkWebhookHandlerActor.Props(_shardProxy, _webhookRegistry, _hostUrl, _configuredDevices),
+            NetworkWebhookHandlerActor.Props(ShardProxy, _webhookRegistry, _hostUrl, _configuredDevices),
             "network-webhook");
 
-        _pluginRegistry.Tell(new RegisterPlugin("unifi", Self));
-
-        Cluster.Get(Context.System).Subscribe(Self, typeof(ClusterEvent.MemberUp));
-        var mediator = DistributedPubSub.Get(Context.System).Mediator;
-        mediator.Tell(new Subscribe("webhook-registry-started", Self));
-
-        // Register once on start; re-registration happens via WebhookRegistryStarted pub/sub
+        Mediator.Tell(new Subscribe("webhook-registry-started", Self));
         Timers.StartSingleTimer("webhook-register", RegisterWebhooks.Instance, TimeSpan.Zero);
     }
 
@@ -129,6 +92,29 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         _client?.Dispose();
         _protectClient?.Dispose();
         base.PostStop();
+    }
+
+    protected override void OnPluginRegistered(bool enabled, Dictionary<string, string> settings,
+        List<RegisterDeviceForPolling> registrations)
+    {
+        foreach (var reg in registrations)
+            _configuredDevices[reg.NativeId] = reg.DeviceId;
+
+        Log.Info("Plugin registered with {Count} devices, enabled={Enabled}", registrations.Count, enabled);
+
+        if (enabled)
+            ConfigureAndStart(true, settings);
+    }
+
+    protected override void OnConfigChanged(bool enabled, Dictionary<string, string> settings)
+    {
+        Log.Info("Received IntegrationConfigChanged for unifi, enabled={Enabled}", enabled);
+        ConfigureAndStart(enabled, settings);
+    }
+
+    protected override void OnDeviceRegistered(Guid deviceId, string nativeId, RegisterDeviceForPolling registration)
+    {
+        _configuredDevices[nativeId] = deviceId;
     }
 
     private void RegisterWebhookRoutes()
@@ -152,14 +138,15 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
 
         if (!enabled)
         {
-            _log.Info("UniFi integration is disabled — polling stopped");
-            PublishStatus("stopped");
+            Log.Info("UniFi integration is disabled — polling stopped");
+            var deviceCount = _devicesByMac.Count + _clientsById.Count + _camerasByMac.Count;
+            PublishStatus("stopped", deviceCount);
             return;
         }
 
         if (!settings.TryGetValue("host", out var host) || string.IsNullOrWhiteSpace(host))
         {
-            _log.Warning("UniFi integration enabled but no host configured — waiting");
+            Log.Warning("UniFi integration enabled but no host configured — waiting");
             return;
         }
 
@@ -180,7 +167,7 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         // Reset siteId so InitialFetch re-resolves it
         _siteId = siteId ?? "default";
 
-        _log.Info("UniFi configured: host={Host}, siteId={SiteId}, pollInterval={Interval}s", host, _siteId, _pollIntervalSeconds);
+        Log.Info("UniFi configured: host={Host}, siteId={SiteId}, pollInterval={Interval}s", host, _siteId, _pollIntervalSeconds);
 
         // Start initial fetch
         Timers.StartSingleTimer("initial-fetch", InitialFetch.Instance, TimeSpan.FromSeconds(2));
@@ -190,7 +177,7 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
     {
         if (_client == null)
         {
-            _log.Warning("InitialFetch called without a configured client, skipping");
+            Log.Warning("InitialFetch called without a configured client, skipping");
             return;
         }
 
@@ -203,21 +190,21 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
                 if (sites.Count == 1)
                 {
                     _siteId = sites[0].Id;
-                    _log.Info("Auto-detected UniFi site: {SiteId} ({Name})", _siteId, sites[0].Name ?? _siteId);
+                    Log.Info("Auto-detected UniFi site: {SiteId} ({Name})", _siteId, sites[0].Name ?? _siteId);
                 }
                 else if (sites.Count > 1)
                 {
                     _siteId = sites[0].Id;
-                    _log.Warning("Multiple UniFi sites found, using: {SiteId}. Set siteId in integration settings to configure.", _siteId);
+                    Log.Warning("Multiple UniFi sites found, using: {SiteId}. Set siteId in integration settings to configure.", _siteId);
                 }
                 else
                 {
-                    _log.Warning("No UniFi sites found, using default site ID");
+                    Log.Warning("No UniFi sites found, using default site ID");
                     _siteId = "default";
                 }
             }
 
-            _log.Info("Starting UniFi poll with site: {SiteId}", _siteId);
+            Log.Info("Starting UniFi poll with site: {SiteId}", _siteId);
             await PollAsync();
 
             // Start periodic timer
@@ -226,8 +213,9 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         }
         catch (Exception ex)
         {
-            _log.Error(ex, "UniFi initial fetch failed, retrying in 30s");
-            PublishStatus("error", ex.Message);
+            Log.Error(ex, "UniFi initial fetch failed, retrying in 30s");
+            var deviceCount = _devicesByMac.Count + _clientsById.Count + _camerasByMac.Count;
+            PublishStatus("error", deviceCount, ex.Message);
             Timers.StartSingleTimer("initial-fetch-retry", InitialFetch.Instance, TimeSpan.FromSeconds(30));
         }
     }
@@ -236,13 +224,13 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
     {
         if (_client == null)
         {
-            _log.Warning("Poll called without configured client, skipping");
+            Log.Warning("Poll called without configured client, skipping");
             return;
         }
 
         if (string.IsNullOrEmpty(_siteId))
         {
-            _log.Warning("Poll called before site ID resolved, skipping");
+            Log.Warning("Poll called before site ID resolved, skipping");
             return;
         }
 
@@ -251,19 +239,20 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
             await PollDevicesAsync();
             await PollClientsAsync();
             await PollCamerasAsync();
-            PublishStatus("running");
+            var deviceCount = _devicesByMac.Count + _clientsById.Count + _camerasByMac.Count;
+            PublishStatus("running", deviceCount);
         }
         catch (Exception ex)
         {
-            _log.Error(ex, "UniFi poll failed");
-            PublishStatus("error", ex.Message);
+            Log.Error(ex, "UniFi poll failed");
+            var deviceCount = _devicesByMac.Count + _clientsById.Count + _camerasByMac.Count;
+            PublishStatus("error", deviceCount, ex.Message);
         }
     }
 
     private async Task PollDevicesAsync()
     {
         var devices = await _client!.GetDevicesAsync(_siteId);
-        var mediator = DistributedPubSub.Get(Context.System).Mediator;
 
         foreach (var device in devices)
         {
@@ -282,10 +271,9 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
             {
                 var id = Guid.NewGuid();
                 _devicesByMac[mac] = (id, device);
-                _log.Info("Discovered UniFi device: {Name} ({Mac})", device.Name ?? mac, mac);
+                Log.Info("Discovered UniFi device: {Name} ({Mac})", device.Name ?? mac, mac);
 
-                var discovered = new DeviceDiscovered(id, "unifi", mac, capabilities, metadata);
-                mediator.Tell(new Publish("device-discovered", discovered));
+                Discover(id, mac, capabilities, metadata);
             }
             else
             {
@@ -293,8 +281,7 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
                 _devicesByMac[mac] = (existingId, device);
 
                 // Publish re-discovery to keep Host in sync
-                var discovered = new DeviceDiscovered(existingId, "unifi", mac, capabilities, metadata);
-                mediator.Tell(new Publish("device-discovered", discovered));
+                Discover(existingId, mac, capabilities, metadata);
             }
 
             // Send state for configured devices
@@ -307,45 +294,41 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
                 }
                 else
                 {
-                    _shardProxy.Tell(new DeviceOffline(configuredDeviceId));
+                    ReportOffline(configuredDeviceId);
                 }
             }
         }
 
-        _log.Debug("UniFi poll: {Count} devices", devices.Count);
+        Log.Debug("UniFi poll: {Count} devices", devices.Count);
     }
 
     private async Task FetchAndPublishDeviceStatsAsync(Guid deviceId, string nativeDeviceId)
     {
-        var extras = new Dictionary<string, object>();
         try
         {
             var stats = await _client!.GetDeviceStatsAsync(_siteId, nativeDeviceId);
             if (stats != null)
             {
-                if (stats.UptimeSec.HasValue) extras["uptime_sec"] = stats.UptimeSec.Value;
-                if (stats.CpuUtilizationPct.HasValue) extras["cpu_pct"] = stats.CpuUtilizationPct.Value;
-                if (stats.MemoryUtilizationPct.HasValue) extras["memory_pct"] = stats.MemoryUtilizationPct.Value;
-                if (stats.LoadAverage1Min.HasValue) extras["load_1min"] = stats.LoadAverage1Min.Value;
+                if (stats.UptimeSec.HasValue) ShardProxy.Tell(new DeviceStateUpdate(deviceId, "uptime", (double)stats.UptimeSec.Value));
+                if (stats.CpuUtilizationPct.HasValue) ShardProxy.Tell(new DeviceStateUpdate(deviceId, "cpuUtilization", stats.CpuUtilizationPct.Value));
+                if (stats.MemoryUtilizationPct.HasValue) ShardProxy.Tell(new DeviceStateUpdate(deviceId, "memoryUtilization", stats.MemoryUtilizationPct.Value));
+                if (stats.LoadAverage1Min.HasValue) ShardProxy.Tell(new DeviceStateUpdate(deviceId, "loadAverage", stats.LoadAverage1Min.Value));
                 if (stats.Uplink != null)
                 {
-                    if (stats.Uplink.TxRateBps.HasValue) extras["tx_bps"] = stats.Uplink.TxRateBps.Value;
-                    if (stats.Uplink.RxRateBps.HasValue) extras["rx_bps"] = stats.Uplink.RxRateBps.Value;
+                    if (stats.Uplink.TxRateBps.HasValue) ShardProxy.Tell(new DeviceStateUpdate(deviceId, "txRate", (double)stats.Uplink.TxRateBps.Value));
+                    if (stats.Uplink.RxRateBps.HasValue) ShardProxy.Tell(new DeviceStateUpdate(deviceId, "rxRate", (double)stats.Uplink.RxRateBps.Value));
                 }
             }
         }
         catch (Exception ex)
         {
-            _log.Warning(ex, "Failed to fetch stats for device {DeviceId}", nativeDeviceId);
+            Log.Warning(ex, "Failed to fetch stats for device {DeviceId}", nativeDeviceId);
         }
-
-        _shardProxy.Tell(new DeviceStateUpdate(deviceId, CapabilityType.Extras, extras));
     }
 
     private async Task PollClientsAsync()
     {
         var clients = await _client!.GetClientsAsync(_siteId);
-        var mediator = DistributedPubSub.Get(Context.System).Mediator;
 
         // Track which clients are currently connected
         var connectedIds = new HashSet<string>(clients.Select(c => c.Id));
@@ -356,7 +339,10 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
             if (string.IsNullOrEmpty(clientId)) continue;
 
             var nativeId = string.IsNullOrEmpty(client.MacAddress) ? clientId : client.MacAddress;
-            var capabilities = new List<CapabilityType> { CapabilityType.Presence };
+            var capabilities = new List<CapabilityDescriptor>
+            {
+                new() { Key = "presence", Label = "Presence", Unit = UnitType.Detected }
+            };
             var metadata = BuildClientMetadata(client);
 
             bool isNew = !_clientsById.ContainsKey(clientId);
@@ -365,23 +351,21 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
             {
                 var id = Guid.NewGuid();
                 _clientsById[clientId] = (id, client);
-                _log.Info("Discovered UniFi client: {Name} ({Id})", client.Name ?? client.MacAddress ?? clientId, clientId);
+                Log.Info("Discovered UniFi client: {Name} ({Id})", client.Name ?? client.MacAddress ?? clientId, clientId);
 
-                var discovered = new DeviceDiscovered(id, "unifi", nativeId, capabilities, metadata);
-                mediator.Tell(new Publish("device-discovered", discovered));
+                Discover(id, nativeId, capabilities, metadata);
             }
             else
             {
                 var (existingId, _) = _clientsById[clientId];
                 _clientsById[clientId] = (existingId, client);
 
-                var discovered = new DeviceDiscovered(existingId, "unifi", nativeId, capabilities, metadata);
-                mediator.Tell(new Publish("device-discovered", discovered));
+                Discover(existingId, nativeId, capabilities, metadata);
             }
 
             // Send state update only if configured
             if (_configuredDevices.TryGetValue(nativeId, out var configuredId))
-                _shardProxy.Tell(new DeviceStateUpdate(configuredId, CapabilityType.Presence, true));
+                ShardProxy.Tell(new DeviceStateUpdate(configuredId, "presence", true));
         }
 
         // Mark previously-seen clients that are no longer connected as absent
@@ -391,11 +375,11 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
             {
                 var cNativeId = string.IsNullOrEmpty(client.MacAddress) ? clientId : client.MacAddress;
                 if (_configuredDevices.TryGetValue(cNativeId, out var cConfiguredId))
-                    _shardProxy.Tell(new DeviceStateUpdate(cConfiguredId, CapabilityType.Presence, false));
+                    ShardProxy.Tell(new DeviceStateUpdate(cConfiguredId, "presence", false));
             }
         }
 
-        _log.Debug("UniFi poll: {Count} clients connected", clients.Count);
+        Log.Debug("UniFi poll: {Count} clients connected", clients.Count);
     }
 
     private async Task PollCamerasAsync()
@@ -409,11 +393,9 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         }
         catch (Exception ex)
         {
-            _log.Warning(ex, "Failed to poll Protect cameras (API may not be available)");
+            Log.Warning(ex, "Failed to poll Protect cameras (API may not be available)");
             return;
         }
-
-        var mediator = DistributedPubSub.Get(Context.System).Mediator;
 
         foreach (var camera in cameras)
         {
@@ -421,7 +403,12 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
             if (string.IsNullOrEmpty(mac)) continue;
 
             var nativeId = $"protect-{mac}";
-            var capabilities = new List<CapabilityType> { CapabilityType.Camera, CapabilityType.Extras };
+            var capabilities = new List<CapabilityDescriptor>
+            {
+                new() { Key = "camera", Label = "Camera", Unit = UnitType.Url },
+                new() { Key = "cameraModel", Label = "Model", Unit = UnitType.Text },
+                new() { Key = "cameraState", Label = "State", Unit = UnitType.Text },
+            };
             var metadata = BuildCameraMetadata(camera);
 
             bool isNew = !_camerasByMac.ContainsKey(mac);
@@ -430,7 +417,7 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
             {
                 var id = Guid.NewGuid();
                 _camerasByMac[mac] = (id, camera);
-                _log.Info("Discovered UniFi Protect camera: {Name} ({Mac})", camera.Name ?? mac, mac);
+                Log.Info("Discovered UniFi Protect camera: {Name} ({Mac})", camera.Name ?? mac, mac);
             }
             else
             {
@@ -439,30 +426,27 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
             }
 
             var (deviceId, _) = _camerasByMac[mac];
-            var discovered = new DeviceDiscovered(deviceId, "unifi", nativeId, capabilities, metadata);
-            mediator.Tell(new Publish("device-discovered", discovered));
+            Discover(deviceId, nativeId, capabilities, metadata);
 
             if (_configuredDevices.TryGetValue(nativeId, out var configuredId))
             {
                 var isConnected = string.Equals(camera.State, "CONNECTED", StringComparison.OrdinalIgnoreCase);
                 if (!isConnected)
                 {
-                    _shardProxy.Tell(new DeviceOffline(configuredId));
+                    ReportOffline(configuredId);
                 }
                 else
                 {
                     var rtspUrl = await GetCameraRtspUrlAsync(camera.Id);
-                    _shardProxy.Tell(new DeviceStateUpdate(configuredId, CapabilityType.Camera, rtspUrl ?? ""));
+                    ShardProxy.Tell(new DeviceStateUpdate(configuredId, "camera", rtspUrl ?? ""));
 
-                    var extras = new Dictionary<string, object>();
-                    if (!string.IsNullOrEmpty(camera.ModelKey)) extras["model"] = camera.ModelKey;
-                    if (!string.IsNullOrEmpty(camera.State)) extras["state"] = camera.State;
-                    _shardProxy.Tell(new DeviceStateUpdate(configuredId, CapabilityType.Extras, extras));
+                    if (!string.IsNullOrEmpty(camera.ModelKey)) ShardProxy.Tell(new DeviceStateUpdate(configuredId, "cameraModel", camera.ModelKey));
+                    if (!string.IsNullOrEmpty(camera.State)) ShardProxy.Tell(new DeviceStateUpdate(configuredId, "cameraState", camera.State));
                 }
             }
         }
 
-        _log.Debug("UniFi Protect poll: {Count} cameras", cameras.Count);
+        Log.Debug("UniFi Protect poll: {Count} cameras", cameras.Count);
     }
 
     private async Task<string?> GetCameraRtspUrlAsync(string cameraId)
@@ -474,7 +458,7 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         }
         catch (Exception ex)
         {
-            _log.Warning(ex, "Failed to get RTSP URL for camera {CameraId}", cameraId);
+            Log.Warning(ex, "Failed to get RTSP URL for camera {CameraId}", cameraId);
             return null;
         }
     }
@@ -493,7 +477,7 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
     {
         if (_client == null)
         {
-            _log.Warning("Command received but UniFi is not configured yet");
+            Log.Warning("Command received but UniFi is not configured yet");
             return;
         }
 
@@ -503,36 +487,38 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
             var entry = _devicesByMac.GetValueOrDefault(cmd.NativeId);
             if (entry == default)
             {
-                _log.Warning("Unknown device for command: {NativeId}", cmd.NativeId);
+                Log.Warning("Unknown device for command: {NativeId}", cmd.NativeId);
                 return;
             }
 
-            if (cmd.Capability == CapabilityType.Power)
+            if (cmd.CapabilityKey == "power")
             {
                 // Value should be port index for power cycle
                 if (cmd.Value is int portIdx || (cmd.Value is long pl && (portIdx = (int)pl) >= 0))
                 {
                     var success = await _client.PowerCyclePortAsync(_siteId, entry.Device.Id, portIdx);
-                    _log.Info("Power cycle port {Port} on {Device}: {Result}",
+                    Log.Info("Power cycle port {Port} on {Device}: {Result}",
                         portIdx, cmd.NativeId, success ? "success" : "failed");
                 }
             }
         }
         catch (Exception ex)
         {
-            _log.Error(ex, "Failed to handle command for device {NativeId}", cmd.NativeId);
+            Log.Error(ex, "Failed to handle command for device {NativeId}", cmd.NativeId);
         }
     }
 
-    private static List<CapabilityType> BuildDeviceCapabilities(UniFiNetworkDevice device)
+    private static List<CapabilityDescriptor> BuildDeviceCapabilities(UniFiNetworkDevice device)
     {
-        var caps = new List<CapabilityType>();
-        var features = device.Features ?? [];
-
-        // Always add Extras for network device stats
-        caps.Add(CapabilityType.Extras);
-
-        return caps;
+        return
+        [
+            new() { Key = "uptime", Label = "Uptime", Unit = UnitType.Number },
+            new() { Key = "cpuUtilization", Label = "CPU", Unit = UnitType.Percent },
+            new() { Key = "memoryUtilization", Label = "Memory", Unit = UnitType.Percent },
+            new() { Key = "loadAverage", Label = "Load", Unit = UnitType.Number },
+            new() { Key = "txRate", Label = "TX Rate", Unit = UnitType.Number },
+            new() { Key = "rxRate", Label = "RX Rate", Unit = UnitType.Number },
+        ];
     }
 
     private static Dictionary<string, string> BuildDeviceMetadata(UniFiNetworkDevice device)
@@ -545,14 +531,6 @@ public sealed class UniFiBridgeActor : ReceiveActor, IWithTimers
         if (!string.IsNullOrEmpty(device.FirmwareVersion)) metadata["firmware"] = device.FirmwareVersion;
         if (device.Features?.Count > 0) metadata["features"] = string.Join(",", device.Features);
         return metadata;
-    }
-
-    private void PublishStatus(string status, string? error = null)
-    {
-        var deviceCount = _devicesByMac.Count + _clientsById.Count + _camerasByMac.Count;
-        var mediator = DistributedPubSub.Get(Context.System).Mediator;
-        mediator.Tell(new Publish("application-status",
-            new ApplicationStatusUpdate("unifi", status, deviceCount, error)));
     }
 
     private static Dictionary<string, string> BuildClientMetadata(UniFiClient client)
