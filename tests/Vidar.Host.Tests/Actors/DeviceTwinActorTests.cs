@@ -1,11 +1,13 @@
 using Akka.Actor;
 using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Configuration;
+using Akka.Hosting;
 using Akka.TestKit.Xunit2;
 using NSubstitute;
 using Vidar.Core.Capabilities;
 using Vidar.Core.Messages;
 using Vidar.Core.Model;
+using Vidar.Core.Plugins;
 using Vidar.Host.Actors;
 using Vidar.Host.Persistence;
 
@@ -55,8 +57,11 @@ public sealed class DeviceTwinActorTests : TestKit
         stateRepo.UpsertAsync(Arg.Any<DeviceState>()).Returns(Task.CompletedTask);
         historyRepo.AddStateEntryAsync(Arg.Any<StateHistoryEntry>()).Returns(Task.CompletedTask);
 
+        var pluginRegistryProbe = CreateTestProbe();
+        ActorRegistry.For(Sys).Register<PluginRegistry>(pluginRegistryProbe);
+
         var actor = Sys.ActorOf(
-            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo, historyRepo, ActorRefs.Nobody),
+            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo, historyRepo),
             $"device-twin-{deviceId}");
 
         var update = new DeviceStateUpdate(deviceId, "switch", true);
@@ -95,8 +100,10 @@ public sealed class DeviceTwinActorTests : TestKit
         historyRepo.AddCommandEntryAsync(Arg.Any<CommandHistoryEntry>()).Returns(Task.CompletedTask);
 
         var pluginRegistryProbe = CreateTestProbe();
+        ActorRegistry.For(Sys).Register<PluginRegistry>(pluginRegistryProbe);
+
         var actor = Sys.ActorOf(
-            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo, historyRepo, pluginRegistryProbe),
+            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo, historyRepo),
             $"device-twin-cmd-{deviceId}");
 
         // Wait for config to load
@@ -147,8 +154,11 @@ public sealed class DeviceTwinActorTests : TestKit
         var historyRepo = Substitute.For<IHistoryRepository>();
         historyRepo.AddStateEntryAsync(Arg.Any<StateHistoryEntry>()).Returns(Task.CompletedTask);
 
+        var pluginRegistryProbe = CreateTestProbe();
+        ActorRegistry.For(Sys).Register<PluginRegistry>(pluginRegistryProbe);
+
         var actor = Sys.ActorOf(
-            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo, historyRepo, ActorRefs.Nobody),
+            DeviceTwinActor.Props(deviceId.ToString(), stateRepo, deviceRepo, historyRepo),
             $"device-twin-pubsub-{deviceId}");
 
         var update = new DeviceStateUpdate(deviceId, "temperature", 21.5);

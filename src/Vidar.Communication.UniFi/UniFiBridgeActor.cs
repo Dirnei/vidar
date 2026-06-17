@@ -1,9 +1,11 @@
 using Akka.Actor;
 using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
+using Akka.Hosting;
 using Vidar.Core.Capabilities;
 using Vidar.Core.Messages;
 using Vidar.Core.Plugins;
+using Vidar.Core.Webhooks;
 using Vidar.Communication.UniFi.Webhooks;
 
 namespace Vidar.Communication.UniFi;
@@ -35,13 +37,12 @@ public sealed class UniFiBridgeActor : PluginActorBase
     private sealed class InitialFetch { public static readonly InitialFetch Instance = new(); }
     private sealed class RegisterWebhooks { public static readonly RegisterWebhooks Instance = new(); }
 
-    public static Props Props(IActorRef shardProxy, IActorRef webhookRegistry, string hostUrl, IActorRef pluginRegistry) =>
-        Akka.Actor.Props.Create(() => new UniFiBridgeActor(webhookRegistry, hostUrl, pluginRegistry, shardProxy));
+    public static Props Props(string hostUrl) =>
+        Akka.Actor.Props.Create(() => new UniFiBridgeActor(hostUrl));
 
-    public UniFiBridgeActor(IActorRef webhookRegistry, string hostUrl, IActorRef pluginRegistry, IActorRef shardProxy)
-        : base(pluginRegistry, shardProxy)
+    public UniFiBridgeActor(string hostUrl)
     {
-        _webhookRegistry = webhookRegistry;
+        _webhookRegistry = ActorRegistry.For(Context.System).Get<WebhookRegistry>();
         _hostUrl = hostUrl.TrimEnd('/');
 
         ReceiveAsync<InitialFetch>(_ => InitialFetchAsync());
@@ -77,10 +78,10 @@ public sealed class UniFiBridgeActor : PluginActorBase
         base.PreStart();
 
         _protectHandler = Context.ActorOf(
-            ProtectAlarmWebhookHandlerActor.Props(ShardProxy, _webhookRegistry, _hostUrl, _configuredDevices),
+            ProtectAlarmWebhookHandlerActor.Props(_hostUrl, _configuredDevices),
             "protect-webhook");
         _networkHandler = Context.ActorOf(
-            NetworkWebhookHandlerActor.Props(ShardProxy, _webhookRegistry, _hostUrl, _configuredDevices),
+            NetworkWebhookHandlerActor.Props(_hostUrl, _configuredDevices),
             "network-webhook");
 
         Mediator.Tell(new Subscribe("webhook-registry-started", Self));

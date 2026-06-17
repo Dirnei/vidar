@@ -28,9 +28,7 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
         .WithSingletonProxy<PluginRegistry>("plugin-registry", new ClusterSingletonOptions { Role = "host" })
         .WithActors((system, registry, resolver) =>
         {
-            var shardProxy = registry.Get<DeviceTwinRegion>();
-            var pluginRegistry = registry.Get<PluginRegistry>();
-            var bridge = system.ActorOf(ShellyBridgeActor.Props(httpClient, shardProxy, pluginRegistry), "shelly-bridge");
+            system.ActorOf(ShellyBridgeActor.Props(httpClient), "shelly-bridge");
         });
 });
 

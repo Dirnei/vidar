@@ -3,6 +3,7 @@ using System.Text.Json;
 using Akka.Actor;
 using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
+using Akka.Hosting;
 using Akka.Streams;
 using Akka.Streams.Dsl;
 using TurboHomeConnect;
@@ -12,6 +13,7 @@ using TurboHomeConnect.Model;
 using TurboHomeConnect.OAuth;
 using Vidar.Core.Messages;
 using Vidar.Core.Plugins;
+using Vidar.Core.Webhooks;
 
 namespace Vidar.Communication.HomeConnect;
 
@@ -36,13 +38,12 @@ public sealed class HomeConnectBridgeActor : PluginActorBase
     private sealed class BeginSseStream { public static readonly BeginSseStream Instance = new(); }
     private sealed record TokenExchangeFailed(string Error);
 
-    public static Props Props(IActorRef shardProxy, IActorRef webhookRegistry, IActorRef pluginRegistry) =>
-        Akka.Actor.Props.Create(() => new HomeConnectBridgeActor(webhookRegistry, pluginRegistry, shardProxy));
+    public static Props Props() =>
+        Akka.Actor.Props.Create(() => new HomeConnectBridgeActor());
 
-    public HomeConnectBridgeActor(IActorRef webhookRegistry, IActorRef pluginRegistry, IActorRef shardProxy)
-        : base(pluginRegistry, shardProxy)
+    public HomeConnectBridgeActor()
     {
-        _webhookRegistry = webhookRegistry;
+        _webhookRegistry = ActorRegistry.For(Context.System).Get<WebhookRegistry>();
 
         Receive<DeviceCommand>(OnDeviceCommand);
         Receive<WebhookReceived>(OnWebhookReceived);

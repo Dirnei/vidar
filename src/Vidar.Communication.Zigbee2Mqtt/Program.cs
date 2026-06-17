@@ -33,9 +33,7 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
         .WithSingletonProxy<PluginRegistry>("plugin-registry", new ClusterSingletonOptions { Role = "host" })
         .WithActors((system, registry, resolver) =>
         {
-            var shardProxy = registry.Get<DeviceTwinRegion>();
-            var pluginRegistry = registry.Get<PluginRegistry>();
-            var bridge = system.ActorOf(Zigbee2MqttBridgeActor.Props(mqttConfig, shardProxy, pluginRegistry), "zigbee2mqtt-bridge");
+            system.ActorOf(Zigbee2MqttBridgeActor.Props(mqttConfig), "zigbee2mqtt-bridge");
         });
 });
 

@@ -16,11 +16,10 @@ public sealed class ShellyBridgeActor : PluginActorBase
 
     protected override string PluginId => "shelly";
 
-    public static Props Props(ShellyHttpClient httpClient, IActorRef pluginRegistry, IActorRef shardProxy) =>
-        Akka.Actor.Props.Create(() => new ShellyBridgeActor(httpClient, pluginRegistry, shardProxy));
+    public static Props Props(ShellyHttpClient httpClient) =>
+        Akka.Actor.Props.Create(() => new ShellyBridgeActor(httpClient));
 
-    public ShellyBridgeActor(ShellyHttpClient httpClient, IActorRef pluginRegistry, IActorRef shardProxy)
-        : base(pluginRegistry, shardProxy)
+    public ShellyBridgeActor(ShellyHttpClient httpClient)
     {
         _httpClient = httpClient;
 

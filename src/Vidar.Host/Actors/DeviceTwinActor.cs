@@ -2,8 +2,10 @@ using System.Threading.Tasks;
 using Akka.Actor;
 using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
+using Akka.Hosting;
 using Vidar.Core.Messages;
 using Vidar.Core.Model;
+using Vidar.Core.Plugins;
 using Vidar.Host.Persistence;
 
 namespace Vidar.Host.Actors;
@@ -19,16 +21,16 @@ public sealed class DeviceTwinActor : ReceiveActor
     private DeviceConfiguration? _config;
     private readonly Dictionary<string, object> _states = new();
 
-    public static Props Props(string entityId, IDeviceStateRepository stateRepo, IDeviceRepository deviceRepo, IHistoryRepository historyRepo, IActorRef pluginRegistry) =>
-        Akka.Actor.Props.Create(() => new DeviceTwinActor(entityId, stateRepo, deviceRepo, historyRepo, pluginRegistry));
+    public static Props Props(string entityId, IDeviceStateRepository stateRepo, IDeviceRepository deviceRepo, IHistoryRepository historyRepo) =>
+        Akka.Actor.Props.Create(() => new DeviceTwinActor(entityId, stateRepo, deviceRepo, historyRepo));
 
-    public DeviceTwinActor(string entityId, IDeviceStateRepository stateRepo, IDeviceRepository deviceRepo, IHistoryRepository historyRepo, IActorRef pluginRegistry)
+    public DeviceTwinActor(string entityId, IDeviceStateRepository stateRepo, IDeviceRepository deviceRepo, IHistoryRepository historyRepo)
     {
         _entityId = entityId;
         _stateRepo = stateRepo;
         _deviceRepo = deviceRepo;
         _historyRepo = historyRepo;
-        _pluginRegistry = pluginRegistry;
+        _pluginRegistry = ActorRegistry.For(Context.System).Get<PluginRegistry>();
 
         ReceiveAsync<DeviceStateUpdate>(HandleStateUpdate);
         ReceiveAsync<DeviceCommand>(HandleCommand);

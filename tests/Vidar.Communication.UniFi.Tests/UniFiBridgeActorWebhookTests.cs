@@ -1,7 +1,12 @@
 using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Configuration;
+using Akka.Hosting;
+using Akka.TestKit;
 using Akka.TestKit.Xunit2;
 using Vidar.Core.Messages;
+using Vidar.Core.Plugins;
+using Vidar.Core.Sharding;
+using Vidar.Core.Webhooks;
 
 namespace Vidar.Communication.UniFi.Tests;
 
@@ -25,14 +30,23 @@ public sealed class UniFiBridgeActorWebhookTests : TestKit
     {
     }
 
+    private void RegisterProbes(TestProbe pluginRegistry, TestProbe shardProxy, TestProbe webhookRegistry)
+    {
+        var registry = ActorRegistry.For(Sys);
+        registry.Register<PluginRegistry>(pluginRegistry);
+        registry.Register<DeviceTwinRegion>(shardProxy);
+        registry.Register<WebhookRegistry>(webhookRegistry);
+    }
+
     [Fact]
     public void Bridge_RegistersBothWebhookRoutes_OnStart()
     {
         var shardProxy = CreateTestProbe();
         var webhookRegistry = CreateTestProbe();
         var pluginRegistry = CreateTestProbe();
+        RegisterProbes(pluginRegistry, shardProxy, webhookRegistry);
 
-        Sys.ActorOf(UniFiBridgeActor.Props(shardProxy.Ref, webhookRegistry.Ref, "http://localhost:1", pluginRegistry.Ref), "unifi-bridge");
+        Sys.ActorOf(UniFiBridgeActor.Props("http://localhost:1"), "unifi-bridge");
 
         var registrations = new[]
         {
@@ -52,15 +66,14 @@ public sealed class UniFiBridgeActorWebhookTests : TestKit
         var shardProxy = CreateTestProbe();
         var webhookRegistry = CreateTestProbe();
         var pluginRegistry = CreateTestProbe();
+        RegisterProbes(pluginRegistry, shardProxy, webhookRegistry);
 
         var bridge = Sys.ActorOf(
-            UniFiBridgeActor.Props(shardProxy.Ref, webhookRegistry.Ref, "http://localhost:1", pluginRegistry.Ref), "unifi-bridge-2");
+            UniFiBridgeActor.Props("http://localhost:1"), "unifi-bridge-2");
 
-        // drain initial registration
         webhookRegistry.ExpectMsg<RegisterWebhookListener>(TimeSpan.FromSeconds(10));
         webhookRegistry.ExpectMsg<RegisterWebhookListener>(TimeSpan.FromSeconds(10));
 
-        // simulate registry singleton restart
         bridge.Tell(WebhookRegistryStarted.Instance, TestActor);
 
         var reRegistrations = new[]
@@ -79,20 +92,18 @@ public sealed class UniFiBridgeActorWebhookTests : TestKit
         var shardProxy = CreateTestProbe();
         var webhookRegistry = CreateTestProbe();
         var pluginRegistry = CreateTestProbe();
+        RegisterProbes(pluginRegistry, shardProxy, webhookRegistry);
 
         var bridge = Sys.ActorOf(
-            UniFiBridgeActor.Props(shardProxy.Ref, webhookRegistry.Ref, "http://localhost:1", pluginRegistry.Ref), "bridge-ack");
+            UniFiBridgeActor.Props("http://localhost:1"), "bridge-ack");
 
-        // drain initial registrations
         webhookRegistry.ExpectMsg<RegisterWebhookListener>(TimeSpan.FromSeconds(10));
         webhookRegistry.ExpectMsg<RegisterWebhookListener>(TimeSpan.FromSeconds(10));
 
-        // Send a webhook — the bridge will try to fetch payload from http://localhost:1 which will fail
         var payloadId = Guid.NewGuid();
         bridge.Tell(new WebhookReceived("unifi-protect", payloadId,
             new Dictionary<string, string>(), "application/json", 0, DateTimeOffset.UtcNow), webhookRegistry.Ref);
 
-        // Bridge should acknowledge with Failed status since the HTTP fetch will fail
         var handled = webhookRegistry.ExpectMsg<WebhookHandled>(TimeSpan.FromSeconds(30));
         Assert.Equal(payloadId, handled.PayloadId);
         Assert.Equal(WebhookHandleStatus.Failed, handled.Status);

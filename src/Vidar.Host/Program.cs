@@ -81,9 +81,8 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
             "device-twin",
             (system, registry, resolver) =>
             {
-                var pluginRegistryProxy = registry.Get<PluginRegistry>();
                 return entityId =>
-                    DeviceTwinActor.Props(entityId, stateRepo, deviceRepo, historyRepo, pluginRegistryProxy);
+                    DeviceTwinActor.Props(entityId, stateRepo, deviceRepo, historyRepo);
             },
             new DeviceTwinMessageExtractor(100),
             new ShardOptions

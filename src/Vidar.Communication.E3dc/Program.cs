@@ -26,9 +26,7 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
         .WithSingletonProxy<PluginRegistry>("plugin-registry", new ClusterSingletonOptions { Role = "host" })
         .WithActors((system, registry, resolver) =>
         {
-            var shardProxy = registry.Get<DeviceTwinRegion>();
-            var pluginRegistry = registry.Get<PluginRegistry>();
-            system.ActorOf(E3dcBridgeActor.Props(shardProxy, pluginRegistry), "e3dc-bridge");
+            system.ActorOf(E3dcBridgeActor.Props(), "e3dc-bridge");
         });
 });
 

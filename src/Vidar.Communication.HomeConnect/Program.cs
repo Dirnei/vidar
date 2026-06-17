@@ -27,10 +27,7 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
         .WithSingletonProxy<PluginRegistry>("plugin-registry", new ClusterSingletonOptions { Role = "host" })
         .WithActors((system, registry, resolver) =>
         {
-            var shardProxy = registry.Get<DeviceTwinRegion>();
-            var webhookRegistry = registry.Get<WebhookRegistry>();
-            var pluginRegistry = registry.Get<PluginRegistry>();
-            system.ActorOf(HomeConnectBridgeActor.Props(shardProxy, webhookRegistry, pluginRegistry), "homeconnect-bridge");
+            system.ActorOf(HomeConnectBridgeActor.Props(), "homeconnect-bridge");
         });
 });
 

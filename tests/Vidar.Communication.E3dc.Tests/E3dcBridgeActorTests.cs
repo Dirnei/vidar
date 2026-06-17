@@ -1,7 +1,11 @@
 using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Configuration;
+using Akka.Hosting;
+using Akka.TestKit;
 using Akka.TestKit.Xunit2;
 using Vidar.Core.Messages;
+using Vidar.Core.Plugins;
+using Vidar.Core.Sharding;
 
 namespace Vidar.Communication.E3dc.Tests;
 
@@ -25,12 +29,21 @@ public sealed class E3dcBridgeActorTests : TestKit
     {
     }
 
+    private void RegisterProbes(TestProbe pluginRegistry, TestProbe shardProxy)
+    {
+        var registry = ActorRegistry.For(Sys);
+        registry.Register<PluginRegistry>(pluginRegistry);
+        registry.Register<DeviceTwinRegion>(shardProxy);
+    }
+
     [Fact]
     public void ReceivesPluginRegistered_WithoutCrash()
     {
         var pluginRegistry = CreateTestProbe();
         var shardProxy = CreateTestProbe();
-        var bridge = Sys.ActorOf(E3dcBridgeActor.Props(pluginRegistry, shardProxy));
+        RegisterProbes(pluginRegistry, shardProxy);
+
+        var bridge = Sys.ActorOf(E3dcBridgeActor.Props());
 
         bridge.Tell(new PluginRegistered(
             "e3dc", false, new Dictionary<string, string>(), []), TestActor);
@@ -43,7 +56,9 @@ public sealed class E3dcBridgeActorTests : TestKit
     {
         var pluginRegistry = CreateTestProbe();
         var shardProxy = CreateTestProbe();
-        Sys.ActorOf(E3dcBridgeActor.Props(pluginRegistry, shardProxy));
+        RegisterProbes(pluginRegistry, shardProxy);
+
+        Sys.ActorOf(E3dcBridgeActor.Props());
 
         var msg = pluginRegistry.ExpectMsg<RegisterPlugin>(TimeSpan.FromSeconds(3));
         Assert.Equal("e3dc", msg.PluginId);
@@ -54,12 +69,13 @@ public sealed class E3dcBridgeActorTests : TestKit
     {
         var pluginRegistry = CreateTestProbe();
         var shardProxy = CreateTestProbe();
-        var bridge = Sys.ActorOf(E3dcBridgeActor.Props(pluginRegistry, shardProxy));
+        RegisterProbes(pluginRegistry, shardProxy);
+
+        var bridge = Sys.ActorOf(E3dcBridgeActor.Props());
 
         bridge.Tell(new PluginRegistered(
             "e3dc", false, new Dictionary<string, string>(), []), TestActor);
 
-        // Should stay alive, no crash
         bridge.Tell(new PluginRegistered(
             "e3dc", false, new Dictionary<string, string>(), []), TestActor);
         ExpectNoMsg(TimeSpan.FromMilliseconds(300));

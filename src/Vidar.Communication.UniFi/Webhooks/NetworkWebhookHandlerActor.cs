@@ -1,6 +1,9 @@
 using Akka.Actor;
 using Akka.Event;
+using Akka.Hosting;
 using Vidar.Core.Messages;
+using Vidar.Core.Sharding;
+using Vidar.Core.Webhooks;
 
 namespace Vidar.Communication.UniFi.Webhooks;
 
@@ -16,18 +19,15 @@ public sealed class NetworkWebhookHandlerActor : ReceiveActor
 
     private static readonly HttpClient PayloadClient = new() { Timeout = TimeSpan.FromSeconds(15) };
 
-    public static Props Props(
-        IActorRef shardProxy, IActorRef webhookRegistry, string hostUrl,
-        Dictionary<string, Guid> configuredDevices) =>
+    public static Props Props(string hostUrl, Dictionary<string, Guid> configuredDevices) =>
         Akka.Actor.Props.Create(() =>
-            new NetworkWebhookHandlerActor(shardProxy, webhookRegistry, hostUrl, configuredDevices));
+            new NetworkWebhookHandlerActor(hostUrl, configuredDevices));
 
-    public NetworkWebhookHandlerActor(
-        IActorRef shardProxy, IActorRef webhookRegistry, string hostUrl,
-        Dictionary<string, Guid> configuredDevices)
+    public NetworkWebhookHandlerActor(string hostUrl, Dictionary<string, Guid> configuredDevices)
     {
-        _shardProxy = shardProxy;
-        _webhookRegistry = webhookRegistry;
+        var actorRegistry = ActorRegistry.For(Context.System);
+        _shardProxy = actorRegistry.Get<DeviceTwinRegion>();
+        _webhookRegistry = actorRegistry.Get<WebhookRegistry>();
         _hostUrl = hostUrl;
         _configuredDevices = configuredDevices;
 

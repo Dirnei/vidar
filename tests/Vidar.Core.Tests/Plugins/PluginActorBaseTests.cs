@@ -1,10 +1,13 @@
 using Akka.Actor;
 using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Configuration;
+using Akka.Hosting;
+using Akka.TestKit;
 using Akka.TestKit.Xunit2;
 using Vidar.Core.Capabilities;
 using Vidar.Core.Messages;
 using Vidar.Core.Plugins;
+using Vidar.Core.Sharding;
 
 namespace Vidar.Core.Tests.Plugins;
 
@@ -32,8 +35,7 @@ public sealed class PluginActorBaseTests : TestKit
         public List<(Guid, string)> RegisteredDevices { get; } = [];
         public (bool Enabled, Dictionary<string, string> Settings)? LastConfig { get; private set; }
 
-        public TestPlugin(IActorRef pluginRegistry, IActorRef shardProxy)
-            : base(pluginRegistry, shardProxy)
+        public TestPlugin()
         {
             Receive<DoDiscover>(_ =>
             {
@@ -58,11 +60,18 @@ public sealed class PluginActorBaseTests : TestKit
             LastConfig = (enabled, settings);
         }
 
-        public static Props Props(IActorRef pluginRegistry, IActorRef shardProxy) =>
-            Akka.Actor.Props.Create(() => new TestPlugin(pluginRegistry, shardProxy));
+        public static Props Props() =>
+            Akka.Actor.Props.Create(() => new TestPlugin());
 
         public sealed record DoDiscover;
         public sealed record DoReport(Guid DeviceId);
+    }
+
+    private void RegisterProbes(TestProbe pluginRegistry, TestProbe shardProxy)
+    {
+        var registry = ActorRegistry.For(Sys);
+        registry.Register<PluginRegistry>(pluginRegistry);
+        registry.Register<DeviceTwinRegion>(shardProxy);
     }
 
     [Fact]
@@ -70,7 +79,9 @@ public sealed class PluginActorBaseTests : TestKit
     {
         var shardProxy = CreateTestProbe();
         var pluginRegistry = CreateTestProbe();
-        var plugin = Sys.ActorOf(TestPlugin.Props(pluginRegistry, shardProxy));
+        RegisterProbes(pluginRegistry, shardProxy);
+
+        var plugin = Sys.ActorOf(TestPlugin.Props());
 
         var deviceId = Guid.NewGuid();
         plugin.Tell(new TestPlugin.DoReport(deviceId));
@@ -86,7 +97,9 @@ public sealed class PluginActorBaseTests : TestKit
     {
         var shardProxy = CreateTestProbe();
         var pluginRegistry = CreateTestProbe();
-        var plugin = Sys.ActorOf(TestPlugin.Props(pluginRegistry, shardProxy));
+        RegisterProbes(pluginRegistry, shardProxy);
+
+        var plugin = Sys.ActorOf(TestPlugin.Props());
 
         var deviceId = Guid.NewGuid();
         plugin.Tell(new RegisterDeviceForPolling(deviceId, "test-plugin", "native-1", "host", 0, []));
@@ -103,12 +116,13 @@ public sealed class PluginActorBaseTests : TestKit
     {
         var shardProxy = CreateTestProbe();
         var pluginRegistry = CreateTestProbe();
-        var plugin = Sys.ActorOf(TestPlugin.Props(pluginRegistry, shardProxy));
+        RegisterProbes(pluginRegistry, shardProxy);
+
+        var plugin = Sys.ActorOf(TestPlugin.Props());
 
         var settings = new Dictionary<string, string> { ["host"] = "192.168.1.1" };
         plugin.Tell(new IntegrationConfigChanged("test-plugin", true, settings));
 
-        // Different plugin ID should be ignored
         plugin.Tell(new IntegrationConfigChanged("other-plugin", false, new()));
     }
 }

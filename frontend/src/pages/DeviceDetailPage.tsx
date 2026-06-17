@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import type { Device, Room, StateHistoryEntry, CommandHistoryEntry, CapabilityDescriptor } from '../types';
+import type { Device, Room, StateHistoryEntry, CommandHistoryEntry, CapabilityDescriptor, UnitType } from '../types';
 import { getDevice, getRooms, sendCommand, updateDeviceSettings, deleteDevice, getDeviceStateHistory, getDeviceCommandHistory } from '../api/client';
 import { subscribeDeviceState } from '../api/sse';
 import { ToggleSwitch } from '../components/ToggleSwitch';
@@ -587,7 +587,7 @@ function capAccentColor(cap: string): string {
     case 'solarProduction': return 'var(--accent-yellow, #f59e0b)';
     case 'gridPower': return 'var(--accent-blue)';
     case 'consumption': return 'var(--accent-red)';
-    case 'battery': return 'var(--accent-green)';
+    case 'batteryCharge': return 'var(--accent-green)';
     default: return 'var(--accent-primary)';
   }
 }
@@ -619,6 +619,33 @@ const coverBtnStyle: React.CSSProperties = {
   color: 'var(--text-primary)', fontFamily: 'var(--font-body)',
   fontSize: 14, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
 };
+
+function formatWithUnit(val: unknown, unit: UnitType): string {
+  if (typeof val === 'number') {
+    switch (unit) {
+      case 'Watts': return `${Math.round(val)} W`;
+      case 'Kilowatts': return `${val.toFixed(2)} kW`;
+      case 'WattHours': return `${Math.round(val)} Wh`;
+      case 'KilowattHours': return `${val.toFixed(2)} kWh`;
+      case 'Celsius': return `${val.toFixed(1)} °C`;
+      case 'Fahrenheit': return `${val.toFixed(1)} °F`;
+      case 'Percent': return `${Math.round(val)}%`;
+      case 'Lux': return `${Math.round(val)} lx`;
+      case 'Number': return `${Math.round(val * 100) / 100}`;
+      default: return String(val);
+    }
+  }
+  if (typeof val === 'boolean') {
+    switch (unit) {
+      case 'OnOff': return val ? 'On' : 'Off';
+      case 'OpenClosed': return val ? 'Open' : 'Closed';
+      case 'Detected': return val ? 'Detected' : 'Clear';
+      case 'YesNo': return val ? 'Yes' : 'No';
+      default: return val ? 'On' : 'Off';
+    }
+  }
+  return String(val);
+}
 
 function renderCapabilityCard(
   cap: CapabilityDescriptor,
@@ -879,7 +906,7 @@ function renderCapabilityCard(
     }
     case 'gridPower': {
       const watts = typeof state['gridPower'] === 'number' ? (state['gridPower'] as number) : null;
-      const exporting = watts != null && watts > 0;
+      const exporting = watts != null && watts < 0;
       return (
         <div key={cap.key} style={capCardStyle}>
           <Indicator color="var(--accent-blue)" />
@@ -889,7 +916,7 @@ function renderCapabilityCard(
           </div>
           {watts != null && (
             <div style={{ fontSize: 12, color: exporting ? 'var(--accent-green)' : 'var(--accent-red)', marginTop: 2, fontWeight: 500 }}>
-              {exporting ? 'Exporting' : watts < 0 ? 'Importing' : 'Balanced'}
+              {exporting ? 'Exporting' : watts > 0 ? 'Importing' : 'Balanced'}
             </div>
           )}
         </div>
@@ -912,7 +939,7 @@ function renderCapabilityCard(
         </div>
       );
     }
-    case 'battery': {
+    case 'batteryCharge': {
       const raw = state[cap.key];
       const level = typeof raw === 'number' ? raw : null;
       const batteryWatts = typeof state['batteryPower'] === 'number'
@@ -1037,7 +1064,7 @@ function renderCapabilityCard(
         <div key={cap.key} style={capCardStyle}>
           <Indicator color={accent} />
           <div style={capLabelStyle}>{cap.label}</div>
-          <div style={capValueStyle()}>{val != null ? String(val) : '—'}</div>
+          <div style={capValueStyle()}>{val != null ? formatWithUnit(val, cap.unit) : '—'}</div>
         </div>
       );
     }

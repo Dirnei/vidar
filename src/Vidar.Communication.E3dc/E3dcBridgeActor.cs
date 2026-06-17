@@ -29,11 +29,10 @@ public sealed class E3dcBridgeActor : PluginActorBase
 
     protected override string PluginId => "e3dc";
 
-    public static Props Props(IActorRef pluginRegistry, IActorRef shardProxy) =>
-        Akka.Actor.Props.Create(() => new E3dcBridgeActor(pluginRegistry, shardProxy));
+    public static Props Props() =>
+        Akka.Actor.Props.Create(() => new E3dcBridgeActor());
 
-    public E3dcBridgeActor(IActorRef pluginRegistry, IActorRef shardProxy)
-        : base(pluginRegistry, shardProxy)
+    public E3dcBridgeActor()
     {
         Receive<SnapshotReceived>(OnSnapshot);
         Receive<StatusTick>(_ => OnStatusTick());

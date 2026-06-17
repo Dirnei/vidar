@@ -2,8 +2,10 @@ using Akka.Actor;
 using Akka.Cluster;
 using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Event;
+using Akka.Hosting;
 using Vidar.Core.Capabilities;
 using Vidar.Core.Messages;
+using Vidar.Core.Sharding;
 
 namespace Vidar.Core.Plugins;
 
@@ -21,10 +23,11 @@ public abstract class PluginActorBase : ReceiveActor, IWithTimers
 
     protected abstract string PluginId { get; }
 
-    protected PluginActorBase(IActorRef pluginRegistry, IActorRef shardProxy)
+    protected PluginActorBase()
     {
-        PluginRegistry = pluginRegistry;
-        ShardProxy = shardProxy;
+        var actorRegistry = ActorRegistry.For(Context.System);
+        PluginRegistry = actorRegistry.Get<PluginRegistry>();
+        ShardProxy = actorRegistry.Get<DeviceTwinRegion>();
         Mediator = DistributedPubSub.Get(Context.System).Mediator;
 
         Receive<ClusterEvent.CurrentClusterState>(_ => { });

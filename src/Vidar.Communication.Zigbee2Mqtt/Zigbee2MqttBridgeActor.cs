@@ -39,11 +39,10 @@ public sealed class Zigbee2MqttBridgeActor : PluginActorBase
     private sealed class ConnectToBroker { public static readonly ConnectToBroker Instance = new(); }
     private sealed class CheckConnection { public static readonly CheckConnection Instance = new(); }
     private sealed class RepublishDiscoveries { public static readonly RepublishDiscoveries Instance = new(); }
-    public static Props Props(Zigbee2MqttConfig config, IActorRef shardProxy, IActorRef pluginRegistry) =>
-        Akka.Actor.Props.Create(() => new Zigbee2MqttBridgeActor(config, pluginRegistry, shardProxy));
+    public static Props Props(Zigbee2MqttConfig config) =>
+        Akka.Actor.Props.Create(() => new Zigbee2MqttBridgeActor(config));
 
-    public Zigbee2MqttBridgeActor(Zigbee2MqttConfig config, IActorRef pluginRegistry, IActorRef shardProxy)
-        : base(pluginRegistry, shardProxy)
+    public Zigbee2MqttBridgeActor(Zigbee2MqttConfig config)
     {
         _materializer = Context.Materializer();
         _defaultConfig = config;
