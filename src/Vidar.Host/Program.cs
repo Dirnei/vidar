@@ -9,6 +9,7 @@ using Vidar.Core.Sharding;
 using Vidar.Core.Plugins;
 using Vidar.Core.Webhooks;
 using Vidar.Host.Actors;
+using Vidar.Host.Dyson;
 using Vidar.Host.Persistence;
 using Vidar.Host.Webhooks;
 
@@ -37,6 +38,8 @@ builder.Services.AddSingleton<IWebhookPayloadRepository>(new MongoWebhookPayload
 builder.Services.AddSingleton<IWebhookEventRepository>(new MongoWebhookEventRepository(database));
 builder.Services.AddSingleton<IThresholdRuleRepository>(new MongoThresholdRuleRepository(database));
 builder.Services.AddSingleton<IThresholdEventLogRepository>(new MongoThresholdEventLogRepository(database));
+builder.Services.AddHttpClient<DysonCloudClient>(c =>
+    c.BaseAddress = new Uri("https://appapi.cp.dyson.com"));
 builder.Services.AddHttpClient("shelly", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(5);

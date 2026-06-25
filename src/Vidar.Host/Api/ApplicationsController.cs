@@ -26,6 +26,7 @@ public sealed class ApplicationsController : ControllerBase
         ["unifi"] = ("UniFi Network", "provider"),
         ["homeconnect"] = ("Home Connect", "provider"),
         ["e3dc"] = ("E3/DC S10", "provider"),
+        ["dyson"] = ("Dyson", "provider"),
     };
 
     public ApplicationsController(
