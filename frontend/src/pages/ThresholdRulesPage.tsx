@@ -166,6 +166,10 @@ const btnGhost: React.CSSProperties = {
 
 // ---- RuleForm ----
 
+const LEVEL_OPERATORS: ThresholdOperator[] = [
+  'GreaterThan', 'LessThan', 'GreaterThanOrEqual', 'LessThanOrEqual',
+];
+
 interface RuleFormData {
   name: string;
   deviceId: string;
@@ -175,6 +179,7 @@ interface RuleFormData {
   stringValue: string;
   eventName: string;
   enabled: boolean;
+  resetValue: string;
 }
 
 const emptyForm: RuleFormData = {
@@ -186,6 +191,7 @@ const emptyForm: RuleFormData = {
   stringValue: '',
   eventName: '',
   enabled: true,
+  resetValue: '',
 };
 
 function RuleForm({
@@ -313,6 +319,21 @@ function RuleForm({
             />
           </div>
         )}
+        {needsNumericValue && LEVEL_OPERATORS.includes(form.operator) && (
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, display: 'block', marginBottom: 4 }}>
+              Reset Value <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(optional)</span>
+            </label>
+            <input
+              type="number"
+              step="any"
+              style={inputStyle}
+              value={form.resetValue}
+              onChange={e => set('resetValue', e.target.value)}
+              placeholder="Hysteresis reset"
+            />
+          </div>
+        )}
         {needsStringValue && (
           <div>
             <label style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, display: 'block', marginBottom: 4 }}>
@@ -326,6 +347,10 @@ function RuleForm({
             />
           </div>
         )}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
+        Rules fire once when the condition becomes true and re-arm when it becomes false.
+        {LEVEL_OPERATORS.includes(form.operator) && ' Set a reset value for hysteresis (e.g. trigger at >30, reset at <28).'}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 18 }}>
         <button type="button" style={btnPrimary} onClick={() => onSubmit(form)}>
@@ -390,6 +415,11 @@ function RuleRow({
         }}>
           {operatorSymbol(rule.operator)} {rule.value}
         </span>
+        {rule.resetValue != null && (
+          <span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 4 }}>
+            ↩{rule.resetValue}
+          </span>
+        )}
       </div>
       <div>
         <code style={{
@@ -647,6 +677,7 @@ export function ThresholdRulesPage() {
         stringValue: form.stringValue || null,
         eventName: form.eventName,
         enabled: form.enabled,
+        resetValue: form.resetValue ? parseFloat(form.resetValue) : null,
       });
       setRules(prev => [...prev, created]);
       setShowCreate(false);
@@ -658,6 +689,7 @@ export function ThresholdRulesPage() {
   async function handleUpdate(form: RuleFormData) {
     if (!editingRule) return;
     try {
+      const resetVal = form.resetValue ? parseFloat(form.resetValue) : null;
       await updateThresholdRule(editingRule.id, {
         name: form.name,
         deviceId: form.deviceId,
@@ -667,10 +699,11 @@ export function ThresholdRulesPage() {
         stringValue: form.stringValue || null,
         eventName: form.eventName,
         enabled: form.enabled,
+        resetValue: resetVal,
       });
       setRules(prev =>
         prev.map(r => r.id === editingRule.id
-          ? { ...r, name: form.name, deviceId: form.deviceId, capabilityKey: form.capabilityKey, operator: form.operator, value: parseFloat(form.value) || 0, stringValue: form.stringValue || null, eventName: form.eventName, enabled: form.enabled }
+          ? { ...r, name: form.name, deviceId: form.deviceId, capabilityKey: form.capabilityKey, operator: form.operator, value: parseFloat(form.value) || 0, stringValue: form.stringValue || null, eventName: form.eventName, enabled: form.enabled, resetValue: resetVal }
           : r
         )
       );
@@ -691,6 +724,7 @@ export function ThresholdRulesPage() {
         stringValue: rule.stringValue,
         eventName: rule.eventName,
         enabled: !rule.enabled,
+        resetValue: rule.resetValue,
       });
       setRules(prev => prev.map(r => r.id === rule.id ? { ...r, enabled: !r.enabled } : r));
     } catch (e) {
@@ -784,6 +818,7 @@ export function ThresholdRulesPage() {
                 stringValue: editingRule.stringValue ?? '',
                 eventName: editingRule.eventName,
                 enabled: editingRule.enabled,
+                resetValue: editingRule.resetValue != null ? String(editingRule.resetValue) : '',
               }}
               onSubmit={handleUpdate}
               onCancel={() => setEditingRule(null)}

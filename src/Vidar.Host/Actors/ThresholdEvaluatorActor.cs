@@ -14,6 +14,7 @@ public sealed class ThresholdEvaluatorActor : ReceiveActor
     private readonly IThresholdEventLogRepository _eventLogRepo;
     private readonly List<ThresholdRule> _rules = [];
     private readonly Dictionary<(Guid DeviceId, string CapabilityKey), object> _previousValues = new();
+    private readonly HashSet<Guid> _triggeredRules = [];
 
     public static Props Props(IThresholdRuleRepository ruleRepo, IThresholdEventLogRepository eventLogRepo) =>
         Akka.Actor.Props.Create(() => new ThresholdEvaluatorActor(ruleRepo, eventLogRepo));
@@ -34,6 +35,7 @@ public sealed class ThresholdEvaluatorActor : ReceiveActor
         Receive<UpdateThresholdRule>(msg =>
         {
             _rules.RemoveAll(r => r.Id == msg.Rule.Id);
+            _triggeredRules.Remove(msg.Rule.Id);
             _rules.Add(msg.Rule);
             _ = ruleRepo.UpsertAsync(msg.Rule);
         });
@@ -41,6 +43,7 @@ public sealed class ThresholdEvaluatorActor : ReceiveActor
         Receive<RemoveThresholdRule>(msg =>
         {
             _rules.RemoveAll(r => r.Id == msg.RuleId);
+            _triggeredRules.Remove(msg.RuleId);
             _ = ruleRepo.DeleteAsync(msg.RuleId);
         });
 
@@ -82,41 +85,79 @@ public sealed class ThresholdEvaluatorActor : ReceiveActor
             _previousValues.TryGetValue(key, out var previousValue);
             var hasPrevious = _previousValues.ContainsKey(key);
 
-            if (!Evaluate(rule, msg.Value, previousValue, hasPrevious, out var currentNumeric))
+            var conditionMet = Evaluate(rule, msg.Value, previousValue, hasPrevious, out var currentNumeric);
+            var isTriggered = _triggeredRules.Contains(rule.Id);
+
+            if (IsEdgeTriggered(rule.Operator))
             {
-                _previousValues[key] = msg.Value;
-                continue;
+                if (conditionMet && !isTriggered)
+                {
+                    _triggeredRules.Add(rule.Id);
+                    FireEvent(rule, msg, currentNumeric);
+                }
+                else if (isTriggered && ShouldReset(rule, currentNumeric, conditionMet))
+                {
+                    _triggeredRules.Remove(rule.Id);
+                }
             }
-
-            var evt = new ThresholdEvent(
-                rule.Id, rule.Name, rule.EventName,
-                msg.DeviceId, msg.CapabilityKey,
-                currentNumeric, rule.Value, rule.Operator,
-                DateTimeOffset.UtcNow);
-
-            _mediator.Tell(new Publish("threshold-events", evt));
-
-            var logEntry = new ThresholdEventLog
+            else if (conditionMet)
             {
-                Id = Guid.NewGuid(),
-                RuleId = rule.Id,
-                RuleName = rule.Name,
-                EventName = rule.EventName,
-                DeviceId = msg.DeviceId,
-                CapabilityKey = msg.CapabilityKey,
-                CurrentValue = currentNumeric,
-                ThresholdValue = rule.Value,
-                StringValue = rule.StringValue,
-                Operator = rule.Operator,
-                FiredAt = evt.FiredAt
-            };
-            _ = _eventLogRepo.InsertAsync(logEntry);
-
-            _log.Info("Threshold event fired: {EventName} (rule={RuleName}, value={Value}, threshold={Threshold})",
-                evt.EventName, evt.RuleName, currentNumeric, rule.Value);
+                FireEvent(rule, msg, currentNumeric);
+            }
 
             _previousValues[key] = msg.Value;
         }
+    }
+
+    private static bool IsEdgeTriggered(ThresholdOperator op) => op is
+        ThresholdOperator.GreaterThan or
+        ThresholdOperator.LessThan or
+        ThresholdOperator.GreaterThanOrEqual or
+        ThresholdOperator.LessThanOrEqual or
+        ThresholdOperator.Equals or
+        ThresholdOperator.NotEquals;
+
+    private static bool ShouldReset(ThresholdRule rule, double currentNumeric, bool conditionStillMet)
+    {
+        if (rule.ResetValue is not { } resetValue)
+            return !conditionStillMet;
+
+        return rule.Operator switch
+        {
+            ThresholdOperator.GreaterThan or ThresholdOperator.GreaterThanOrEqual => currentNumeric <= resetValue,
+            ThresholdOperator.LessThan or ThresholdOperator.LessThanOrEqual => currentNumeric >= resetValue,
+            _ => !conditionStillMet
+        };
+    }
+
+    private void FireEvent(ThresholdRule rule, DeviceStateChanged msg, double currentNumeric)
+    {
+        var evt = new ThresholdEvent(
+            rule.Id, rule.Name, rule.EventName,
+            msg.DeviceId, msg.CapabilityKey,
+            currentNumeric, rule.Value, rule.Operator,
+            DateTimeOffset.UtcNow);
+
+        _mediator.Tell(new Publish("threshold-events", evt));
+
+        var logEntry = new ThresholdEventLog
+        {
+            Id = Guid.NewGuid(),
+            RuleId = rule.Id,
+            RuleName = rule.Name,
+            EventName = rule.EventName,
+            DeviceId = msg.DeviceId,
+            CapabilityKey = msg.CapabilityKey,
+            CurrentValue = currentNumeric,
+            ThresholdValue = rule.Value,
+            StringValue = rule.StringValue,
+            Operator = rule.Operator,
+            FiredAt = evt.FiredAt
+        };
+        _ = _eventLogRepo.InsertAsync(logEntry);
+
+        _log.Info("Threshold event fired: {EventName} (rule={RuleName}, value={Value}, threshold={Threshold})",
+            evt.EventName, evt.RuleName, currentNumeric, rule.Value);
     }
 
     private static bool Evaluate(ThresholdRule rule, object currentValue, object? previousValue, bool hasPrevious, out double currentNumeric)

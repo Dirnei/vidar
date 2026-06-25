@@ -149,6 +149,7 @@ export interface ThresholdRule {
   stringValue: string | null;
   eventName: string;
   enabled: boolean;
+  resetValue: number | null;
 }
 
 export type ThresholdOperator =

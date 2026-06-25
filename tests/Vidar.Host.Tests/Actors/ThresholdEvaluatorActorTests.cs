@@ -39,7 +39,7 @@ public sealed class ThresholdEvaluatorActorTests : TestKit
     }
 
     [Fact]
-    public void GreaterThan_FiresWhenValueExceedsThreshold()
+    public void GreaterThan_FiresOnceAndRearms()
     {
         var rule = new ThresholdRule
         {
@@ -52,15 +52,26 @@ public sealed class ThresholdEvaluatorActorTests : TestKit
         var mediator = DistributedPubSub.Get(Sys).Mediator;
         mediator.Tell(new Subscribe("threshold-events", TestActor));
         ExpectMsg<SubscribeAck>();
-
         Thread.Sleep(500);
 
+        // First value above threshold — fires
         actor.Tell(new DeviceStateChanged(_deviceId, "power", 150.0, DateTime.UtcNow));
-
         var evt = ExpectMsg<ThresholdEvent>(TimeSpan.FromSeconds(3));
         Assert.Equal("high_power", evt.EventName);
         Assert.Equal(150.0, evt.CurrentValue);
-        Assert.Equal(100.0, evt.ThresholdValue);
+
+        // Still above — does NOT fire again (edge-triggered)
+        actor.Tell(new DeviceStateChanged(_deviceId, "power", 200.0, DateTime.UtcNow));
+        ExpectNoMsg(TimeSpan.FromMilliseconds(500));
+
+        // Drops below — resets (no event)
+        actor.Tell(new DeviceStateChanged(_deviceId, "power", 80.0, DateTime.UtcNow));
+        ExpectNoMsg(TimeSpan.FromMilliseconds(500));
+
+        // Goes above again — fires again
+        actor.Tell(new DeviceStateChanged(_deviceId, "power", 120.0, DateTime.UtcNow));
+        var evt2 = ExpectMsg<ThresholdEvent>(TimeSpan.FromSeconds(3));
+        Assert.Equal("high_power", evt2.EventName);
     }
 
     [Fact]
@@ -78,6 +89,40 @@ public sealed class ThresholdEvaluatorActorTests : TestKit
         actor.Tell(new DeviceStateChanged(_deviceId, "power", 50.0, DateTime.UtcNow));
 
         ExpectNoMsg(TimeSpan.FromMilliseconds(500));
+    }
+
+    [Fact]
+    public void GreaterThan_HysteresisResetValue()
+    {
+        var rule = new ThresholdRule
+        {
+            Id = Guid.NewGuid(), Name = "Temp High", DeviceId = _deviceId,
+            CapabilityKey = "temperature", Operator = ThresholdOperator.GreaterThan,
+            Value = 30, ResetValue = 28, EventName = "temp_high"
+        };
+        var actor = CreateActor([rule]);
+
+        var mediator = DistributedPubSub.Get(Sys).Mediator;
+        mediator.Tell(new Subscribe("threshold-events", TestActor));
+        ExpectMsg<SubscribeAck>();
+        Thread.Sleep(500);
+
+        // Above threshold — fires
+        actor.Tell(new DeviceStateChanged(_deviceId, "temperature", 32.0, DateTime.UtcNow));
+        ExpectMsg<ThresholdEvent>(TimeSpan.FromSeconds(3));
+
+        // Drops below threshold but above reset — stays triggered, no fire
+        actor.Tell(new DeviceStateChanged(_deviceId, "temperature", 29.0, DateTime.UtcNow));
+        ExpectNoMsg(TimeSpan.FromMilliseconds(500));
+
+        // Drops below reset value — resets
+        actor.Tell(new DeviceStateChanged(_deviceId, "temperature", 27.0, DateTime.UtcNow));
+        ExpectNoMsg(TimeSpan.FromMilliseconds(500));
+
+        // Above threshold again — fires again
+        actor.Tell(new DeviceStateChanged(_deviceId, "temperature", 31.0, DateTime.UtcNow));
+        var evt = ExpectMsg<ThresholdEvent>(TimeSpan.FromSeconds(3));
+        Assert.Equal("temp_high", evt.EventName);
     }
 
     [Fact]
@@ -336,5 +381,109 @@ public sealed class ThresholdEvaluatorActorTests : TestKit
         // Matching value — should NOT fire
         actor.Tell(new DeviceStateChanged(_deviceId, "status", "idle", DateTime.UtcNow));
         ExpectNoMsg(TimeSpan.FromMilliseconds(500));
+    }
+
+    [Fact]
+    public void LessThan_HysteresisResetValue()
+    {
+        var rule = new ThresholdRule
+        {
+            Id = Guid.NewGuid(), Name = "SoC Low", DeviceId = _deviceId,
+            CapabilityKey = "battery", Operator = ThresholdOperator.LessThan,
+            Value = 20, ResetValue = 25, EventName = "soc_low"
+        };
+        var actor = CreateActor([rule]);
+
+        var mediator = DistributedPubSub.Get(Sys).Mediator;
+        mediator.Tell(new Subscribe("threshold-events", TestActor));
+        ExpectMsg<SubscribeAck>();
+        Thread.Sleep(500);
+
+        // Below threshold — fires
+        actor.Tell(new DeviceStateChanged(_deviceId, "battery", 15.0, DateTime.UtcNow));
+        ExpectMsg<ThresholdEvent>(TimeSpan.FromSeconds(3));
+
+        // Above threshold but below reset — stays triggered
+        actor.Tell(new DeviceStateChanged(_deviceId, "battery", 22.0, DateTime.UtcNow));
+        ExpectNoMsg(TimeSpan.FromMilliseconds(500));
+
+        // Above reset value — resets
+        actor.Tell(new DeviceStateChanged(_deviceId, "battery", 26.0, DateTime.UtcNow));
+        ExpectNoMsg(TimeSpan.FromMilliseconds(500));
+
+        // Below threshold again — fires again
+        actor.Tell(new DeviceStateChanged(_deviceId, "battery", 18.0, DateTime.UtcNow));
+        var evt = ExpectMsg<ThresholdEvent>(TimeSpan.FromSeconds(3));
+        Assert.Equal("soc_low", evt.EventName);
+    }
+
+    [Fact]
+    public void Equals_EdgeTriggered_DoesNotFireTwice()
+    {
+        var rule = new ThresholdRule
+        {
+            Id = Guid.NewGuid(), Name = "Action Match", DeviceId = _deviceId,
+            CapabilityKey = "action", Operator = ThresholdOperator.Equals,
+            StringValue = "single", EventName = "button_single"
+        };
+        var actor = CreateActor([rule]);
+
+        var mediator = DistributedPubSub.Get(Sys).Mediator;
+        mediator.Tell(new Subscribe("threshold-events", TestActor));
+        ExpectMsg<SubscribeAck>();
+        Thread.Sleep(500);
+
+        // First match — fires
+        actor.Tell(new DeviceStateChanged(_deviceId, "action", "single", DateTime.UtcNow));
+        ExpectMsg<ThresholdEvent>(TimeSpan.FromSeconds(3));
+
+        // Same value again — edge-triggered, does NOT fire
+        actor.Tell(new DeviceStateChanged(_deviceId, "action", "single", DateTime.UtcNow));
+        ExpectNoMsg(TimeSpan.FromMilliseconds(500));
+
+        // Different value — resets
+        actor.Tell(new DeviceStateChanged(_deviceId, "action", "double", DateTime.UtcNow));
+        ExpectNoMsg(TimeSpan.FromMilliseconds(500));
+
+        // Matches again — fires again
+        actor.Tell(new DeviceStateChanged(_deviceId, "action", "single", DateTime.UtcNow));
+        var evt = ExpectMsg<ThresholdEvent>(TimeSpan.FromSeconds(3));
+        Assert.Equal("button_single", evt.EventName);
+    }
+
+    [Fact]
+    public void UpdateRule_ResetsTriggeredState()
+    {
+        var ruleId = Guid.NewGuid();
+        var rule = new ThresholdRule
+        {
+            Id = ruleId, Name = "High Power", DeviceId = _deviceId,
+            CapabilityKey = "power", Operator = ThresholdOperator.GreaterThan,
+            Value = 100, EventName = "high_power"
+        };
+        var actor = CreateActor([rule]);
+
+        var mediator = DistributedPubSub.Get(Sys).Mediator;
+        mediator.Tell(new Subscribe("threshold-events", TestActor));
+        ExpectMsg<SubscribeAck>();
+        Thread.Sleep(500);
+
+        // Trigger the rule
+        actor.Tell(new DeviceStateChanged(_deviceId, "power", 150.0, DateTime.UtcNow));
+        ExpectMsg<ThresholdEvent>(TimeSpan.FromSeconds(3));
+
+        // Update the rule — should reset triggered state
+        var updatedRule = new ThresholdRule
+        {
+            Id = ruleId, Name = "High Power Updated", DeviceId = _deviceId,
+            CapabilityKey = "power", Operator = ThresholdOperator.GreaterThan,
+            Value = 100, EventName = "high_power"
+        };
+        actor.Tell(new UpdateThresholdRule(updatedRule));
+        Thread.Sleep(200);
+
+        // Same value — should fire again since triggered state was reset
+        actor.Tell(new DeviceStateChanged(_deviceId, "power", 150.0, DateTime.UtcNow));
+        ExpectMsg<ThresholdEvent>(TimeSpan.FromSeconds(3));
     }
 }

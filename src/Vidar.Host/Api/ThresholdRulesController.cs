@@ -40,7 +40,8 @@ public sealed class ThresholdRulesController : ControllerBase
             Value = request.Value,
             StringValue = request.StringValue,
             EventName = request.EventName,
-            Enabled = request.Enabled
+            Enabled = request.Enabled,
+            ResetValue = request.ResetValue
         };
 
         var evaluator = await _evaluatorProvider.GetAsync();
@@ -62,7 +63,8 @@ public sealed class ThresholdRulesController : ControllerBase
             Value = request.Value,
             StringValue = request.StringValue,
             EventName = request.EventName,
-            Enabled = request.Enabled
+            Enabled = request.Enabled,
+            ResetValue = request.ResetValue
         };
 
         var evaluator = await _evaluatorProvider.GetAsync();
@@ -90,4 +92,5 @@ public sealed class CreateThresholdRuleRequest
     public string? StringValue { get; set; }
     public required string EventName { get; set; }
     public bool Enabled { get; set; } = true;
+    public double? ResetValue { get; set; }
 }

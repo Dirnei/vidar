@@ -29,4 +29,5 @@ public sealed class ThresholdRule
     public string? StringValue { get; init; }
     public required string EventName { get; set; }
     public bool Enabled { get; set; } = true;
+    public double? ResetValue { get; init; }
 }
