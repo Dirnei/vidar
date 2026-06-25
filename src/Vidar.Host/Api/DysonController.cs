@@ -29,21 +29,37 @@ public sealed class DysonController : ControllerBase
     [HttpPost("auth/begin")]
     public async Task<IActionResult> Begin([FromBody] BeginRequest req, CancellationToken ct)
     {
-        var challengeId = await _cloud.BeginLoginAsync(req.Region, req.Email, ct);
-        return Ok(new { challengeId });
+        try
+        {
+            var challengeId = await _cloud.BeginLoginAsync(req.Region, req.Email, ct);
+            return Ok(new { challengeId });
+        }
+        catch (HttpRequestException ex)
+        {
+            return Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
+        }
     }
 
     [HttpPost("auth/verify")]
     public async Task<IActionResult> Verify([FromBody] VerifyRequest req, CancellationToken ct)
     {
-        var token = await _cloud.VerifyLoginAsync(req.Region, req.Email, req.Password, req.ChallengeId, req.Otp, ct);
-        var devices = await _cloud.GetDevicesAsync(token, ct);
-        return Ok(devices);
+        try
+        {
+            var token = await _cloud.VerifyLoginAsync(req.Region, req.Email, req.Password, req.ChallengeId, req.Otp, ct);
+            var devices = await _cloud.GetDevicesAsync(token, ct);
+            return Ok(devices);
+        }
+        catch (HttpRequestException ex)
+        {
+            return Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
+        }
     }
 
     [HttpPost("devices")]
     public async Task<IActionResult> SaveDevices([FromBody] SaveDysonDevicesRequest req)
     {
+        if (req.Devices is not { Count: > 0 }) return BadRequest("At least one device is required.");
+
         var existing = await _repo.GetByIdAsync("dyson");
         var config = existing ?? new ApplicationConfig
         {

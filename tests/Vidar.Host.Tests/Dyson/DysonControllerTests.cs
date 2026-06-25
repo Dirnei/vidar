@@ -44,6 +44,8 @@ public class DysonControllerTests : TestKit
         Assert.Equal("dyson", repo.Saved.Id);
         var devices = JsonDocument.Parse(repo.Saved.Settings["devices"]).RootElement;
         Assert.Equal("X6p-EU-SKA0802A", devices[0].GetProperty("serial").GetString());
+        Assert.Equal("438", devices[0].GetProperty("productType").GetString());
+        Assert.Equal("pw123", devices[0].GetProperty("mqttPassword").GetString());
         Assert.Equal("192.168.5.157", devices[0].GetProperty("ip").GetString());
     }
 }
