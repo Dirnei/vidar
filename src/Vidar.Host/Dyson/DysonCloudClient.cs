@@ -20,14 +20,19 @@ public sealed partial class DysonCloudClient
     public async Task<string> BeginLoginAsync(string region, string email, CancellationToken ct)
     {
         // Optional pre-step (ignore failures): user status
-        await _http.PostAsJsonAsync(
-            $"/v3/userregistration/email/userstatus?country={region}", new { email }, ct);
+        try
+        {
+            using var _ = await _http.PostAsJsonAsync(
+                $"/v3/userregistration/email/userstatus?country={region}", new { email }, ct);
+        }
+        catch { /* optional pre-step — ignore */ }
 
         var resp = await _http.PostAsJsonAsync(
             $"/v3/userregistration/email/auth?country={region}&culture=en-US", new { email }, ct);
         resp.EnsureSuccessStatusCode();
-        var body = await resp.Content.ReadFromJsonAsync<AuthChallenge>(ct);
-        return body!.ChallengeId;
+        var body = await resp.Content.ReadFromJsonAsync<AuthChallenge>(ct)
+            ?? throw new InvalidOperationException("MyDyson auth response was empty");
+        return body.ChallengeId;
     }
 
     public async Task<string> VerifyLoginAsync(string region, string email, string password,
@@ -36,8 +41,9 @@ public sealed partial class DysonCloudClient
         var resp = await _http.PostAsJsonAsync("/v3/userregistration/email/verify",
             new { email, password, challengeId, otpCode = otp }, ct);
         resp.EnsureSuccessStatusCode();
-        var body = await resp.Content.ReadFromJsonAsync<AuthToken>(ct);
-        return body!.Token;
+        var body = await resp.Content.ReadFromJsonAsync<AuthToken>(ct)
+            ?? throw new InvalidOperationException("MyDyson auth response was empty");
+        return body.Token;
     }
 
     public async Task<IReadOnlyList<DysonDevice>> GetDevicesAsync(string token, CancellationToken ct)

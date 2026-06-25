@@ -44,7 +44,22 @@ public class DysonCloudClientHttpTests
         var challenge = await client.BeginLoginAsync("DE", "me@example.com", default);
 
         Assert.Equal("abc-123", challenge);
-        Assert.Contains(handler.Requests, r => r.RequestUri!.AbsolutePath == "/v3/userregistration/email/auth");
+        Assert.Contains(handler.Requests, r =>
+            r.RequestUri!.AbsolutePath == "/v3/userregistration/email/auth" &&
+            r.RequestUri.Query.Contains("country=DE") &&
+            r.RequestUri.Query.Contains("culture=en-US"));
+    }
+
+    [Fact]
+    public async Task VerifyLogin_PostsCredentialsAndReturnsToken()
+    {
+        var handler = new StubHandler(_ => (HttpStatusCode.OK, "{\"token\":\"tok-xyz\",\"tokenType\":\"Bearer\"}"));
+        var client = new DysonCloudClient(new HttpClient(handler) { BaseAddress = new Uri("https://appapi.cp.dyson.com") });
+
+        var token = await client.VerifyLoginAsync("DE", "me@example.com", "pw", "chal-1", "123456", default);
+
+        Assert.Equal("tok-xyz", token);
+        Assert.Contains(handler.Requests, r => r.RequestUri!.AbsolutePath == "/v3/userregistration/email/verify");
     }
 
     [Fact]
@@ -61,5 +76,8 @@ public class DysonCloudClientHttpTests
         Assert.Equal("X6p-EU-SKA0802A", devices[0].Serial);
         Assert.Equal("438", devices[0].ProductType);
         Assert.Equal("pw123", devices[0].MqttPassword);
+        Assert.Contains(handler.Requests, r =>
+            r.Headers.Authorization?.Scheme == "Bearer" &&
+            r.Headers.Authorization?.Parameter == "token");
     }
 }
