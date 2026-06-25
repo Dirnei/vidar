@@ -37,8 +37,21 @@ public class DysonStateMapperTests
 
         Assert.Equal(12d, updates["pm25"]);
         Assert.Equal(8d, updates["pm10"]);
-        Assert.Equal(24.8d, (double)updates["temperature"], 1); // 2980/10 K = 298.0K = 24.85C
+        Assert.Equal(24.9d, (double)updates["temperature"], 1); // 2980/10 K = 298.0K = 24.85C -> round half away from zero
         Assert.Equal(45d, updates["humidity"]);
+    }
+
+    [Theory]
+    [InlineData("2980", 24.9)] // 24.85 -> half away from zero
+    [InlineData("3000", 26.9)] // 26.85 -> half away from zero
+    [InlineData("2965", 23.4)] // 23.35 -> half away from zero
+    public void MapState_Environmental_TemperatureRoundsHalfAwayFromZero(string tact, double expected)
+    {
+        var payload = $"{{\"msg\":\"ENVIRONMENTAL-CURRENT-SENSOR-DATA\",\"data\":{{\"tact\":\"{tact}\"}}}}";
+
+        var updates = DysonStateMapper.MapState(payload).ToDictionary(u => u.CapabilityKey, u => u.Value);
+
+        Assert.Equal(expected, (double)updates["temperature"], 1);
     }
 
     [Fact]

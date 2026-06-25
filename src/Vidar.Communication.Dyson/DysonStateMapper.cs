@@ -33,7 +33,7 @@ public static class DysonStateMapper
             AddInt(result, data, "noxl", "no2");
             AddInt(result, data, "hact", "humidity");
             if (TryReadString(data, "tact", out var tact) && double.TryParse(tact, out var deciK))
-                result.Add(("temperature", Math.Round(deciK - 2731.5, 0) / 10.0));
+                result.Add(("temperature", Math.Round(deciK / 10.0 - 273.15, 1, MidpointRounding.AwayFromZero)));
         }
 
         return result;
