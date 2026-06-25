@@ -6,15 +6,14 @@ namespace Vidar.Host.Dyson;
 
 public sealed partial class DysonCloudClient
 {
-    private static readonly byte[] EncryptionKey =
-        Enumerable.Range(1, 32).Select(i => (byte)i).ToArray();
-    private static readonly byte[] InitVector = new byte[16];
-
     public static string DecryptLocalCredentials(string encryptedBase64)
     {
+        var key = Enumerable.Range(1, 32).Select(i => (byte)i).ToArray();
+        var iv = new byte[16];
+
         using var aes = Aes.Create();
-        aes.Key = EncryptionKey;
-        aes.IV = InitVector;
+        aes.Key = key;
+        aes.IV = iv;
         aes.Mode = CipherMode.CBC;
         aes.Padding = PaddingMode.PKCS7;
 
