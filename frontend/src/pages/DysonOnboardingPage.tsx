@@ -285,7 +285,7 @@ function Step2({ region, email, challengeId, onNext, onBack }: Step2Props) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Verification failed';
       if (msg.startsWith('502')) {
-        setError('Dyson cloud is unreachable. Check your credentials and try again.');
+        setError('Dyson cloud is unreachable. Check your network connection and try again.');
       } else if (msg.startsWith('401') || msg.toLowerCase().includes('unauthorized')) {
         setError('Wrong password or code. Check your credentials and the email code.');
       } else {
@@ -357,7 +357,7 @@ function Step2({ region, email, challengeId, onNext, onBack }: Step2Props) {
           onBlur={handleBlur}
           autoComplete="one-time-code"
           inputMode="numeric"
-          maxLength={8}
+          maxLength={6}
           required
         />
       </div>
@@ -429,6 +429,8 @@ function Step3({ devices, onDone, onBack }: Step3Props) {
       const msg = err instanceof Error ? err.message : 'Failed to save devices';
       if (msg.startsWith('400')) {
         setError('No devices were provided. Select at least one device.');
+      } else if (msg.startsWith('502')) {
+        setError('Dyson cloud is unreachable. Please try again.');
       } else {
         setError(msg);
       }
