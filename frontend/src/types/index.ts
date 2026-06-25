@@ -183,3 +183,12 @@ export interface ThresholdEventPage {
   items: ThresholdEventLog[];
   totalCount: number;
 }
+
+export interface DysonDevice {
+  serial: string;
+  productType: string;
+  name: string;
+  mqttPassword: string;
+  variant: string | null;
+  ip?: string | null;
+}

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { getApplications, getWebhookRoutes, saveApplication } from '../api/client';
 import type { Application, WebhookRoute } from '../types';
+import { DysonOnboardingWizard } from './DysonOnboardingPage';
 
 // ---- Types ----
 
@@ -74,6 +75,12 @@ const APP_DEFS: AppDef[] = [
       { key: 'rscpKey', label: 'RSCP Encryption Key', type: 'password' },
       { key: 'pollingInterval', label: 'Polling Interval (seconds)', type: 'text' },
     ],
+  },
+  {
+    id: 'dyson',
+    icon: '\u{1F300}',
+    description: 'Dyson Connected devices via Dyson cloud account. Use the Connect wizard to authenticate and add your fans and purifiers.',
+    fields: [],
   },
 ];
 
@@ -351,6 +358,7 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [showDysonWizard, setShowDysonWizard] = useState(false);
 
   // Sync when app data reloads
   useEffect(() => {
@@ -538,7 +546,28 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
             Saved
           </span>
         )}
+        {app.id === 'dyson' && (
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setShowDysonWizard(true)}
+            style={{ marginLeft: 'auto' }}
+          >
+            Connect account
+          </button>
+        )}
       </div>
+
+      {/* Dyson onboarding wizard */}
+      {showDysonWizard && (
+        <DysonOnboardingWizard
+          onClose={() => setShowDysonWizard(false)}
+          onSuccess={() => {
+            setShowDysonWizard(false);
+            onSaved();
+          }}
+        />
+      )}
     </div>
   );
 }

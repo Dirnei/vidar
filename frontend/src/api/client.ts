@@ -1,4 +1,4 @@
-import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry, Application, WebhookRoute, WebhookEventPage, ThresholdRule, ThresholdEventPage } from '../types';
+import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry, Application, WebhookRoute, WebhookEventPage, ThresholdRule, ThresholdEventPage, DysonDevice } from '../types';
 
 const BASE = '/api';
 
@@ -192,4 +192,18 @@ export function deleteThresholdRule(id: string): Promise<void> {
 
 export function getThresholdEvents(skip = 0, take = 20): Promise<ThresholdEventPage> {
   return request(`/threshold-events?skip=${skip}&take=${take}`);
+}
+
+// --- Dyson ---
+
+export function dysonBeginAuth(region: string, email: string): Promise<{ challengeId: string }> {
+  return request('/dyson/auth/begin', { method: 'POST', body: JSON.stringify({ region, email }) });
+}
+
+export function dysonVerifyAuth(body: { region: string; email: string; password: string; challengeId: string; otp: string }): Promise<DysonDevice[]> {
+  return request('/dyson/auth/verify', { method: 'POST', body: JSON.stringify(body) });
+}
+
+export function dysonSaveDevices(devices: DysonDevice[]): Promise<void> {
+  return request('/dyson/devices', { method: 'POST', body: JSON.stringify({ devices }) });
 }
