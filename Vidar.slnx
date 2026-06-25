@@ -3,6 +3,7 @@
     <Project Path="src/Vidar.Communication.Shelly/Vidar.Communication.Shelly.csproj" />
     <Project Path="src/Vidar.Communication.HomeConnect/Vidar.Communication.HomeConnect.csproj" />
     <Project Path="src/Vidar.Communication.UniFi/Vidar.Communication.UniFi.csproj" />
+    <Project Path="src/Vidar.Communication.Dyson/Vidar.Communication.Dyson.csproj" />
     <Project Path="src/Vidar.Communication.E3dc/Vidar.Communication.E3dc.csproj" />
     <Project Path="src/Vidar.Communication.Zigbee2Mqtt/Vidar.Communication.Zigbee2Mqtt.csproj" />
     <Project Path="src/Vidar.Core/Vidar.Core.csproj" />

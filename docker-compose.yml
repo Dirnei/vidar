@@ -97,6 +97,18 @@ services:
       - VIDAR_HOSTNAME=vidar-comm-e3dc
       - VIDAR_AKKA_PORT=4058
 
+  vidar-comm-dyson:
+    build:
+      context: .
+      dockerfile: src/Vidar.Communication.Dyson/Dockerfile
+    depends_on:
+      - lighthouse
+    network_mode: host          # required for mDNS discovery + LAN MQTT
+    environment:
+      - VIDAR_CLUSTER_SEED=lighthouse:4053
+      - VIDAR_HOSTNAME=vidar-comm-dyson
+      - VIDAR_AKKA_PORT=4059
+
   mongodb:
     image: mongo:8
     volumes:
