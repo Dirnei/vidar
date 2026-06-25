@@ -10,6 +10,7 @@
     <Project Path="src/Vidar.Host/Vidar.Host.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Vidar.Communication.Dyson.Tests/Vidar.Communication.Dyson.Tests.csproj" />
     <Project Path="tests/Vidar.Communication.E3dc.Tests/Vidar.Communication.E3dc.Tests.csproj" />
     <Project Path="tests/Vidar.Communication.HomeConnect.Tests/Vidar.Communication.HomeConnect.Tests.csproj" />
     <Project Path="tests/Vidar.Communication.Shelly.Tests/Vidar.Communication.Shelly.Tests.csproj" />
