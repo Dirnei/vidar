@@ -139,6 +139,7 @@ public sealed class DevicesController : ControllerBase
         if (device == null) return NotFound();
 
         var oldHost = device.Settings.GetValueOrDefault("host");
+        var oldIp = device.Settings.GetValueOrDefault("ip");
 
         foreach (var kvp in request.Settings)
             device.Settings[kvp.Key] = kvp.Value;
@@ -159,6 +160,21 @@ public sealed class DevicesController : ControllerBase
             var pluginRegistry = await _pluginRegistryProvider.GetAsync();
             pluginRegistry.Tell(new RouteToPlugin(device.CommunicationType, msg));
             _logger.LogInformation("Republished RegisterDeviceForPolling for device {DeviceId} with new host {Host}", id, newHost);
+        }
+
+        var newIp = device.Settings.GetValueOrDefault("ip");
+        if (newIp != null && newIp != oldIp && device.CommunicationType == "dyson")
+        {
+            var msg = new RegisterDeviceForPolling(
+                device.Id,
+                device.CommunicationType,
+                device.NativeId,
+                newIp,
+                0,
+                device.Capabilities);
+            var pluginRegistry = await _pluginRegistryProvider.GetAsync();
+            pluginRegistry.Tell(new RouteToPlugin(device.CommunicationType, msg));
+            _logger.LogInformation("Republished RegisterDeviceForPolling for Dyson device {DeviceId} with new Ip {Ip}", id, newIp);
         }
 
         return NoContent();
