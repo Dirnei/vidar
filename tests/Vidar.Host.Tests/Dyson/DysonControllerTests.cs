@@ -6,6 +6,7 @@ using Akka.Actor;
 using Akka.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using NSubstitute;
+using Vidar.Core.Messages;
 using Vidar.Core.Model;
 using Vidar.Core.Plugins;
 using Vidar.Host.Api;
@@ -29,9 +30,11 @@ public class DysonControllerTests
     public async Task Verify_PersistsAccountManifestAndEnables()
     {
         var repo = new FakeRepo();
+        var pluginRegistry = Substitute.For<IActorRef>();
         var controller = DysonControllerTestFactory.CreateWithStubbedCloud(repo,
             token: "tok",
-            devices: new[] { ("X6P-EU-SKA0802A", "358K", "Bedroom", "pw") });
+            devices: new[] { ("X6P-EU-SKA0802A", "358K", "Bedroom", "pw") },
+            pluginRegistry: pluginRegistry);
 
         var result = await controller.Verify(new VerifyRequest
         {
@@ -45,6 +48,12 @@ public class DysonControllerTests
         var manifest = JsonDocument.Parse(repo.Saved.Settings["account.manifest"]).RootElement;
         Assert.Equal("X6P-EU-SKA0802A", manifest[0].GetProperty("serial").GetString());
         Assert.Equal("358K", manifest[0].GetProperty("productType").GetString());
+
+        // Assert discovery trigger was sent to plugin registry
+        pluginRegistry.Received(1).Tell(Arg.Is<RouteToPlugin>(r => r.PluginId == "dyson" && r.Message is IntegrationConfigChanged), Arg.Any<IActorRef>());
+
+        // Assert mqttPassword was decrypted and round-tripped correctly
+        Assert.Equal("pw", manifest[0].GetProperty("mqttPassword").GetString());
     }
 }
 
@@ -67,10 +76,11 @@ internal static class DysonControllerTestFactory
     public static DysonController CreateWithStubbedCloud(
         IApplicationConfigRepository repo,
         string token,
-        (string serial, string productType, string name, string mqttPassword)[] devices)
+        (string serial, string productType, string name, string mqttPassword)[] devices,
+        IActorRef? pluginRegistry = null)
     {
         var pluginRegistryProvider = Substitute.For<IRequiredActor<PluginRegistry>>();
-        var actorRef = Substitute.For<IActorRef>();
+        var actorRef = pluginRegistry ?? Substitute.For<IActorRef>();
         pluginRegistryProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(actorRef));
 
         var manifestJson = BuildManifestJson(devices);
