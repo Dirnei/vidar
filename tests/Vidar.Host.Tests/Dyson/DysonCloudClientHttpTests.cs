@@ -51,6 +51,26 @@ public class DysonCloudClientHttpTests
     }
 
     [Fact]
+    public async Task BeginLogin_ProvisionsApiBeforeRegistrationCalls()
+    {
+        var handler = new StubHandler(_ => (HttpStatusCode.OK, "{\"challengeId\":\"abc-123\"}"));
+        var client = new DysonCloudClient(new HttpClient(handler) { BaseAddress = new Uri("https://appapi.cp.dyson.com") });
+
+        await client.BeginLoginAsync("DE", "me@example.com", default);
+
+        // The provisioning GET must be the first request and precede the auth POST,
+        // otherwise Dyson's gateway answers the registration endpoints with 401.
+        var provisionIndex = handler.Requests.FindIndex(r =>
+            r.Method == HttpMethod.Get &&
+            r.RequestUri!.AbsolutePath == "/v1/provisioningservice/application/Android/version");
+        var authIndex = handler.Requests.FindIndex(r =>
+            r.RequestUri!.AbsolutePath == "/v3/userregistration/email/auth");
+
+        Assert.Equal(0, provisionIndex);
+        Assert.True(provisionIndex < authIndex);
+    }
+
+    [Fact]
     public async Task VerifyLogin_PostsCredentialsAndReturnsToken()
     {
         var handler = new StubHandler(_ => (HttpStatusCode.OK, "{\"token\":\"tok-xyz\",\"tokenType\":\"Bearer\"}"));

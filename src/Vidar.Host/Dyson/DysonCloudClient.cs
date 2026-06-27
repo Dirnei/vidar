@@ -19,7 +19,15 @@ public sealed partial class DysonCloudClient
 
     public async Task<string> BeginLoginAsync(string region, string email, CancellationToken ct)
     {
-        // Optional pre-step (ignore failures): user status
+        // Step 1: provision the API client. The official MyDyson app (and libdyson-neon)
+        // issues this GET before any registration call; Dyson's gateway rejects the
+        // userstatus/auth endpoints with 401 "Unable to authenticate user." otherwise.
+        // We ignore the body (a version string) — only the call itself matters.
+        using (await _http.GetAsync("/v1/provisioningservice/application/Android/version", ct))
+        {
+        }
+
+        // Step 2: account-status pre-check (best-effort; ignore failures).
         try
         {
             using var _ = await _http.PostAsJsonAsync(
@@ -27,6 +35,7 @@ public sealed partial class DysonCloudClient
         }
         catch { /* optional pre-step — ignore */ }
 
+        // Step 3: request the OTP challenge.
         var resp = await _http.PostAsJsonAsync(
             $"/v3/userregistration/email/auth?country={region}&culture=en-US", new { email }, ct);
         resp.EnsureSuccessStatusCode();

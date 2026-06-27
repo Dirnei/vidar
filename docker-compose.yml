@@ -23,6 +23,9 @@ services:
       - VIDAR_HOSTNAME=vidar-host
       - VIDAR_MONGO_CONNECTION=mongodb://mongodb:27017
       - VIDAR_MONGO_DATABASE=vidar
+      # TEMP debug: surface inbound API request logs (path + status) while
+      # diagnosing the Dyson save flow. Remove once resolved.
+      - Logging__LogLevel__Microsoft.AspNetCore=Information
 
   vidar-comm-shelly:
     build:
@@ -103,7 +106,10 @@ services:
       dockerfile: src/Vidar.Communication.Dyson/Dockerfile
     depends_on:
       - lighthouse
-    network_mode: host          # required for mDNS discovery + LAN MQTT
+    # Runs on the compose bridge network like the other workers so it can resolve
+    # `lighthouse` and join the cluster. mDNS discovery is unavailable here (needs
+    # host networking + multicast); device IPs are entered manually during onboarding.
+    # Outbound LAN MQTT to a device IP still works through bridge NAT.
     environment:
       - VIDAR_CLUSTER_SEED=lighthouse:4053
       - VIDAR_HOSTNAME=vidar-comm-dyson

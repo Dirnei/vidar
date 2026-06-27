@@ -163,13 +163,32 @@ function ErrorBanner({ message }: { message: string }) {
 
 // ---- Dyson regions ----
 
+// Dyson's `country` query param expects an ISO 3166-1 alpha-2 country code
+// (e.g. DE, GB, US) — NOT a region grouping. Sending an invalid value such as
+// "EU" or "APAC" makes the API gateway reject the request with an empty-body 400.
+// (China uses a separate API host, appapi.cp.dyson.cn, so it is intentionally omitted.)
 const REGIONS = [
-  { value: 'EU', label: 'Europe' },
+  { value: 'DE', label: 'Germany' },
+  { value: 'AT', label: 'Austria' },
+  { value: 'CH', label: 'Switzerland' },
+  { value: 'GB', label: 'United Kingdom' },
+  { value: 'IE', label: 'Ireland' },
+  { value: 'FR', label: 'France' },
+  { value: 'NL', label: 'Netherlands' },
+  { value: 'BE', label: 'Belgium' },
+  { value: 'IT', label: 'Italy' },
+  { value: 'ES', label: 'Spain' },
+  { value: 'SE', label: 'Sweden' },
+  { value: 'NO', label: 'Norway' },
+  { value: 'DK', label: 'Denmark' },
+  { value: 'FI', label: 'Finland' },
+  { value: 'PL', label: 'Poland' },
   { value: 'US', label: 'United States' },
-  { value: 'CN', label: 'China' },
+  { value: 'CA', label: 'Canada' },
   { value: 'AU', label: 'Australia' },
-  { value: 'APAC', label: 'Asia Pacific' },
-  { value: 'UK', label: 'United Kingdom' },
+  { value: 'NZ', label: 'New Zealand' },
+  { value: 'JP', label: 'Japan' },
+  { value: 'SG', label: 'Singapore' },
 ];
 
 // ---- Step 1: Region + Email ----
@@ -179,7 +198,7 @@ interface Step1Props {
 }
 
 function Step1({ onNext }: Step1Props) {
-  const [region, setRegion] = useState('EU');
+  const [region, setRegion] = useState('DE');
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

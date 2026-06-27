@@ -36,7 +36,7 @@ public sealed class DysonController : ControllerBase
         }
         catch (HttpRequestException ex)
         {
-            return Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
+            return CloudError(ex);
         }
     }
 
@@ -51,9 +51,22 @@ public sealed class DysonController : ControllerBase
         }
         catch (HttpRequestException ex)
         {
-            return Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway);
+            return CloudError(ex);
         }
     }
+
+    // Surface upstream Dyson failures distinctly so the wizard can tell the user what to do,
+    // instead of reporting every failure as a generic "cloud unavailable" 502.
+    private IActionResult CloudError(HttpRequestException ex) => ex.StatusCode switch
+    {
+        System.Net.HttpStatusCode.TooManyRequests => Problem(
+            "Dyson temporarily rate-limited the request. Wait a few minutes and try again.",
+            statusCode: StatusCodes.Status429TooManyRequests),
+        System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden => Problem(
+            "Dyson rejected the sign-in request. Re-check the email/region, or wait a moment and retry.",
+            statusCode: StatusCodes.Status401Unauthorized),
+        _ => Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway),
+    };
 
     [HttpPost("devices")]
     public async Task<IActionResult> SaveDevices([FromBody] SaveDysonDevicesRequest req)
