@@ -50,6 +50,11 @@ public sealed class DiscoveredDevicesController : ControllerBase
         foreach (var kv in discovered.Metadata)
             settings[kv.Key] = kv.Value;
 
+        // Merge optional per-device settings overlay (e.g. local IP for Dyson)
+        if (request.Settings is not null)
+            foreach (var kv in request.Settings)
+                settings[kv.Key] = kv.Value;
+
         var device = new DeviceConfiguration
         {
             Id = Guid.NewGuid(),
