@@ -204,6 +204,3 @@ export function dysonVerifyAuth(body: { region: string; email: string; password:
   return request('/dyson/auth/verify', { method: 'POST', body: JSON.stringify(body) });
 }
 
-export function dysonSaveDevices(devices: DysonDevice[]): Promise<void> {
-  return request('/dyson/devices', { method: 'POST', body: JSON.stringify({ devices }) });
-}

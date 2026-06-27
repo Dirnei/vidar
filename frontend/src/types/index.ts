@@ -66,6 +66,7 @@ export interface CommandPayload {
 export interface ConfigurePayload {
   name: string;
   roomId: string;
+  settings?: Record<string, string>;
 }
 
 

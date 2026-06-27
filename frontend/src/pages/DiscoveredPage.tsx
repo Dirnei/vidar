@@ -29,9 +29,10 @@ export function DiscoveredPage() {
     loadData();
   }, [loadData]);
 
-  async function handleConfigure(name: string, roomId: string) {
+  async function handleConfigure(name: string, roomId: string, ip?: string) {
     if (!configuring) return;
-    await configureDiscoveredDevice(configuring.id, { name, roomId });
+    const settings = ip ? { ip } : undefined;
+    await configureDiscoveredDevice(configuring.id, { name, roomId, settings });
     setConfiguring(null);
     await loadData();
   }
@@ -374,6 +375,7 @@ export function DiscoveredPage() {
               rooms={rooms}
               defaultName={configuring.metadata?.name ?? configuring.metadata?.friendly_name}
               defaultRoomId={configuring.capabilities.some(c => c.key === 'presence') ? rooms.find(r => r.isHome)?.id : undefined}
+              showIpField={configuring.communicationType === 'dyson'}
               onConfirm={handleConfigure}
               onCancel={() => setConfiguring(null)}
             />

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { dysonBeginAuth, dysonVerifyAuth, dysonSaveDevices } from '../api/client';
+import { useNavigate } from 'react-router-dom';
+import { dysonBeginAuth, dysonVerifyAuth } from '../api/client';
 import type { DysonDevice } from '../types';
 
 // ---- Design tokens (from global.css) ----
@@ -88,7 +89,7 @@ function StepBar({ current, total }: StepBarProps) {
 
 // ---- Step labels ----
 
-const STEP_LABELS = ['Account', 'Verify', 'Devices'];
+const STEP_LABELS = ['Account', 'Verify'];
 
 function StepLabel({ current }: { current: number }) {
   return (
@@ -400,209 +401,9 @@ function Step2({ region, email, challengeId, onNext, onBack }: Step2Props) {
   );
 }
 
-// ---- Step 3: Select devices + optional IP ----
-
-interface DeviceRowState {
-  selected: boolean;
-  ip: string;
-}
-
-interface Step3Props {
-  devices: DysonDevice[];
-  onDone: () => void;
-  onBack: () => void;
-}
-
-function Step3({ devices, onDone, onBack }: Step3Props) {
-  const [rows, setRows] = useState<Record<string, DeviceRowState>>(() => {
-    const init: Record<string, DeviceRowState> = {};
-    for (const d of devices) {
-      init[d.serial] = { selected: true, ip: d.ip ?? '' };
-    }
-    return init;
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const selectedDevices = devices.filter(d => rows[d.serial]?.selected);
-
-  async function handleSave() {
-    if (selectedDevices.length === 0) {
-      setError('Select at least one device to add.');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const payload: DysonDevice[] = selectedDevices.map(d => ({
-        serial: d.serial,
-        productType: d.productType,
-        name: d.name,
-        mqttPassword: d.mqttPassword,
-        variant: d.variant,
-        ip: rows[d.serial]?.ip?.trim() || null,
-      }));
-      await dysonSaveDevices(payload);
-      onDone();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to save devices';
-      if (msg.startsWith('400')) {
-        setError('No devices were provided. Select at least one device.');
-      } else if (msg.startsWith('502')) {
-        setError('Dyson cloud is unreachable. Please try again.');
-      } else {
-        setError(msg);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function toggleDevice(serial: string) {
-    setRows(prev => ({
-      ...prev,
-      [serial]: { ...prev[serial], selected: !prev[serial].selected },
-    }));
-  }
-
-  function setIp(serial: string, ip: string) {
-    setRows(prev => ({
-      ...prev,
-      [serial]: { ...prev[serial], ip },
-    }));
-  }
-
-  if (devices.length === 0) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <div style={{ fontSize: 13, color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>
-          No Dyson devices found on this account.
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-          <button type="button" className="btn-secondary" onClick={onBack}>Back</button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-        {devices.length} device{devices.length !== 1 ? 's' : ''} found. Select which to add to Vidar.
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 280, overflowY: 'auto' }}>
-        {devices.map(device => {
-          const row = rows[device.serial];
-          const isSelected = row?.selected ?? false;
-          return (
-            <div
-              key={device.serial}
-              style={{
-                background: isSelected ? 'color-mix(in srgb, var(--accent-primary) 8%, var(--bg-hover))' : 'var(--bg-hover)',
-                border: isSelected
-                  ? '1px solid color-mix(in srgb, var(--accent-primary) 40%, transparent)'
-                  : '1px solid var(--border-default)',
-                borderRadius: 'var(--radius-sm)',
-                padding: '12px 14px',
-                transition: 'background 0.15s, border-color 0.15s',
-              }}
-            >
-              {/* Device header row */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                {/* Custom checkbox */}
-                <button
-                  type="button"
-                  role="checkbox"
-                  aria-checked={isSelected}
-                  onClick={() => toggleDevice(device.serial)}
-                  style={{
-                    width: 18,
-                    height: 18,
-                    borderRadius: 4,
-                    border: isSelected
-                      ? '2px solid var(--accent-primary)'
-                      : '2px solid var(--border-default)',
-                    background: isSelected ? 'var(--accent-primary)' : 'var(--bg-elevated)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    flexShrink: 0,
-                    padding: 0,
-                    cursor: 'pointer',
-                    transition: 'background 0.15s, border-color 0.15s',
-                  }}
-                >
-                  {isSelected && (
-                    <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-                      <path d="M1 4L4 7L9 1" stroke="#0A0B0E" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  )}
-                </button>
-
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontSize: 14,
-                    fontWeight: 600,
-                    color: 'var(--text-primary)',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}>
-                    {device.name}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                    {device.productType}{device.variant ? ` · ${device.variant}` : ''} · {device.serial}
-                  </div>
-                </div>
-              </div>
-
-              {/* IP input (shown when selected) */}
-              {isSelected && (
-                <div style={{ marginTop: 10 }}>
-                  <label style={{ ...fieldLabelStyle, marginBottom: 4 }}>
-                    Local IP <span style={{ fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>— optional, for LAN control</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={row?.ip ?? ''}
-                    onChange={e => setIp(device.serial, e.target.value)}
-                    placeholder="192.168.1.x"
-                    style={{ ...inputStyle, fontSize: 13 }}
-                    onFocus={handleFocus}
-                    onBlur={handleBlur}
-                    autoComplete="off"
-                  />
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {error && <ErrorBanner message={error} />}
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-        <button type="button" className="btn-secondary" onClick={onBack} disabled={loading}>
-          Back
-        </button>
-        <button
-          type="button"
-          className="btn-primary"
-          onClick={handleSave}
-          disabled={loading || selectedDevices.length === 0}
-          style={{ opacity: loading || selectedDevices.length === 0 ? 0.5 : 1 }}
-        >
-          {loading ? 'Saving…' : `Add ${selectedDevices.length} device${selectedDevices.length !== 1 ? 's' : ''}`}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ---- Success state ----
 
-function SuccessView({ deviceCount, onClose }: { deviceCount: number; onClose: () => void }) {
+function SuccessView({ deviceCount, onClose, onGoToSetup }: { deviceCount: number; onClose: () => void; onGoToSetup: () => void }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20, padding: '8px 0' }}>
       <div style={{
@@ -626,19 +427,24 @@ function SuccessView({ deviceCount, onClose }: { deviceCount: number; onClose: (
           fontSize: 18,
           fontWeight: 700,
           color: 'var(--text-primary)',
-          marginBottom: 6,
+          marginBottom: 8,
         }}>
           Dyson connected
         </div>
-        <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-          {deviceCount} device{deviceCount !== 1 ? 's' : ''} added. The Dyson integration
-          is now active — devices will appear in Vidar shortly.
+        <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6, maxWidth: 300 }}>
+          Found {deviceCount} Dyson device{deviceCount !== 1 ? 's' : ''} — {deviceCount !== 1 ? "they're" : "it's"} now in Setup.
+          Configure {deviceCount !== 1 ? 'each' : 'it'} to assign it to a room.
         </div>
       </div>
 
-      <button type="button" className="btn-primary" onClick={onClose} style={{ minWidth: 120 }}>
-        Done
-      </button>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button type="button" className="btn-secondary" onClick={onClose}>
+          Close
+        </button>
+        <button type="button" className="btn-primary" onClick={onGoToSetup} style={{ minWidth: 120 }}>
+          Go to Setup
+        </button>
+      </div>
     </div>
   );
 }
@@ -651,7 +457,8 @@ interface DysonOnboardingWizardProps {
 }
 
 export function DysonOnboardingWizard({ onClose, onSuccess }: DysonOnboardingWizardProps) {
-  const [step, setStep] = useState<1 | 2 | 3 | 'done'>(1);
+  const navigate = useNavigate();
+  const [step, setStep] = useState<1 | 2 | 'done'>(1);
 
   // Step 1 output
   const [region, setRegion] = useState('');
@@ -670,15 +477,16 @@ export function DysonOnboardingWizard({ onClose, onSuccess }: DysonOnboardingWiz
 
   function handleStep2Done(found: DysonDevice[]) {
     setDevices(found);
-    setStep(3);
-  }
-
-  function handleStep3Done() {
     setStep('done');
     onSuccess();
   }
 
-  const stepNumber = step === 'done' ? 3 : step;
+  function handleGoToSetup() {
+    onClose();
+    navigate('/discovered');
+  }
+
+  const stepNumber = step === 'done' ? 2 : step;
 
   return (
     <div
@@ -732,7 +540,7 @@ export function DysonOnboardingWizard({ onClose, onSuccess }: DysonOnboardingWiz
         {/* Step progress */}
         {step !== 'done' && (
           <>
-            <StepBar current={stepNumber} total={3} />
+            <StepBar current={stepNumber} total={2} />
             <StepLabel current={stepNumber} />
           </>
         )}
@@ -750,15 +558,8 @@ export function DysonOnboardingWizard({ onClose, onSuccess }: DysonOnboardingWiz
             onBack={() => setStep(1)}
           />
         )}
-        {step === 3 && (
-          <Step3
-            devices={devices}
-            onDone={handleStep3Done}
-            onBack={() => setStep(2)}
-          />
-        )}
         {step === 'done' && (
-          <SuccessView deviceCount={devices.length} onClose={onClose} />
+          <SuccessView deviceCount={devices.length} onClose={onClose} onGoToSetup={handleGoToSetup} />
         )}
       </div>
     </div>
