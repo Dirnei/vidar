@@ -38,7 +38,7 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
     private HiveMQClient? _mqttClient;
     private Channel<MqttMessage>? _inboundChannel;
     private Channel<DeviceCommand>? _outboundChannel;
-    private DysonTransport _transport = DysonTransport.NeedsConnection;
+    private DysonTransport? _transport;
 
     private sealed record MqttMessage(string Topic, string Payload);
     private sealed class ConnectToBroker { public static readonly ConnectToBroker Instance = new(); }
@@ -185,6 +185,8 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
         var deviceId = _deviceId;
         var shardProxy = _shardProxy;
         var materializer = _materializer;
+        var log = _log;
+        var serial = _cred.Serial;
 
         ChannelSource.FromReader<MqttMessage>(_inboundChannel!.Reader)
             .Where(msg => msg.Topic.StartsWith(prefix))
@@ -192,7 +194,11 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
             .Select(payload =>
             {
                 try { return DysonStateMapper.MapState(payload, productType); }
-                catch { return (IReadOnlyList<(string, object)>)Array.Empty<(string, object)>(); }
+                catch (Exception ex)
+                {
+                    log.Warning(ex, "Failed to map Dyson state payload for {Serial}", serial);
+                    return (IReadOnlyList<(string, object)>)Array.Empty<(string, object)>();
+                }
             })
             .SelectMany(updates => updates)
             .To(Sink.ForEach<(string CapabilityKey, object Value)>(u =>
