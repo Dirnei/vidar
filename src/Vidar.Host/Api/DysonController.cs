@@ -47,6 +47,28 @@ public sealed class DysonController : ControllerBase
         {
             var token = await _cloud.VerifyLoginAsync(req.Region, req.Email, req.Password, req.ChallengeId, req.Otp, ct);
             var devices = await _cloud.GetDevicesAsync(token, ct);
+
+            var existing = await _repo.GetByIdAsync("dyson");
+            var config = existing ?? new ApplicationConfig
+            {
+                Id = "dyson", Name = "Dyson", ApplicationType = ApplicationType.Provider,
+            };
+            config.Enabled = true;
+            config.Settings = new Dictionary<string, string>
+            {
+                ["account.token"] = token,
+                ["account.manifest"] = JsonSerializer.Serialize(devices.Select(d => new
+                {
+                    serial = d.Serial, productType = d.ProductType, name = d.Name,
+                    variant = d.Variant, mqttPassword = d.MqttPassword,
+                })),
+            };
+            await _repo.UpsertAsync(config);
+
+            var pluginRegistry = await _pluginRegistryProvider.GetAsync();
+            pluginRegistry.Tell(new RouteToPlugin("dyson",
+                new IntegrationConfigChanged("dyson", config.Enabled, config.Settings)));
+
             return Ok(devices);
         }
         catch (HttpRequestException ex)
@@ -67,40 +89,6 @@ public sealed class DysonController : ControllerBase
             statusCode: StatusCodes.Status401Unauthorized),
         _ => Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway),
     };
-
-    [HttpPost("devices")]
-    public async Task<IActionResult> SaveDevices([FromBody] SaveDysonDevicesRequest req)
-    {
-        if (req.Devices is not { Count: > 0 }) return BadRequest("At least one device is required.");
-
-        var existing = await _repo.GetByIdAsync("dyson");
-        var config = existing ?? new ApplicationConfig
-        {
-            Id = "dyson",
-            Name = "Dyson",
-            ApplicationType = ApplicationType.Provider,
-        };
-
-        config.Enabled = true;
-        config.Settings = new Dictionary<string, string>
-        {
-            ["devices"] = JsonSerializer.Serialize(req.Devices.Select(d => new
-            {
-                serial = d.Serial,
-                productType = d.ProductType,
-                mqttPassword = d.MqttPassword,
-                ip = d.Ip,
-            }))
-        };
-
-        await _repo.UpsertAsync(config);
-
-        var pluginRegistry = await _pluginRegistryProvider.GetAsync();
-        pluginRegistry.Tell(new RouteToPlugin("dyson",
-            new IntegrationConfigChanged("dyson", config.Enabled, config.Settings)));
-
-        return NoContent();
-    }
 }
 
 public sealed class BeginRequest { public required string Region { get; set; } public required string Email { get; set; } }
@@ -111,12 +99,4 @@ public sealed class VerifyRequest
     public required string Password { get; set; }
     public required string ChallengeId { get; set; }
     public required string Otp { get; set; }
-}
-public sealed class SaveDysonDevicesRequest { public List<SaveDysonDevice> Devices { get; set; } = new(); }
-public sealed class SaveDysonDevice
-{
-    public required string Serial { get; set; }
-    public required string ProductType { get; set; }
-    public required string MqttPassword { get; set; }
-    public string? Ip { get; set; }
 }

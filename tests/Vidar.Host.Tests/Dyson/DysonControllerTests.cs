@@ -1,6 +1,9 @@
+using System.Net;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using Akka.Actor;
 using Akka.Hosting;
-using Akka.TestKit.Xunit2;
 using Microsoft.AspNetCore.Mvc;
 using NSubstitute;
 using Vidar.Core.Model;
@@ -11,7 +14,7 @@ using Vidar.Host.Persistence;
 
 namespace Vidar.Host.Tests.Dyson;
 
-public class DysonControllerTests : TestKit
+public class DysonControllerTests
 {
     private sealed class FakeRepo : IApplicationConfigRepository
     {
@@ -23,43 +26,90 @@ public class DysonControllerTests : TestKit
     }
 
     [Fact]
-    public async Task SaveDevices_PersistsDevicesJsonAndEnables()
+    public async Task Verify_PersistsAccountManifestAndEnables()
     {
         var repo = new FakeRepo();
-        var controller = DysonControllerTestFactory.Create(repo, this);
+        var controller = DysonControllerTestFactory.CreateWithStubbedCloud(repo,
+            token: "tok",
+            devices: new[] { ("X6P-EU-SKA0802A", "358K", "Bedroom", "pw") });
 
-        var req = new SaveDysonDevicesRequest
+        var result = await controller.Verify(new VerifyRequest
         {
-            Devices = new()
-            {
-                new SaveDysonDevice { Serial = "X6p-EU-SKA0802A", ProductType = "438", MqttPassword = "pw123", Ip = "192.168.5.157" }
-            }
-        };
+            Region = "DE", Email = "me@example.com", Password = "p", ChallengeId = "c", Otp = "123456"
+        }, default);
 
-        var result = await controller.SaveDevices(req);
-
-        Assert.IsType<NoContentResult>(result);
+        Assert.IsType<OkObjectResult>(result);
         Assert.NotNull(repo.Saved);
         Assert.True(repo.Saved!.Enabled);
-        Assert.Equal("dyson", repo.Saved.Id);
-        var devices = JsonDocument.Parse(repo.Saved.Settings["devices"]).RootElement;
-        Assert.Equal("X6p-EU-SKA0802A", devices[0].GetProperty("serial").GetString());
-        Assert.Equal("438", devices[0].GetProperty("productType").GetString());
-        Assert.Equal("pw123", devices[0].GetProperty("mqttPassword").GetString());
-        Assert.Equal("192.168.5.157", devices[0].GetProperty("ip").GetString());
+        Assert.Equal("tok", repo.Saved.Settings["account.token"]);
+        var manifest = JsonDocument.Parse(repo.Saved.Settings["account.manifest"]).RootElement;
+        Assert.Equal("X6P-EU-SKA0802A", manifest[0].GetProperty("serial").GetString());
+        Assert.Equal("358K", manifest[0].GetProperty("productType").GetString());
     }
 }
 
 internal static class DysonControllerTestFactory
 {
-    public static DysonController Create(IApplicationConfigRepository repo, TestKit kit)
+    private sealed class StubHandler : HttpMessageHandler
     {
-        var pluginRegistry = Substitute.For<IRequiredActor<PluginRegistry>>();
-        pluginRegistry.GetAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(kit.TestActor));
+        private readonly Func<HttpRequestMessage, (HttpStatusCode, string)> _responder;
+        public StubHandler(Func<HttpRequestMessage, (HttpStatusCode, string)> r) => _responder = r;
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            var (code, body) = _responder(request);
+            return Task.FromResult(new HttpResponseMessage(code)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            });
+        }
+    }
 
-        // DysonCloudClient requires an HttpClient; it won't be called in SaveDevices.
-        var cloud = new DysonCloudClient(new HttpClient());
+    public static DysonController CreateWithStubbedCloud(
+        IApplicationConfigRepository repo,
+        string token,
+        (string serial, string productType, string name, string mqttPassword)[] devices)
+    {
+        var pluginRegistryProvider = Substitute.For<IRequiredActor<PluginRegistry>>();
+        var actorRef = Substitute.For<IActorRef>();
+        pluginRegistryProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(actorRef));
 
-        return new DysonController(cloud, repo, pluginRegistry);
+        var manifestJson = BuildManifestJson(devices);
+        var handler = new StubHandler(req =>
+        {
+            if (req.RequestUri!.AbsolutePath.Contains("verify"))
+                return (HttpStatusCode.OK, $"{{\"token\":\"{token}\",\"tokenType\":\"Bearer\"}}");
+            if (req.RequestUri.AbsolutePath.Contains("manifest"))
+                return (HttpStatusCode.OK, manifestJson);
+            return (HttpStatusCode.OK, "{}");
+        });
+        var cloud = new DysonCloudClient(
+            new HttpClient(handler) { BaseAddress = new Uri("https://appapi.cp.dyson.com") });
+
+        return new DysonController(cloud, repo, pluginRegistryProvider);
+    }
+
+    private static string BuildManifestJson(
+        (string serial, string productType, string name, string mqttPassword)[] devices)
+    {
+        var entries = devices.Select(d =>
+        {
+            var creds = EncryptPassword(d.mqttPassword);
+            return $"{{\"Serial\":\"{d.serial}\",\"ProductType\":\"{d.productType}\"," +
+                   $"\"Name\":\"{d.name}\",\"LocalCredentials\":\"{creds}\",\"variant\":null}}";
+        });
+        return "[" + string.Join(",", entries) + "]";
+    }
+
+    private static string EncryptPassword(string password)
+    {
+        var key = Enumerable.Range(1, 32).Select(i => (byte)i).ToArray();
+        using var aes = Aes.Create();
+        aes.Key = key;
+        aes.IV = new byte[16];
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+        using var enc = aes.CreateEncryptor();
+        var bytes = Encoding.UTF8.GetBytes($"{{\"apPasswordHash\":\"{password}\"}}");
+        return Convert.ToBase64String(enc.TransformFinalBlock(bytes, 0, bytes.Length));
     }
 }
