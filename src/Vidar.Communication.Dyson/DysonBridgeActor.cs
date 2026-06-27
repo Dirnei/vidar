@@ -20,6 +20,11 @@ public sealed class DysonBridgeActor : PluginActorBase
     // Live children: serial → actor ref (credential includes the resolved Ip)
     private readonly Dictionary<string, IActorRef> _children = new();
 
+    // Deferred-restart state: ActorRef → serial (for Terminated lookup)
+    private readonly Dictionary<IActorRef, string> _childSerials = new();
+    // Pending restarts waiting for old child to terminate: serial → (new cred, deviceId)
+    private readonly Dictionary<string, (DysonDeviceCredential Cred, Guid DeviceId)> _pendingRestarts = new();
+
     public DysonBridgeActor()
     {
         Receive<DeviceCommand>(cmd =>
@@ -28,6 +33,27 @@ public sealed class DysonBridgeActor : PluginActorBase
                 child.Forward(cmd);
             else
                 Log.Warning("No Dyson child actor for NativeId {NativeId}", cmd.NativeId);
+        });
+
+        // Finding 1 fix: spawn the replacement child only AFTER the old one has fully terminated
+        Receive<Terminated>(msg =>
+        {
+            if (!_childSerials.TryGetValue(msg.ActorRef, out var serial))
+                return;
+
+            _childSerials.Remove(msg.ActorRef);
+
+            if (_pendingRestarts.TryGetValue(serial, out var pending))
+            {
+                _pendingRestarts.Remove(serial);
+                SpawnChild(serial, pending.Cred, pending.DeviceId);
+                Log.Info("Replacement DysonDeviceActor spawned for {Serial} after old child terminated", serial);
+            }
+            else if (_children.TryGetValue(serial, out var existingRef) && existingRef.Equals(msg.ActorRef))
+            {
+                _children.Remove(serial);
+                Log.Warning("DysonDeviceActor for {Serial} terminated unexpectedly (no pending restart)", serial);
+            }
         });
     }
 
@@ -65,6 +91,12 @@ public sealed class DysonBridgeActor : PluginActorBase
     protected override void OnDeviceRegistered(Guid deviceId, string nativeId,
         RegisterDeviceForPolling registration)
     {
+        // Finding 2 fix: during startup, OnPluginRegistered hasn't run RefreshManifest yet,
+        // so _manifest is empty. Return silently — the OnPluginRegistered restoration loop
+        // will spawn children for all stored registrations once the manifest is populated.
+        if (_manifest.Count == 0)
+            return;
+
         SpawnOrRestartChild(nativeId, deviceId, registration.Host);
         PublishStatus("running", _children.Count);
     }
@@ -108,19 +140,32 @@ public sealed class DysonBridgeActor : PluginActorBase
         var ip = string.IsNullOrWhiteSpace(host) ? null : host;
         var cred = entry.Cred with { Ip = ip };
 
-        // Stop the existing child if any (will be replaced)
+        // Finding 1 fix: if an existing child is running, watch it and stop it, then store the
+        // new credential in _pendingRestarts. The Receive<Terminated> handler spawns the
+        // replacement only after the old actor's name slot is fully released.
         if (_children.TryGetValue(serial, out var existing))
         {
-            Context.Stop(existing);
+            _pendingRestarts[serial] = (cred, deviceId);
             _children.Remove(serial);
+            Context.Watch(existing);
+            Context.Stop(existing);
+            Log.Info("Stopping existing DysonDeviceActor for {Serial}; replacement deferred until Terminated", serial);
+            return;
         }
 
-        // Akka actor names must not contain '/' etc.; Dyson serials use letters, digits, dashes — safe
+        // No existing child — spawn immediately
+        SpawnChild(serial, cred, deviceId);
+    }
+
+    // Akka actor names must not contain '/' etc.; Dyson serials use letters, digits, dashes — safe
+    private void SpawnChild(string serial, DysonDeviceCredential cred, Guid deviceId)
+    {
         var childName = $"dyson-device-{serial}";
         var child = Context.ActorOf(DysonDeviceActor.Props(cred, deviceId), childName);
         _children[serial] = child;
+        _childSerials[child] = serial;
 
-        Log.Info("Spawned DysonDeviceActor for {Serial} Ip={Ip}", serial, ip ?? "(none — needs-connection)");
+        Log.Info("Spawned DysonDeviceActor for {Serial} Ip={Ip}", serial, cred.Ip ?? "(none — needs-connection)");
     }
 
     // ── Static helpers (public ParseManifest for unit tests) ────────────────
