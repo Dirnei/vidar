@@ -1,4 +1,3 @@
-using System.Security;
 using System.Threading.Channels;
 using Akka.Actor;
 using Akka.Cluster.Tools.PublishSubscribe;
@@ -6,14 +5,15 @@ using Akka.Event;
 using Akka.Hosting;
 using Akka.Streams;
 using Akka.Streams.Dsl;
-using HiveMQtt.Client;
-using HiveMQtt.MQTT5.Types;
+using MQTTnet;
+using MQTTnet.Client;
+using MQTTnet.Formatter;
 using Vidar.Core.Messages;
 using Vidar.Core.Sharding;
 
 namespace Vidar.Communication.Dyson;
 
-// One actor per accepted device. Mirrors Zigbee2MqttBridgeActor's HiveMQTT
+// One actor per accepted device. Mirrors Zigbee2MqttBridgeActor's MQTT
 // connect/subscribe/stream/reconnect wiring. Differences:
 //   - broker host = cred.Ip, port 1883, username = cred.Serial, password = cred.MqttPassword
 //   - subscribe   "<productType>/<serial>/status/#"
@@ -22,6 +22,7 @@ namespace Vidar.Communication.Dyson;
 //   - command     DysonCommandBuilder.Build(key, value, now) -> publish to command topic
 //   - if cred.Ip is null/blank: do NOT connect; publish status needs-connection
 //   - publish transport status via PublishStatus on every state change
+//   - uses MQTT 3.1.1 (MQTTnet) because Dyson's local broker rejects MQTT 5.0
 public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
 {
     public ITimerScheduler Timers { get; set; } = null!;
@@ -35,7 +36,7 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
     private readonly string _statusPrefix;
     private readonly string _commandTopic;
 
-    private HiveMQClient? _mqttClient;
+    private IMqttClient? _mqttClient;
     private Channel<MqttMessage>? _inboundChannel;
     private Channel<DeviceCommand>? _outboundChannel;
     private DysonTransport? _transport;
@@ -63,7 +64,7 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
 
         Receive<CheckConnection>(_ =>
         {
-            if (_mqttClient == null || !_mqttClient.IsConnected())
+            if (_mqttClient == null || !_mqttClient.IsConnected)
             {
                 _log.Warning("MQTT client not connected for device {Serial}, reconnecting...", _cred.Serial);
                 Self.Tell(ConnectToBroker.Instance);
@@ -100,7 +101,7 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
     {
         _inboundChannel?.Writer.TryComplete();
         _outboundChannel?.Writer.TryComplete();
-        _mqttClient?.DisconnectAsync().GetAwaiter().GetResult();
+        try { _mqttClient?.DisconnectAsync().GetAwaiter().GetResult(); } catch { }
         _mqttClient?.Dispose();
         base.PostStop();
     }
@@ -118,50 +119,53 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
             _inboundChannel?.Writer.TryComplete();
             _outboundChannel?.Writer.TryComplete();
 
-            var secure = new SecureString();
-            foreach (var c in _cred.MqttPassword) secure.AppendChar(c);
-            secure.MakeReadOnly();
+            var factory = new MqttFactory();
+            _mqttClient = factory.CreateMqttClient();
 
-            var options = new HiveMQClientOptionsBuilder()
-                .WithBroker(_cred.Ip!)
-                .WithPort(1883)
+            var options = new MqttClientOptionsBuilder()
+                .WithTcpServer(_cred.Ip!, 1883)
+                .WithCredentials(_cred.Serial, _cred.MqttPassword)
+                .WithProtocolVersion(MqttProtocolVersion.V311)
                 .WithClientId($"vidar-dyson-{_cred.Serial}-{Guid.NewGuid():N}")
-                .WithUserName(_cred.Serial)
-                .WithPassword(secure)
                 .Build();
 
             _inboundChannel = Channel.CreateBounded<MqttMessage>(1000);
             _outboundChannel = Channel.CreateBounded<DeviceCommand>(100);
 
-            _mqttClient = new HiveMQClient(options);
-
             var inbound = _inboundChannel;
-            _mqttClient.OnMessageReceived += (_, e) =>
+            _mqttClient.ApplicationMessageReceivedAsync += e =>
             {
-                var topic = e.PublishMessage.Topic;
-                var payload = e.PublishMessage.PayloadAsString;
+                var topic = e.ApplicationMessage.Topic;
+                var payload = e.ApplicationMessage.ConvertPayloadToString();
                 if (topic != null && payload != null)
                     inbound.Writer.TryWrite(new MqttMessage(topic, payload));
+                return Task.CompletedTask;
             };
 
             var self = Self;
-            _mqttClient.OnDisconnectReceived += (_, _) =>
+            _mqttClient.DisconnectedAsync += _ =>
             {
                 _log.Warning("MQTT disconnected for device {Serial}, scheduling reconnect...", _cred.Serial);
                 self.Tell(ConnectToBroker.Instance);
+                return Task.CompletedTask;
             };
 
-            var connectResult = await _mqttClient.ConnectAsync();
-            _log.Info("MQTT connect result for {Serial}: {Result}", _cred.Serial, connectResult.ReasonCode);
+            var connectResult = await _mqttClient.ConnectAsync(options, CancellationToken.None);
+            _log.Info("MQTT connect result for {Serial}: {Code}", _cred.Serial, connectResult.ResultCode);
 
-            await _mqttClient.SubscribeAsync(
-                $"{_cred.ProductType}/{_cred.Serial}/status/#",
-                QualityOfService.AtLeastOnceDelivery);
+            if (connectResult.ResultCode != MqttClientConnectResultCode.Success)
+            {
+                _log.Warning("Dyson {Serial} refused connection: {Code}", _cred.Serial, connectResult.ResultCode);
+                SetTransport(DysonTransport.Offline);
+                return;
+            }
 
-            await _mqttClient.PublishAsync(
-                _commandTopic,
-                "{\"msg\":\"REQUEST-CURRENT-STATE\"}",
-                QualityOfService.AtMostOnceDelivery);
+            await _mqttClient.SubscribeAsync(new MqttTopicFilterBuilder()
+                .WithTopic($"{_cred.ProductType}/{_cred.Serial}/status/#")
+                .WithAtLeastOnceQoS().Build(), CancellationToken.None);
+
+            await _mqttClient.PublishStringAsync(_commandTopic, "{\"msg\":\"REQUEST-CURRENT-STATE\"}",
+                cancellationToken: CancellationToken.None);
 
             _log.Info("Connected to Dyson device {Serial} at {Ip}, subscribed to status/#",
                 _cred.Serial, _cred.Ip);
@@ -218,7 +222,8 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
             .Where(payload => payload != null)
             .SelectAsync(1, async payload =>
             {
-                await mqttClient.PublishAsync(commandTopic, payload!, QualityOfService.AtMostOnceDelivery);
+                await mqttClient.PublishStringAsync(commandTopic, payload!,
+                    cancellationToken: CancellationToken.None);
                 log.Info("Sent Dyson command to {Topic}: {Payload}", commandTopic, payload);
                 return payload;
             })
