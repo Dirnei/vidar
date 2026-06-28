@@ -71,4 +71,30 @@ public sealed class ShellyBridgeActorTests : TestKit
             TimeSpan.FromSeconds(5),
             TimeSpan.FromMilliseconds(100));
     }
+
+    // A dual-cover channel is addressed via a "MAC-<channel>" nativeId; the bridge must route the
+    // command to that channel's cover component, not the hardcoded cover:0.
+    [Fact]
+    public void CoverCommand_ForChannelOne_RoutesToCoverOne()
+    {
+        var registry = ActorRegistry.For(Sys);
+        registry.Register<PluginRegistry>(CreateTestProbe());
+        registry.Register<DeviceTwinRegion>(CreateTestProbe());
+
+        var handler = new RecordingHandler();
+        var httpClient = new ShellyHttpClient(new HttpClient(handler));
+        var bridge = Sys.ActorOf(ShellyBridgeActor.Props(httpClient));
+
+        var deviceId = Guid.NewGuid();
+        const string nativeId = "2CBCBBB0F278-1";
+        bridge.Tell(new RegisterDeviceForPolling(deviceId, "shelly", nativeId, "10.0.0.9", 2,
+            [new CapabilityDescriptor { Key = "cover", Label = "Cover", Unit = UnitType.Percent, Commandable = true, Min = 0, Max = 100 }]));
+
+        bridge.Tell(new DeviceCommand(deviceId, "shelly", nativeId, "cover", 50));
+
+        AwaitAssert(
+            () => Assert.Contains(handler.Snapshot(), r => r.Contains("/rpc/Cover.GoToPosition") && r.Contains("id=1") && r.Contains("pos=50")),
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromMilliseconds(100));
+    }
 }

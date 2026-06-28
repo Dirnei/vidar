@@ -26,6 +26,28 @@ public class ShellyStateMapperTests
     }
 
     [Fact]
+    public void MapGen2Status_Cover_ExtractsPowerAndEnergy()
+    {
+        var json = """{"id":1,"state":"open","apower":12.5,"aenergy":{"total":7885.0},"current_pos":100}""";
+        var doc = JsonDocument.Parse(json);
+        var updates = ShellyStateMapper.MapCoverStatus(doc.RootElement);
+        Assert.Contains(updates, u => u.CapabilityKey == "cover" && (int)u.Value == 100);
+        Assert.Contains(updates, u => u.CapabilityKey == "power" && (double)u.Value == 12.5);
+        Assert.Contains(updates, u => u.CapabilityKey == "energy" && (double)u.Value == 7885.0 / 1000.0);
+    }
+
+    [Fact]
+    public void MapGen2Status_Cover_WithoutPosition_StillExtractsPower()
+    {
+        // An uncalibrated channel (pos_control:false) reports no current_pos.
+        var json = """{"id":0,"state":"stopped","apower":0.0,"aenergy":{"total":0.0}}""";
+        var doc = JsonDocument.Parse(json);
+        var updates = ShellyStateMapper.MapCoverStatus(doc.RootElement);
+        Assert.DoesNotContain(updates, u => u.CapabilityKey == "cover");
+        Assert.Contains(updates, u => u.CapabilityKey == "power" && (double)u.Value == 0.0);
+    }
+
+    [Fact]
     public void MapGen2Status_Temperature_ExtractsValue()
     {
         var json = """{"id":0,"tC":22.4,"tF":72.3}""";

@@ -115,6 +115,54 @@ public sealed class DiscoverController : ControllerBase
         if (generation >= 2 && statusDoc != null)
         {
             var root = statusDoc.RootElement;
+
+            // Cover channels (cover:0, cover:1, …). A multi-channel cover is modelled as one Vidar
+            // device per channel, each addressed by a "MAC-<channel>" NativeId.
+            var coverChannels = new List<int>();
+            for (var ch = 0; root.TryGetProperty($"cover:{ch}", out _); ch++)
+                coverChannels.Add(ch);
+
+            if (coverChannels.Count > 1)
+            {
+                var allCfg = await _deviceRepo.GetAllAsync();
+                var created = new List<object>();
+                foreach (var ch in coverChannels)
+                {
+                    root.TryGetProperty($"cover:{ch}", out var coverEl);
+                    var channelNativeId = $"{nativeId}-{ch}";
+                    if (allCfg.Any(d => d.NativeId == channelNativeId)) continue;
+                    if (await _discoveredRepo.GetByNativeIdAsync("shelly", channelNativeId) != null) continue;
+
+                    var channelCaps = new List<CapabilityDescriptor>
+                    {
+                        new() { Key = "cover", Label = "Cover", Unit = UnitType.Percent, Commandable = true, Min = 0, Max = 100 }
+                    };
+                    if (coverEl.TryGetProperty("apower", out _))
+                    {
+                        channelCaps.Add(new CapabilityDescriptor { Key = "power", Label = "Power", Unit = UnitType.Watts });
+                        channelCaps.Add(new CapabilityDescriptor { Key = "energy", Label = "Energy", Unit = UnitType.KilowattHours });
+                    }
+
+                    var channelMeta = new Dictionary<string, string>(metadata) { ["channel"] = ch.ToString() };
+                    channelMeta["name"] = deviceName != null ? $"{deviceName} {ch + 1}" : $"Cover {ch + 1}";
+
+                    await _discoveredRepo.UpsertAsync(new DiscoveredDevice
+                    {
+                        Id = Guid.NewGuid(),
+                        CommunicationType = "shelly",
+                        NativeId = channelNativeId,
+                        Capabilities = channelCaps,
+                        Metadata = channelMeta,
+                        DiscoveredAt = DateTime.UtcNow
+                    });
+                    created.Add(new { nativeId = channelNativeId, channel = ch, capabilities = channelCaps.Select(c => c.Key).ToList() });
+                }
+
+                _logger.LogInformation("Shelly multi-cover device at {Host} ({NativeId}): {Count} channels discovered",
+                    host, nativeId, created.Count);
+                return Ok(new { status = "discovered", host, nativeId, channels = coverChannels.Count, devices = created });
+            }
+
             if (root.TryGetProperty("switch:0", out _))
             {
                 capabilities.Add(new CapabilityDescriptor { Key = "switch", Label = "Switch", Unit = UnitType.OnOff, Commandable = true });
@@ -135,8 +183,16 @@ public sealed class DiscoverController : ControllerBase
                     capabilities.Add(new CapabilityDescriptor { Key = "energy", Label = "Energy", Unit = UnitType.KilowattHours });
                 }
             }
-            if (root.TryGetProperty("cover:0", out _))
+            if (coverChannels.Count == 1)
+            {
+                root.TryGetProperty("cover:0", out var coverEl);
                 capabilities.Add(new CapabilityDescriptor { Key = "cover", Label = "Cover", Unit = UnitType.Percent, Commandable = true, Min = 0, Max = 100 });
+                if (coverEl.TryGetProperty("apower", out _) && capabilities.All(c => c.Key != "power"))
+                {
+                    capabilities.Add(new CapabilityDescriptor { Key = "power", Label = "Power", Unit = UnitType.Watts });
+                    capabilities.Add(new CapabilityDescriptor { Key = "energy", Label = "Energy", Unit = UnitType.KilowattHours });
+                }
+            }
             if (root.TryGetProperty("temperature:0", out _))
                 capabilities.Add(new CapabilityDescriptor { Key = "temperature", Label = "Temperature", Unit = UnitType.Celsius });
             if (root.TryGetProperty("humidity:0", out _))

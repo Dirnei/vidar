@@ -61,8 +61,18 @@ public static class ShellyStateMapper
     {
         var results = new List<ShellyCapabilityValue>();
 
+        // Uncalibrated channels (pos_control:false) omit current_pos.
         if (element.TryGetProperty("current_pos", out var pos) && pos.ValueKind == JsonValueKind.Number)
             results.Add(new ShellyCapabilityValue("cover", pos.GetInt32()));
+
+        if (element.TryGetProperty("apower", out var apower) && apower.ValueKind == JsonValueKind.Number)
+            results.Add(new ShellyCapabilityValue("power", apower.GetDouble()));
+
+        if (element.TryGetProperty("aenergy", out var aenergy) && aenergy.ValueKind == JsonValueKind.Object)
+        {
+            if (aenergy.TryGetProperty("total", out var total) && total.ValueKind == JsonValueKind.Number)
+                results.Add(new ShellyCapabilityValue("energy", total.GetDouble() / 1000.0));
+        }
 
         return results;
     }

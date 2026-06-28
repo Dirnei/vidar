@@ -164,7 +164,7 @@ public sealed class ShellyBridgeActor : PluginActorBase
                             await _httpClient.SetLightAsync(device.Host, 0, on: true, brightness: numericValue.Value);
                     }
                     else if (cmd.CapabilityKey == "cover" && numericValue.HasValue)
-                        await _httpClient.SetCoverPositionAsync(device.Host, 0, numericValue.Value);
+                        await _httpClient.SetCoverPositionAsync(device.Host, device.Channel, numericValue.Value);
                 }
 
                 Log.Info("Executed {CapabilityKey} command on {NativeId} (Gen{Gen})", cmd.CapabilityKey, device.NativeId, device.Generation);
@@ -182,16 +182,29 @@ public sealed class ShellyBridgeActor : PluginActorBase
     protected override void OnDeviceRegistered(Guid deviceId, string nativeId,
         RegisterDeviceForPolling registration)
     {
+        var channel = ParseChannel(registration.NativeId);
         _devices[registration.NativeId] = new ShellyDevice
         {
             NativeId = registration.NativeId,
             Host = registration.Host,
             Generation = registration.Generation,
+            Channel = channel,
             Capabilities = registration.Capabilities,
             VidarDeviceId = registration.DeviceId
         };
-        Log.Info("Registered Shelly device for polling: {NativeId} at {Host} (Gen{Gen})",
-            registration.NativeId, registration.Host, registration.Generation);
+        Log.Info("Registered Shelly device for polling: {NativeId} at {Host} (Gen{Gen}, cover/channel {Channel})",
+            registration.NativeId, registration.Host, registration.Generation, channel);
+    }
+
+    // Multi-channel devices use a "MAC-<channel>" NativeId. Single-channel devices keep the bare
+    // MAC (no suffix) and resolve to channel 0. MACs contain no '-', so the suffix is unambiguous.
+    private static int ParseChannel(string nativeId)
+    {
+        var dash = nativeId.LastIndexOf('-');
+        if (dash >= 0 && dash < nativeId.Length - 1 &&
+            int.TryParse(nativeId.AsSpan(dash + 1), out var channel))
+            return channel;
+        return 0;
     }
 
     protected override void OnPluginRegistered(bool enabled, Dictionary<string, string> settings,
@@ -252,7 +265,7 @@ public sealed class ShellyBridgeActor : PluginActorBase
 
         if (keys.Contains("cover"))
         {
-            if (root.TryGetProperty("cover:0", out var cover))
+            if (root.TryGetProperty($"cover:{device.Channel}", out var cover))
                 SendUpdates(deviceId, ShellyStateMapper.MapCoverStatus(cover));
         }
 
