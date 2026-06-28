@@ -5,15 +5,13 @@ interface Props {
   rooms: Room[];
   defaultName?: string;
   defaultRoomId?: string;
-  showIpField?: boolean;
-  onConfirm: (name: string, roomId: string, ip?: string) => Promise<void>;
+  onConfirm: (name: string, roomId: string) => Promise<void>;
   onCancel: () => void;
 }
 
-export function ConfigureDeviceModal({ rooms, defaultName, defaultRoomId, showIpField, onConfirm, onCancel }: Props) {
+export function ConfigureDeviceModal({ rooms, defaultName, defaultRoomId, onConfirm, onCancel }: Props) {
   const [name, setName] = useState(defaultName ?? '');
   const [roomId, setRoomId] = useState(defaultRoomId ?? rooms[0]?.id ?? '');
-  const [ip, setIp] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,7 +44,7 @@ export function ConfigureDeviceModal({ rooms, defaultName, defaultRoomId, showIp
     setSubmitting(true);
     setError(null);
     try {
-      await onConfirm(name.trim(), roomId, ip.trim() || undefined);
+      await onConfirm(name.trim(), roomId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to configure device');
       setSubmitting(false);
@@ -87,37 +85,6 @@ export function ConfigureDeviceModal({ rooms, defaultName, defaultRoomId, showIp
               ))}
             </select>
           </div>
-
-          {showIpField && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <label className="form-label">
-                Local IP
-                <span style={{
-                  fontWeight: 400,
-                  textTransform: 'none',
-                  letterSpacing: 0,
-                  fontSize: 11,
-                  color: 'var(--text-muted)',
-                  marginLeft: 6,
-                }}>
-                  optional
-                </span>
-              </label>
-              <input
-                style={inputStyle}
-                type="text"
-                placeholder="192.168.1.x"
-                value={ip}
-                onChange={(e) => setIp(e.target.value)}
-                onFocus={handleFocus}
-                onBlur={handleBlur}
-                autoComplete="off"
-              />
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: -2 }}>
-                Used for direct LAN control — leave blank to skip
-              </div>
-            </div>
-          )}
 
           {error && (
             <div style={{ color: 'var(--accent-red)', fontSize: 13 }}>{error}</div>

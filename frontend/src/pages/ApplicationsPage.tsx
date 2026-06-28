@@ -210,6 +210,16 @@ const actionsRowStyle: React.CSSProperties = {
   marginTop: 4,
 };
 
+const dysonLinkStyle: React.CSSProperties = {
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  fontSize: 12,
+  fontFamily: 'var(--font-body)',
+  color: 'var(--accent-primary)',
+  cursor: 'pointer',
+};
+
 // ---- Helpers ----
 
 function handleFocus(e: React.FocusEvent<HTMLInputElement>) {
@@ -425,12 +435,25 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
         <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 8 }}>{description}</div>
       )}
 
-      {/* Dyson connected account */}
+      {/* Dyson account status */}
       {app.id === 'dyson' && dysonAccount?.connected && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-green)', flexShrink: 0, display: 'inline-block' }} />
           <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
-            Connected as {dysonAccount.email} · {dysonAccount.deviceCount} device{dysonAccount.deviceCount !== 1 ? 's' : ''}
+            Connected as {dysonAccount.email} · {dysonAccount.deviceCount} device{dysonAccount.deviceCount !== 1 ? 's' : ''} ·{' '}
+            <button type="button" style={dysonLinkStyle} onClick={() => setShowDysonWizard(true)}>
+              Reconnect
+            </button>
+          </span>
+        </div>
+      )}
+      {app.id === 'dyson' && dysonAccount && !dysonAccount.connected && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+            Account not connected.{' '}
+            <button type="button" style={dysonLinkStyle} onClick={() => setShowDysonWizard(true)}>
+              Connect now
+            </button>
           </span>
         </div>
       )}
