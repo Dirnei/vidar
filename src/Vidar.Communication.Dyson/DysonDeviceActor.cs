@@ -97,6 +97,13 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
             _inboundChannel?.Writer.TryComplete();
             _outboundChannel?.Writer.TryComplete();
 
+            if (_mqttClient != null)
+            {
+                try { await _mqttClient.DisconnectAsync(); } catch { }
+                _mqttClient.Dispose();
+                _mqttClient = null;
+            }
+
             if (string.IsNullOrWhiteSpace(_accountToken))
             {
                 _log.Warning("No Dyson account token for {Serial}; needs re-auth", _cred.Serial);
@@ -181,7 +188,7 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
     // Inspect the exception for HTTP 429 → RateLimitedDelay; otherwise TransientDelay.
     private void ScheduleReconnectAfterFailure(Exception ex)
     {
-        if (ex is HttpRequestException { StatusCode: HttpStatusCode.TooManyRequests } httpEx)
+        if (ex is HttpRequestException { StatusCode: HttpStatusCode.TooManyRequests })
         {
             var decision = DysonReconnectPolicy.Next(DysonConnectOutcome.RateLimited);
             Timers.StartSingleTimer("reconnect", ConnectToBroker.Instance, decision.Delay);
