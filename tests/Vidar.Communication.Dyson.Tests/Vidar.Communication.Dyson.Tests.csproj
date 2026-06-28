@@ -20,4 +20,8 @@
     <ProjectReference Include="..\..\src\Vidar.Communication.Dyson\Vidar.Communication.Dyson.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Fixtures\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

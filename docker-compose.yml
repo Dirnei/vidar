@@ -23,9 +23,6 @@ services:
       - VIDAR_HOSTNAME=vidar-host
       - VIDAR_MONGO_CONNECTION=mongodb://mongodb:27017
       - VIDAR_MONGO_DATABASE=vidar
-      # TEMP debug: surface inbound API request logs (path + status) while
-      # diagnosing the Dyson save flow. Remove once resolved.
-      - Logging__LogLevel__Microsoft.AspNetCore=Information
 
   vidar-comm-shelly:
     build:
