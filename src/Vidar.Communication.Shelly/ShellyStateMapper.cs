@@ -27,6 +27,36 @@ public static class ShellyStateMapper
         return results;
     }
 
+    /// <summary>
+    /// Maps a Gen2 light:0 component. Emits a composite "light" value ({ on, brightness })
+    /// plus power/energy when the dimmer reports a power meter (PM models).
+    /// </summary>
+    public static List<ShellyCapabilityValue> MapLightStatus(JsonElement element)
+    {
+        var results = new List<ShellyCapabilityValue>();
+        var light = new Dictionary<string, object>();
+
+        if (element.TryGetProperty("output", out var output) && (output.ValueKind == JsonValueKind.True || output.ValueKind == JsonValueKind.False))
+            light["on"] = output.GetBoolean();
+
+        if (element.TryGetProperty("brightness", out var brightness) && brightness.ValueKind == JsonValueKind.Number)
+            light["brightness"] = brightness.GetDouble();
+
+        if (light.Count > 0)
+            results.Add(new ShellyCapabilityValue("light", light));
+
+        if (element.TryGetProperty("apower", out var apower) && apower.ValueKind == JsonValueKind.Number)
+            results.Add(new ShellyCapabilityValue("power", apower.GetDouble()));
+
+        if (element.TryGetProperty("aenergy", out var aenergy) && aenergy.ValueKind == JsonValueKind.Object)
+        {
+            if (aenergy.TryGetProperty("total", out var total) && total.ValueKind == JsonValueKind.Number)
+                results.Add(new ShellyCapabilityValue("energy", total.GetDouble() / 1000.0));
+        }
+
+        return results;
+    }
+
     public static List<ShellyCapabilityValue> MapCoverStatus(JsonElement element)
     {
         var results = new List<ShellyCapabilityValue>();
@@ -61,6 +91,27 @@ public static class ShellyStateMapper
 
         if (roller.TryGetProperty("power", out var power) && power.ValueKind == JsonValueKind.Number)
             results.Add(new ShellyCapabilityValue("power", power.GetDouble()));
+
+        return results;
+    }
+
+    /// <summary>
+    /// Maps a single light entry from the Gen1 /status response lights array.
+    /// Emits a composite "light" value ({ on, brightness }).
+    /// </summary>
+    public static List<ShellyCapabilityValue> MapGen1LightStatus(JsonElement light)
+    {
+        var results = new List<ShellyCapabilityValue>();
+        var state = new Dictionary<string, object>();
+
+        if (light.TryGetProperty("ison", out var ison) && (ison.ValueKind == JsonValueKind.True || ison.ValueKind == JsonValueKind.False))
+            state["on"] = ison.GetBoolean();
+
+        if (light.TryGetProperty("brightness", out var brightness) && brightness.ValueKind == JsonValueKind.Number)
+            state["brightness"] = brightness.GetDouble();
+
+        if (state.Count > 0)
+            results.Add(new ShellyCapabilityValue("light", state));
 
         return results;
     }

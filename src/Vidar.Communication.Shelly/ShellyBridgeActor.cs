@@ -55,6 +55,15 @@ public sealed class ShellyBridgeActor : PluginActorBase
                     capabilities.Add(new CapabilityDescriptor { Key = "power", Label = "Power", Unit = UnitType.Watts });
                     capabilities.Add(new CapabilityDescriptor { Key = "energy", Label = "Energy", Unit = UnitType.WattHours });
                 }
+                if (root.TryGetProperty("light:0", out var light0))
+                {
+                    capabilities.Add(new CapabilityDescriptor { Key = "light", Label = "Light", Unit = UnitType.OnOff, Commandable = true });
+                    if (light0.TryGetProperty("apower", out _))
+                    {
+                        capabilities.Add(new CapabilityDescriptor { Key = "power", Label = "Power", Unit = UnitType.Watts });
+                        capabilities.Add(new CapabilityDescriptor { Key = "energy", Label = "Energy", Unit = UnitType.WattHours });
+                    }
+                }
                 if (root.TryGetProperty("cover:0", out _))
                     capabilities.Add(new CapabilityDescriptor { Key = "cover", Label = "Cover", Unit = UnitType.Percent, Commandable = true, Min = 0, Max = 100 });
                 if (root.TryGetProperty("temperature:0", out _))
@@ -122,6 +131,13 @@ public sealed class ShellyBridgeActor : PluginActorBase
                 {
                     if (cmd.CapabilityKey == "switch" && boolValue.HasValue)
                         await _httpClient.Gen1SetSwitchAsync(device.Host, 0, boolValue.Value);
+                    else if (cmd.CapabilityKey == "light")
+                    {
+                        if (boolValue.HasValue)
+                            await _httpClient.Gen1SetLightAsync(device.Host, 0, on: boolValue.Value, brightness: null);
+                        else if (numericValue.HasValue)
+                            await _httpClient.Gen1SetLightAsync(device.Host, 0, on: true, brightness: numericValue.Value);
+                    }
                     else if (cmd.CapabilityKey == "cover")
                     {
                         if (numericValue.HasValue)
@@ -140,6 +156,13 @@ public sealed class ShellyBridgeActor : PluginActorBase
                 {
                     if (cmd.CapabilityKey == "switch" && boolValue.HasValue)
                         await _httpClient.SetSwitchAsync(device.Host, 0, boolValue.Value);
+                    else if (cmd.CapabilityKey == "light")
+                    {
+                        if (boolValue.HasValue)
+                            await _httpClient.SetLightAsync(device.Host, 0, on: boolValue.Value, brightness: null);
+                        else if (numericValue.HasValue)
+                            await _httpClient.SetLightAsync(device.Host, 0, on: true, brightness: numericValue.Value);
+                    }
                     else if (cmd.CapabilityKey == "cover" && numericValue.HasValue)
                         await _httpClient.SetCoverPositionAsync(device.Host, 0, numericValue.Value);
                 }
@@ -153,21 +176,27 @@ public sealed class ShellyBridgeActor : PluginActorBase
         });
     }
 
+    // Per-device hook fired by the base for both the startup batch and devices configured at
+    // runtime. Without this, a device added after the bridge started never enters _devices,
+    // so it is neither polled nor reachable by commands until the process restarts.
+    protected override void OnDeviceRegistered(Guid deviceId, string nativeId,
+        RegisterDeviceForPolling registration)
+    {
+        _devices[registration.NativeId] = new ShellyDevice
+        {
+            NativeId = registration.NativeId,
+            Host = registration.Host,
+            Generation = registration.Generation,
+            Capabilities = registration.Capabilities,
+            VidarDeviceId = registration.DeviceId
+        };
+        Log.Info("Registered Shelly device for polling: {NativeId} at {Host} (Gen{Gen})",
+            registration.NativeId, registration.Host, registration.Generation);
+    }
+
     protected override void OnPluginRegistered(bool enabled, Dictionary<string, string> settings,
         List<RegisterDeviceForPolling> registrations)
     {
-        foreach (var reg in registrations)
-        {
-            var device = new ShellyDevice
-            {
-                NativeId = reg.NativeId,
-                Host = reg.Host,
-                Generation = reg.Generation,
-                Capabilities = reg.Capabilities,
-                VidarDeviceId = reg.DeviceId
-            };
-            _devices[device.NativeId] = device;
-        }
         Log.Info("Plugin registered with {Count} devices, enabled={Enabled}", registrations.Count, enabled);
         PublishStatus("running", _devices.Count);
         if (enabled)
@@ -215,6 +244,12 @@ public sealed class ShellyBridgeActor : PluginActorBase
                 SendUpdates(deviceId, ShellyStateMapper.MapSwitchStatus(pm));
         }
 
+        if (keys.Contains("light"))
+        {
+            if (root.TryGetProperty("light:0", out var light))
+                SendUpdates(deviceId, ShellyStateMapper.MapLightStatus(light));
+        }
+
         if (keys.Contains("cover"))
         {
             if (root.TryGetProperty("cover:0", out var cover))
@@ -244,6 +279,26 @@ public sealed class ShellyBridgeActor : PluginActorBase
                 rollers.GetArrayLength() > 0)
             {
                 SendUpdates(deviceId, ShellyStateMapper.MapGen1RollerStatus(rollers[0]));
+            }
+        }
+
+        if (keys.Contains("light"))
+        {
+            if (root.TryGetProperty("lights", out var lights) &&
+                lights.ValueKind == JsonValueKind.Array &&
+                lights.GetArrayLength() > 0)
+            {
+                SendUpdates(deviceId, ShellyStateMapper.MapGen1LightStatus(lights[0]));
+            }
+
+            if (keys.Contains("power") &&
+                root.TryGetProperty("meters", out var meters) &&
+                meters.ValueKind == JsonValueKind.Array &&
+                meters.GetArrayLength() > 0 &&
+                meters[0].TryGetProperty("power", out var meterPower) &&
+                meterPower.ValueKind == JsonValueKind.Number)
+            {
+                ReportState(deviceId, "power", meterPower.GetDouble());
             }
         }
 

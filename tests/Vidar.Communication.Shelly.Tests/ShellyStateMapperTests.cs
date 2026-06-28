@@ -33,4 +33,41 @@ public class ShellyStateMapperTests
         var updates = ShellyStateMapper.MapTemperatureStatus(doc.RootElement);
         Assert.Contains(updates, u => u.CapabilityKey == "temperature" && (double)u.Value == 22.4);
     }
+
+    [Fact]
+    public void MapGen2Status_Light_ExtractsCompositeOnAndBrightness()
+    {
+        var json = """{"id":0,"source":"WS_in","output":true,"brightness":75.0,"temperature":{"tC":45.2}}""";
+        var doc = JsonDocument.Parse(json);
+        var updates = ShellyStateMapper.MapLightStatus(doc.RootElement);
+
+        var light = Assert.Single(updates, u => u.CapabilityKey == "light");
+        var state = Assert.IsType<Dictionary<string, object>>(light.Value);
+        Assert.Equal(true, state["on"]);
+        Assert.Equal(75.0, state["brightness"]);
+    }
+
+    [Fact]
+    public void MapGen2Status_Light_WithPowerMeter_ExtractsPowerAndEnergy()
+    {
+        var json = """{"id":0,"output":false,"brightness":40.0,"apower":12.3,"aenergy":{"total":1500.0}}""";
+        var doc = JsonDocument.Parse(json);
+        var updates = ShellyStateMapper.MapLightStatus(doc.RootElement);
+
+        Assert.Contains(updates, u => u.CapabilityKey == "power" && (double)u.Value == 12.3);
+        Assert.Contains(updates, u => u.CapabilityKey == "energy" && (double)u.Value == 1500.0 / 1000.0);
+    }
+
+    [Fact]
+    public void MapGen1Light_ExtractsCompositeOnAndBrightness()
+    {
+        var json = """{"ison":true,"source":"http","mode":"white","brightness":60}""";
+        var doc = JsonDocument.Parse(json);
+        var updates = ShellyStateMapper.MapGen1LightStatus(doc.RootElement);
+
+        var light = Assert.Single(updates, u => u.CapabilityKey == "light");
+        var state = Assert.IsType<Dictionary<string, object>>(light.Value);
+        Assert.Equal(true, state["on"]);
+        Assert.Equal(60.0, state["brightness"]);
+    }
 }

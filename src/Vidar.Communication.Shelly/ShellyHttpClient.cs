@@ -43,6 +43,17 @@ public sealed class ShellyHttpClient(HttpClient httpClient)
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task SetLightAsync(string host, int channel, bool? on, int? brightness)
+    {
+        var url = $"http://{host}/rpc/Light.Set?id={channel}";
+        if (on.HasValue)
+            url += $"&on={on.Value.ToString().ToLowerInvariant()}";
+        if (brightness.HasValue)
+            url += $"&brightness={brightness.Value}";
+        var response = await httpClient.GetAsync(url);
+        response.EnsureSuccessStatusCode();
+    }
+
     // ── Gen1 (REST) ───────────────────────────────────────────────────────────
 
     public async Task<JsonDocument?> GetGen1StatusAsync(string host)
@@ -73,6 +84,18 @@ public sealed class ShellyHttpClient(HttpClient httpClient)
         var response = await httpClient.GetAsync(url);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
+    }
+
+    public async Task Gen1SetLightAsync(string host, int channel, bool? on, int? brightness)
+    {
+        var query = new List<string>();
+        if (on.HasValue)
+            query.Add($"turn={(on.Value ? "on" : "off")}");
+        if (brightness.HasValue)
+            query.Add($"brightness={brightness.Value}");
+        var url = $"http://{host}/light/{channel}?{string.Join("&", query)}";
+        var response = await httpClient.GetAsync(url);
+        response.EnsureSuccessStatusCode();
     }
 
     public async Task Gen1OpenCoverAsync(string host)

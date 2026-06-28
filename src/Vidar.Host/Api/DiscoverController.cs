@@ -126,6 +126,15 @@ public sealed class DiscoverController : ControllerBase
                 capabilities.Add(new CapabilityDescriptor { Key = "power", Label = "Power", Unit = UnitType.Watts });
                 capabilities.Add(new CapabilityDescriptor { Key = "energy", Label = "Energy", Unit = UnitType.KilowattHours });
             }
+            if (root.TryGetProperty("light:0", out var light0))
+            {
+                capabilities.Add(new CapabilityDescriptor { Key = "light", Label = "Light", Unit = UnitType.OnOff, Commandable = true });
+                if (light0.TryGetProperty("apower", out _) && capabilities.All(c => c.Key != "power"))
+                {
+                    capabilities.Add(new CapabilityDescriptor { Key = "power", Label = "Power", Unit = UnitType.Watts });
+                    capabilities.Add(new CapabilityDescriptor { Key = "energy", Label = "Energy", Unit = UnitType.KilowattHours });
+                }
+            }
             if (root.TryGetProperty("cover:0", out _))
                 capabilities.Add(new CapabilityDescriptor { Key = "cover", Label = "Cover", Unit = UnitType.Percent, Commandable = true, Min = 0, Max = 100 });
             if (root.TryGetProperty("temperature:0", out _))
@@ -136,9 +145,17 @@ public sealed class DiscoverController : ControllerBase
         else
         {
             // Gen1: detect from /shelly response and /status
+            // A dimmer reports num_outputs like a relay, so detect it first via the /status lights array and skip the switch mapping.
+            var isGen1Dimmer = statusDoc != null &&
+                statusDoc.RootElement.TryGetProperty("lights", out var gen1Lights) &&
+                gen1Lights.ValueKind == JsonValueKind.Array &&
+                gen1Lights.GetArrayLength() > 0;
+            if (isGen1Dimmer)
+                capabilities.Add(new CapabilityDescriptor { Key = "light", Label = "Light", Unit = UnitType.OnOff, Commandable = true });
+
             if (shellyRoot.TryGetProperty("num_rollers", out var rollers) && rollers.GetInt32() > 0)
                 capabilities.Add(new CapabilityDescriptor { Key = "cover", Label = "Cover", Unit = UnitType.Percent, Commandable = true, Min = 0, Max = 100 });
-            if (shellyRoot.TryGetProperty("num_outputs", out var outputs) && outputs.GetInt32() > 0 && capabilities.All(c => c.Key != "cover"))
+            if (!isGen1Dimmer && shellyRoot.TryGetProperty("num_outputs", out var outputs) && outputs.GetInt32() > 0 && capabilities.All(c => c.Key != "cover"))
             {
                 capabilities.Add(new CapabilityDescriptor { Key = "switch", Label = "Switch", Unit = UnitType.OnOff, Commandable = true });
                 capabilities.Add(new CapabilityDescriptor { Key = "power", Label = "Power", Unit = UnitType.Watts });
