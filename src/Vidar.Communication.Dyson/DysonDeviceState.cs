@@ -1,6 +1,6 @@
 namespace Vidar.Communication.Dyson;
 
-public enum DysonTransport { Local, NeedsConnection, Offline }
+public enum DysonTransport { Local, NeedsConnection, Offline, NeedsReauth }
 
 public static class DysonDeviceState
 {

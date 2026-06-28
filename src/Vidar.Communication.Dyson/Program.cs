@@ -30,7 +30,8 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
         .WithSingletonProxy<PluginRegistry>("plugin-registry", new ClusterSingletonOptions { Role = "host" })
         .WithActors((system, registry, resolver) =>
         {
-            system.ActorOf(DysonBridgeActor.Props(), "dyson-bridge");
+            var cloudIot = sp.GetRequiredService<DysonCloudIot>();
+            system.ActorOf(DysonBridgeActor.Props(cloudIot), "dyson-bridge");
         });
 });
 

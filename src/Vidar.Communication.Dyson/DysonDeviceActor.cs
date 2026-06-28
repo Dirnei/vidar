@@ -1,3 +1,4 @@
+using System.Net;
 using System.Threading.Channels;
 using Akka.Actor;
 using Akka.Cluster.Tools.PublishSubscribe;
@@ -13,16 +14,10 @@ using Vidar.Core.Sharding;
 
 namespace Vidar.Communication.Dyson;
 
-// One actor per accepted device. Mirrors Zigbee2MqttBridgeActor's MQTT
-// connect/subscribe/stream/reconnect wiring. Differences:
-//   - broker host = cred.Ip, port 1883, username = cred.Serial, password = cred.MqttPassword
-//   - subscribe   "<productType>/<serial>/status/#"
-//   - on connect  publish REQUEST-CURRENT-STATE to "<productType>/<serial>/command"
-//   - inbound     DysonStateMapper.MapState(payload, cred.ProductType) -> ReportState
-//   - command     DysonCommandBuilder.Build(key, value, now) -> publish to command topic
-//   - if cred.Ip is null/blank: do NOT connect; publish status needs-connection
-//   - publish transport status via PublishStatus on every state change
-//   - uses MQTT 3.1.1 (MQTTnet) because Dyson's local broker rejects MQTT 5.0
+// One actor per accepted Dyson device. Connects to Dyson's AWS IoT cloud endpoint
+// via MQTTnet over WebSocket (WSS). Credentials are fetched per-connect from DysonCloudIot.
+// Reconnect is gated by DysonReconnectPolicy: 401 → NeedsReauth (no auto-retry),
+// 429 → RateLimitedDelay (≥60s), other transient → TransientDelay (15s).
 public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
 {
     public ITimerScheduler Timers { get; set; } = null!;
@@ -35,6 +30,8 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
     private readonly Guid _deviceId;
     private readonly string _statusPrefix;
     private readonly string _commandTopic;
+    private readonly string? _accountToken;
+    private readonly DysonCloudIot _cloudIot;
 
     private IMqttClient? _mqttClient;
     private Channel<MqttMessage>? _inboundChannel;
@@ -43,16 +40,17 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
 
     private sealed record MqttMessage(string Topic, string Payload);
     private sealed class ConnectToBroker { public static readonly ConnectToBroker Instance = new(); }
-    private sealed class CheckConnection { public static readonly CheckConnection Instance = new(); }
     private sealed class ScheduleReconnect { public static readonly ScheduleReconnect Instance = new(); }
 
-    public static Props Props(DysonDeviceCredential cred, Guid deviceId) =>
-        Akka.Actor.Props.Create(() => new DysonDeviceActor(cred, deviceId));
+    public static Props Props(DysonDeviceCredential cred, Guid deviceId, string? accountToken, DysonCloudIot cloudIot) =>
+        Akka.Actor.Props.Create(() => new DysonDeviceActor(cred, deviceId, accountToken, cloudIot));
 
-    public DysonDeviceActor(DysonDeviceCredential cred, Guid deviceId)
+    public DysonDeviceActor(DysonDeviceCredential cred, Guid deviceId, string? accountToken, DysonCloudIot cloudIot)
     {
         _cred = cred;
         _deviceId = deviceId;
+        _accountToken = accountToken;
+        _cloudIot = cloudIot;
         _statusPrefix = $"{cred.ProductType}/{cred.Serial}/status/";
         _commandTopic = $"{cred.ProductType}/{cred.Serial}/command";
 
@@ -64,16 +62,7 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
         ReceiveAsync<ConnectToBroker>(_ => ConnectAsync());
 
         Receive<ScheduleReconnect>(_ =>
-            Timers.StartSingleTimer("reconnect", ConnectToBroker.Instance, TimeSpan.FromSeconds(15)));
-
-        Receive<CheckConnection>(_ =>
-        {
-            if (_mqttClient == null || !_mqttClient.IsConnected)
-            {
-                _log.Warning("MQTT client not connected for device {Serial}, scheduling reconnect...", _cred.Serial);
-                Timers.StartSingleTimer("reconnect", ConnectToBroker.Instance, TimeSpan.FromSeconds(15));
-            }
-        });
+            Timers.StartSingleTimer("reconnect", ConnectToBroker.Instance, DysonReconnectPolicy.TransientDelay));
 
         Receive<DeviceCommand>(cmd =>
         {
@@ -89,16 +78,7 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
     protected override void PreStart()
     {
         base.PreStart();
-
-        if (DysonDeviceState.Evaluate(_cred.Ip, connected: false) == DysonTransport.NeedsConnection)
-        {
-            SetTransport(DysonTransport.NeedsConnection);
-            return;
-        }
-
         Self.Tell(ConnectToBroker.Instance);
-        Timers.StartPeriodicTimer("health", CheckConnection.Instance,
-            TimeSpan.FromSeconds(20), TimeSpan.FromSeconds(15));
     }
 
     protected override void PostStop()
@@ -114,77 +94,102 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
     {
         try
         {
-            if (_mqttClient != null)
-            {
-                try { await _mqttClient.DisconnectAsync(); } catch { }
-                _mqttClient.Dispose();
-                _mqttClient = null;
-            }
             _inboundChannel?.Writer.TryComplete();
             _outboundChannel?.Writer.TryComplete();
+
+            if (string.IsNullOrWhiteSpace(_accountToken))
+            {
+                _log.Warning("No Dyson account token for {Serial}; needs re-auth", _cred.Serial);
+                SetTransport(DysonTransport.NeedsReauth);
+                return; // no auto-retry (rate-limit safety)
+            }
+
+            DysonIoTCredentials creds;
+            try
+            {
+                creds = await _cloudIot.GetCredentialsAsync(_cred.Serial, _accountToken, CancellationToken.None);
+            }
+            catch (DysonAuthExpiredException)
+            {
+                _log.Warning("Dyson account token expired for {Serial}; needs re-auth", _cred.Serial);
+                SetTransport(DysonTransport.NeedsReauth);
+                return; // DysonReconnectPolicy: AuthExpired => no auto-retry
+            }
+            catch (Exception ex)
+            {
+                _log.Warning(ex, "Failed to fetch IoT credentials for {Serial}", _cred.Serial);
+                SetTransport(DysonTransport.Offline);
+                ScheduleReconnectAfterFailure(ex);
+                return;
+            }
 
             var factory = new MqttFactory();
             _mqttClient = factory.CreateMqttClient();
 
+            var headers = new Dictionary<string, string>
+            {
+                [creds.TokenKey] = creds.TokenValue,
+                ["X-Amz-CustomAuthorizer-Name"] = creds.CustomAuthorizerName,
+                ["X-Amz-CustomAuthorizer-Signature"] = creds.TokenSignature,
+            };
+
             var options = new MqttClientOptionsBuilder()
-                .WithTcpServer(_cred.Ip!, 1883)
-                .WithCredentials(_cred.Serial, _cred.MqttPassword)
+                .WithWebSocketServer(o => o.WithUri($"wss://{creds.Endpoint}/mqtt").WithRequestHeaders(headers))
+                .WithClientId(creds.ClientId)
                 .WithProtocolVersion(MqttProtocolVersion.V311)
-                .WithClientId($"vidar{Guid.NewGuid():N}".Substring(0, 23))
+                .WithTlsOptions(o => o.UseTls(true))
                 .Build();
 
             _inboundChannel = Channel.CreateBounded<MqttMessage>(1000);
             _outboundChannel = Channel.CreateBounded<DeviceCommand>(100);
-
             var inbound = _inboundChannel;
             _mqttClient.ApplicationMessageReceivedAsync += e =>
             {
                 var topic = e.ApplicationMessage.Topic;
                 var payload = e.ApplicationMessage.ConvertPayloadToString();
-                if (topic != null && payload != null)
-                    inbound.Writer.TryWrite(new MqttMessage(topic, payload));
+                if (topic != null && payload != null) inbound.Writer.TryWrite(new MqttMessage(topic, payload));
                 return Task.CompletedTask;
             };
-
             var self = Self;
-            _mqttClient.DisconnectedAsync += _ =>
-            {
-                _log.Warning("MQTT disconnected for device {Serial}, scheduling reconnect...", _cred.Serial);
-                self.Tell(ScheduleReconnect.Instance);
-                return Task.CompletedTask;
-            };
+            _mqttClient.DisconnectedAsync += _ => { self.Tell(ScheduleReconnect.Instance); return Task.CompletedTask; };
 
-            var connectResult = await _mqttClient.ConnectAsync(options, CancellationToken.None);
-            _log.Info("MQTT connect result for {Serial}: {Code}", _cred.Serial, connectResult.ResultCode);
-
-            if (connectResult.ResultCode != MqttClientConnectResultCode.Success)
+            var result = await _mqttClient.ConnectAsync(options, CancellationToken.None);
+            _log.Info("Dyson cloud connect for {Serial}: {Code}", _cred.Serial, result.ResultCode);
+            if (result.ResultCode != MqttClientConnectResultCode.Success)
             {
-                _log.Warning("Dyson {Serial} refused connection: {Code}", _cred.Serial, connectResult.ResultCode);
                 SetTransport(DysonTransport.Offline);
-                Timers.StartSingleTimer("reconnect", ConnectToBroker.Instance, TimeSpan.FromSeconds(15));
+                Timers.StartSingleTimer("reconnect", ConnectToBroker.Instance, DysonReconnectPolicy.TransientDelay);
                 return;
             }
 
             await _mqttClient.SubscribeAsync(new MqttTopicFilterBuilder()
-                .WithTopic($"{_cred.ProductType}/{_cred.Serial}/status/#")
-                .WithAtLeastOnceQoS().Build(), CancellationToken.None);
-
-            await _mqttClient.PublishStringAsync(_commandTopic, "{\"msg\":\"REQUEST-CURRENT-STATE\"}",
-                cancellationToken: CancellationToken.None);
-
-            _log.Info("Connected to Dyson device {Serial} at {Ip}, subscribed to status/#",
-                _cred.Serial, _cred.Ip);
+                .WithTopic($"{_cred.ProductType}/{_cred.Serial}/status/#").WithAtLeastOnceQoS().Build(), CancellationToken.None);
+            await _mqttClient.PublishStringAsync(_commandTopic, "{\"msg\":\"REQUEST-CURRENT-STATE\"}", cancellationToken: CancellationToken.None);
 
             StartInboundStream();
             StartOutboundStream();
-
-            SetTransport(DysonDeviceState.Evaluate(_cred.Ip, connected: true));
+            SetTransport(DysonTransport.Local); // "online"
         }
         catch (Exception ex)
         {
-            _log.Error(ex, "Failed to connect to Dyson device {Serial} at {Ip}", _cred.Serial, _cred.Ip);
+            _log.Error(ex, "Failed to cloud-connect Dyson {Serial}", _cred.Serial);
             SetTransport(DysonTransport.Offline);
-            Timers.StartSingleTimer("reconnect", ConnectToBroker.Instance, TimeSpan.FromSeconds(15));
+            Timers.StartSingleTimer("reconnect", ConnectToBroker.Instance, DysonReconnectPolicy.TransientDelay);
+        }
+    }
+
+    // Inspect the exception for HTTP 429 → RateLimitedDelay; otherwise TransientDelay.
+    private void ScheduleReconnectAfterFailure(Exception ex)
+    {
+        if (ex is HttpRequestException { StatusCode: HttpStatusCode.TooManyRequests } httpEx)
+        {
+            var decision = DysonReconnectPolicy.Next(DysonConnectOutcome.RateLimited);
+            Timers.StartSingleTimer("reconnect", ConnectToBroker.Instance, decision.Delay);
+            _log.Warning("Dyson IoT-credentials rate-limited for {Serial}; retry in {Delay}", _cred.Serial, decision.Delay);
+        }
+        else
+        {
+            Timers.StartSingleTimer("reconnect", ConnectToBroker.Instance, DysonReconnectPolicy.TransientDelay);
         }
     }
 
@@ -245,6 +250,7 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
         {
             DysonTransport.Local => "local",
             DysonTransport.NeedsConnection => "needs-connection",
+            DysonTransport.NeedsReauth => "needs-reauth",
             DysonTransport.Offline => "offline",
             _ => "offline"
         };

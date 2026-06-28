@@ -11,13 +11,15 @@ public sealed class DysonBridgeActor : PluginActorBase
 {
     protected override string PluginId => "dyson";
 
-    public static Akka.Actor.Props Props() =>
-        Akka.Actor.Props.Create(() => new DysonBridgeActor());
+    public static Akka.Actor.Props Props(DysonCloudIot cloudIot) =>
+        Akka.Actor.Props.Create(() => new DysonBridgeActor(cloudIot));
 
-    // Manifest cache: serial → (credential with Ip=null, display name)
+    private readonly DysonCloudIot _cloudIot;
+
+    // Manifest cache: serial → (credential, display name)
     private readonly Dictionary<string, (DysonDeviceCredential Cred, string Name)> _manifest = new();
 
-    // Live children: serial → actor ref (credential includes the resolved Ip)
+    // Live children: serial → actor ref
     private readonly Dictionary<string, IActorRef> _children = new();
 
     // Deferred-restart state: ActorRef → serial (for Terminated lookup)
@@ -25,8 +27,10 @@ public sealed class DysonBridgeActor : PluginActorBase
     // Pending restarts waiting for old child to terminate: serial → (new cred, deviceId)
     private readonly Dictionary<string, (DysonDeviceCredential Cred, Guid DeviceId)> _pendingRestarts = new();
 
-    public DysonBridgeActor()
+    public DysonBridgeActor(DysonCloudIot cloudIot)
     {
+        _cloudIot = cloudIot;
+
         Receive<DeviceCommand>(cmd =>
         {
             if (_children.TryGetValue(cmd.NativeId, out var child))
@@ -66,7 +70,7 @@ public sealed class DysonBridgeActor : PluginActorBase
 
         // Restore accepted devices that were persisted before this actor started
         foreach (var reg in registrations)
-            SpawnOrRestartChild(reg.NativeId, reg.DeviceId, reg.Host);
+            SpawnOrRestartChild(reg.NativeId, reg.DeviceId);
 
         if (enabled)
             DiscoverAll();
@@ -97,7 +101,7 @@ public sealed class DysonBridgeActor : PluginActorBase
         if (_manifest.Count == 0)
             return;
 
-        SpawnOrRestartChild(nativeId, deviceId, registration.Host);
+        SpawnOrRestartChild(nativeId, deviceId);
         PublishStatus("running", _children.Count);
     }
 
@@ -121,7 +125,6 @@ public sealed class DysonBridgeActor : PluginActorBase
             {
                 ["serial"] = serial,
                 ["productType"] = cred.ProductType,
-                ["mqttPassword"] = cred.MqttPassword,
                 ["name"] = name,
             });
 
@@ -129,7 +132,7 @@ public sealed class DysonBridgeActor : PluginActorBase
         }
     }
 
-    private void SpawnOrRestartChild(string serial, Guid deviceId, string host)
+    private void SpawnOrRestartChild(string serial, Guid deviceId)
     {
         if (!_manifest.TryGetValue(serial, out var entry))
         {
@@ -137,8 +140,7 @@ public sealed class DysonBridgeActor : PluginActorBase
             return;
         }
 
-        var ip = string.IsNullOrWhiteSpace(host) ? null : host;
-        var cred = entry.Cred with { Ip = ip };
+        var cred = entry.Cred;
 
         // A restart is already in flight for this serial (old child still terminating).
         // Update the pending credential; the Terminated handler will spawn the replacement.
@@ -169,23 +171,37 @@ public sealed class DysonBridgeActor : PluginActorBase
     private void SpawnChild(string serial, DysonDeviceCredential cred, Guid deviceId)
     {
         var childName = $"dyson-device-{serial}";
-        var child = Context.ActorOf(DysonDeviceActor.Props(cred, deviceId), childName);
+        var child = Context.ActorOf(DysonDeviceActor.Props(cred, deviceId, AccountToken(Settings), _cloudIot), childName);
         _children[serial] = child;
         _childSerials[child] = serial;
 
-        Log.Info("Spawned DysonDeviceActor for {Serial} Ip={Ip}", serial, cred.Ip ?? "(none — needs-connection)");
+        Log.Info("Spawned DysonDeviceActor for {Serial}", serial);
     }
 
-    // ── Static helpers (public ParseManifest for unit tests) ────────────────
+    // ── Static helpers (public for unit tests) ──────────────────────────────
 
     /// <summary>
     /// Parses <c>account.manifest</c> from <paramref name="settings"/>, filters out robots,
     /// and returns one <see cref="DysonDeviceCredential"/> per supported device.
-    /// <c>Ip</c> is always <see langword="null"/> here; it arrives later via
-    /// <c>RegisterDeviceForPolling.Host</c>.
     /// </summary>
     public static List<DysonDeviceCredential> ParseManifest(IReadOnlyDictionary<string, string> settings)
-        => ParseManifestInternal(settings).Select(t => t.Cred).ToList();
+    {
+        if (!settings.TryGetValue("account.manifest", out var json) || string.IsNullOrWhiteSpace(json))
+            return new();
+
+        using var doc = JsonDocument.Parse(json);
+        var result = new List<DysonDeviceCredential>();
+        foreach (var e in doc.RootElement.EnumerateArray())
+        {
+            var productType = e.GetProperty("productType").GetString()!;
+            if (!DysonModelRegistry.IsSupported(productType)) continue;
+            result.Add(new DysonDeviceCredential(e.GetProperty("serial").GetString()!, productType));
+        }
+        return result;
+    }
+
+    public static string? AccountToken(IReadOnlyDictionary<string, string> settings) =>
+        settings.TryGetValue("account.token", out var t) && !string.IsNullOrWhiteSpace(t) ? t : null;
 
     private static List<(DysonDeviceCredential Cred, string Name)> ParseManifestInternal(
         IReadOnlyDictionary<string, string> settings)
@@ -203,12 +219,11 @@ public sealed class DysonBridgeActor : PluginActorBase
                 continue;
 
             var serial = e.GetProperty("serial").GetString()!;
-            var mqttPassword = e.GetProperty("mqttPassword").GetString()!;
             var name = e.TryGetProperty("name", out var nameProp)
                 ? nameProp.GetString() ?? serial
                 : serial;
 
-            result.Add((new DysonDeviceCredential(serial, productType, mqttPassword, null), name));
+            result.Add((new DysonDeviceCredential(serial, productType), name));
         }
 
         return result;
