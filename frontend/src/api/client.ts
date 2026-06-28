@@ -204,3 +204,7 @@ export function dysonVerifyAuth(body: { region: string; email: string; password:
   return request('/dyson/auth/verify', { method: 'POST', body: JSON.stringify(body) });
 }
 
+export function dysonGetAccount(): Promise<{ connected: boolean; email?: string; deviceCount?: number }> {
+  return request('/dyson/account');
+}
+

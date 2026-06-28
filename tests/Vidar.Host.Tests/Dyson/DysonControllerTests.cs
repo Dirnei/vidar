@@ -27,6 +27,69 @@ public class DysonControllerTests
     }
 
     [Fact]
+    public async Task Account_ReturnsNotConnected_WhenNoConfig()
+    {
+        var repo = new FakeRepo(); // Saved is null
+        var controller = new DysonController(null!, repo, null!);
+
+        var result = await controller.Account();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var json = System.Text.Json.JsonSerializer.Serialize(ok.Value);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        Assert.False(doc.RootElement.GetProperty("connected").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Account_ReturnsNotConnected_WhenConfigDisabled()
+    {
+        var repo = new FakeRepo
+        {
+            Saved = new ApplicationConfig
+            {
+                Id = "dyson", Name = "Dyson", Enabled = false,
+                Settings = new Dictionary<string, string> { ["account.email"] = "me@example.com" },
+            }
+        };
+        var controller = new DysonController(null!, repo, null!);
+
+        var result = await controller.Account();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var json = System.Text.Json.JsonSerializer.Serialize(ok.Value);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        Assert.False(doc.RootElement.GetProperty("connected").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Account_ReturnsConnectedWithEmailAndDeviceCount_WhenConfigured()
+    {
+        var manifest = System.Text.Json.JsonSerializer.Serialize(new[] { new { serial = "ABC" } });
+        var repo = new FakeRepo
+        {
+            Saved = new ApplicationConfig
+            {
+                Id = "dyson", Name = "Dyson", Enabled = true,
+                Settings = new Dictionary<string, string>
+                {
+                    ["account.email"] = "me@example.com",
+                    ["account.manifest"] = manifest,
+                },
+            }
+        };
+        var controller = new DysonController(null!, repo, null!);
+
+        var result = await controller.Account();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var json = System.Text.Json.JsonSerializer.Serialize(ok.Value);
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        Assert.True(doc.RootElement.GetProperty("connected").GetBoolean());
+        Assert.Equal("me@example.com", doc.RootElement.GetProperty("email").GetString());
+        Assert.Equal(1, doc.RootElement.GetProperty("deviceCount").GetInt32());
+    }
+
+    [Fact]
     public async Task Verify_PersistsAccountManifestAndEnables()
     {
         var repo = new FakeRepo();

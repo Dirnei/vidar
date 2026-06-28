@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getApplications, getWebhookRoutes, saveApplication } from '../api/client';
+import { getApplications, getWebhookRoutes, saveApplication, dysonGetAccount } from '../api/client';
 import type { Application, WebhookRoute } from '../types';
 import { DysonOnboardingWizard } from './DysonOnboardingPage';
 
@@ -359,6 +359,13 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [showDysonWizard, setShowDysonWizard] = useState(false);
+  const [dysonAccount, setDysonAccount] = useState<{ connected: boolean; email?: string; deviceCount?: number } | null>(null);
+
+  // Fetch Dyson account info once (and when wizard completes)
+  useEffect(() => {
+    if (app.id !== 'dyson') return;
+    dysonGetAccount().then(setDysonAccount).catch(() => setDysonAccount(null));
+  }, [app.id, showDysonWizard]);
 
   // Sync when app data reloads
   useEffect(() => {
@@ -416,6 +423,16 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
       {/* Description */}
       {description && (
         <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 8 }}>{description}</div>
+      )}
+
+      {/* Dyson connected account */}
+      {app.id === 'dyson' && dysonAccount?.connected && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-green)', flexShrink: 0, display: 'inline-block' }} />
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+            Connected as {dysonAccount.email} · {dysonAccount.deviceCount} device{dysonAccount.deviceCount !== 1 ? 's' : ''}
+          </span>
+        </div>
       )}
 
       {/* Error banner */}

@@ -57,6 +57,7 @@ public sealed class DysonController : ControllerBase
             config.Settings = new Dictionary<string, string>
             {
                 ["account.token"] = token,
+                ["account.email"] = req.Email,
                 ["account.manifest"] = JsonSerializer.Serialize(devices.Select(d => new
                 {
                     serial = d.Serial, productType = d.ProductType, name = d.Name,
@@ -75,6 +76,19 @@ public sealed class DysonController : ControllerBase
         {
             return CloudError(ex);
         }
+    }
+
+    [HttpGet("account")]
+    public async Task<IActionResult> Account()
+    {
+        var cfg = await _repo.GetByIdAsync("dyson");
+        if (cfg is null || !cfg.Enabled || !cfg.Settings.TryGetValue("account.email", out var email)
+            || string.IsNullOrWhiteSpace(email))
+            return Ok(new { connected = false });
+        var count = 0;
+        if (cfg.Settings.TryGetValue("account.manifest", out var m) && !string.IsNullOrWhiteSpace(m))
+            try { count = System.Text.Json.JsonDocument.Parse(m).RootElement.GetArrayLength(); } catch { }
+        return Ok(new { connected = true, email, deviceCount = count });
     }
 
     // Surface upstream Dyson failures distinctly so the wizard can tell the user what to do,
