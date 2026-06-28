@@ -114,9 +114,6 @@ public class DysonControllerTests
 
         // Assert discovery trigger was sent to plugin registry
         pluginRegistry.Received(1).Tell(Arg.Is<RouteToPlugin>(r => r.PluginId == "dyson" && r.Message is IntegrationConfigChanged), Arg.Any<IActorRef>());
-
-        // Assert mqttPassword was decrypted and round-tripped correctly
-        Assert.Equal("pw", manifest[0].GetProperty("mqttPassword").GetString());
     }
 }
 

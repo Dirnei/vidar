@@ -78,9 +78,7 @@ public sealed class DiscoveredDevicesController : ControllerBase
 
         var reg = new RegisterDeviceForPolling(
             device.Id, device.CommunicationType, device.NativeId,
-            discovered.CommunicationType == "shelly" ? host :
-            discovered.CommunicationType == "dyson" ? device.Settings.GetValueOrDefault("ip", "") :
-            friendlyName,
+            discovered.CommunicationType == "shelly" ? host : friendlyName,
             generation, device.Capabilities);
 
         pluginRegistry.Tell(new RouteToPlugin(discovered.CommunicationType, reg));

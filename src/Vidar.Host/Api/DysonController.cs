@@ -60,8 +60,7 @@ public sealed class DysonController : ControllerBase
                 ["account.email"] = req.Email,
                 ["account.manifest"] = JsonSerializer.Serialize(devices.Select(d => new
                 {
-                    serial = d.Serial, productType = d.ProductType, name = d.Name,
-                    variant = d.Variant, mqttPassword = d.MqttPassword,
+                    serial = d.Serial, productType = d.ProductType, name = d.Name, variant = d.Variant,
                 })),
             };
             await _repo.UpsertAsync(config);

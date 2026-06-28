@@ -79,18 +79,12 @@ public sealed class PluginRegistryActor : ReceiveActor
             if (d.CommunicationType != pluginId) continue;
 
             var host = d.Settings.GetValueOrDefault("host", "");
-            var ip = d.Settings.GetValueOrDefault("ip", "");
             var friendlyName = d.Settings.GetValueOrDefault("friendly_name", d.NativeId);
             int.TryParse(d.Settings.GetValueOrDefault("generation", "0"), out var generation);
 
             // The 4th arg (Host) carries the device's reachable address for plugins that need it.
-            // Dyson stores its local IP in Settings["ip"] (set during Configure); shelly uses "host".
-            var hostArg = pluginId switch
-            {
-                "shelly" => host,
-                "dyson" => ip,
-                _ => friendlyName,
-            };
+            // Shelly uses "host"; all other plugins use the friendly name.
+            var hostArg = pluginId == "shelly" ? host : friendlyName;
 
             registrations.Add(new RegisterDeviceForPolling(
                 d.Id, d.CommunicationType, d.NativeId,
