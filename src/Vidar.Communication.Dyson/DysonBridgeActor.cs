@@ -140,6 +140,14 @@ public sealed class DysonBridgeActor : PluginActorBase
         var ip = string.IsNullOrWhiteSpace(host) ? null : host;
         var cred = entry.Cred with { Ip = ip };
 
+        // A restart is already in flight for this serial (old child still terminating).
+        // Update the pending credential; the Terminated handler will spawn the replacement.
+        if (_pendingRestarts.ContainsKey(serial))
+        {
+            _pendingRestarts[serial] = (cred, deviceId);
+            return;
+        }
+
         // Finding 1 fix: if an existing child is running, watch it and stop it, then store the
         // new credential in _pendingRestarts. The Receive<Terminated> handler spawns the
         // replacement only after the old actor's name slot is fully released.
