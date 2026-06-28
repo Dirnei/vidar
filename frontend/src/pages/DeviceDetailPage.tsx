@@ -647,6 +647,13 @@ function formatWithUnit(val: unknown, unit: UnitType): string {
   return String(val);
 }
 
+function isBooleanUnit(unit: UnitType): boolean {
+  return unit === 'OnOff' || unit === 'OpenClosed' || unit === 'Detected' || unit === 'YesNo';
+}
+
+// Capabilities with a bespoke rich card below; everything else commandable uses the generic control.
+const RICH_CONTROL_KEYS = new Set(['switch', 'dimmer', 'light', 'cover']);
+
 function renderCapabilityCard(
   cap: CapabilityDescriptor,
   state: Record<string, unknown>,
@@ -656,6 +663,40 @@ function renderCapabilityCard(
   setUpdateSent?: (v: boolean) => void,
 ) {
   const accent = capAccentColor(cap.key);
+
+  // Generic, metadata-driven control: any commandable capability without a bespoke card
+  // becomes the right input from its unit — a toggle for on/off, a slider for ranged numbers.
+  // This is what makes cloud devices like the Dyson fan controllable, not just readable.
+  if (cap.commandable && !RICH_CONTROL_KEYS.has(cap.key)) {
+    const raw = state[cap.key];
+    if (isBooleanUnit(cap.unit)) {
+      const isOn = Boolean(raw);
+      return (
+        <div key={cap.key} style={capCardStyle}>
+          <Indicator color={accent} />
+          <div style={capLabelStyle}>{cap.label}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 6 }}>
+            <ToggleSwitch checked={isOn} onChange={v => cmd(cap.key, v)} />
+            <span style={{ fontSize: 14, fontWeight: 500, color: isOn ? accent : 'var(--text-muted)' }}>
+              {formatWithUnit(isOn, cap.unit)}
+            </span>
+          </div>
+        </div>
+      );
+    }
+    const num = typeof raw === 'number' ? raw : (cap.min ?? 0);
+    return (
+      <div key={cap.key} style={capCardStyle}>
+        <Indicator color={accent} />
+        <div style={capLabelStyle}>{cap.label}</div>
+        <div style={capValueStyle(accent)}>{formatWithUnit(num, cap.unit)}</div>
+        <div style={{ marginTop: 12 }}>
+          <SliderControl value={num} min={cap.min ?? 0} max={cap.max ?? 100}
+            accentColor={accent} onCommit={v => cmd(cap.key, v)} />
+        </div>
+      </div>
+    );
+  }
 
   switch (cap.key) {
     case 'switch': {
