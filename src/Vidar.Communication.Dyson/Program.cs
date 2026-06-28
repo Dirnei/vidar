@@ -11,6 +11,11 @@ var clusterSeed = Environment.GetEnvironmentVariable("VIDAR_CLUSTER_SEED") ?? "l
 var hostname = Environment.GetEnvironmentVariable("VIDAR_HOSTNAME") ?? "localhost";
 var port = int.Parse(Environment.GetEnvironmentVariable("VIDAR_AKKA_PORT") ?? "4059");
 
+// DysonCloudIot exchanges the account token for AWS IoT credentials per (re)connect.
+// A single long-lived HttpClient is the recommended pattern; the client sets its own
+// BaseAddress + User-Agent in its constructor.
+builder.Services.AddSingleton(new DysonCloudIot(new System.Net.Http.HttpClient()));
+
 builder.Services.AddAkka("vidar", (configBuilder, sp) =>
 {
     configBuilder
