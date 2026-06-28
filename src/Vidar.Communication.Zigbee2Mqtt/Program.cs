@@ -21,6 +21,8 @@ var mqttConfig = new Zigbee2MqttConfig(mqttHost, mqttPort, mqttUser, mqttPasswor
 
 builder.Services.AddAkka("vidar", (configBuilder, sp) =>
 {
+    configBuilder.AddHocon(Vidar.Core.ClusterDefaults.SplitBrainResolverHocon, HoconAddMode.Prepend);
+
     configBuilder
         .WithRemoting(hostname, port)
         .WithClustering(new ClusterOptions

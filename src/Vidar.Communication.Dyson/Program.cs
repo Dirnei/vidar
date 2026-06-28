@@ -11,13 +11,16 @@ var clusterSeed = Environment.GetEnvironmentVariable("VIDAR_CLUSTER_SEED") ?? "l
 var hostname = Environment.GetEnvironmentVariable("VIDAR_HOSTNAME") ?? "localhost";
 var port = int.Parse(Environment.GetEnvironmentVariable("VIDAR_AKKA_PORT") ?? "4059");
 
-// DysonCloudIot exchanges the account token for AWS IoT credentials per (re)connect.
-// A single long-lived HttpClient is the recommended pattern; the client sets its own
-// BaseAddress + User-Agent in its constructor.
-builder.Services.AddSingleton(new DysonCloudIot(new System.Net.Http.HttpClient()));
+// Dyson devices are bridged to the local MQTT broker by the standalone `dyson2mqtt` sidecar.
+// This worker consumes that broker; the cloud (AWS IoT) connection lives entirely in the sidecar.
+var mqttHost = Environment.GetEnvironmentVariable("VIDAR_MQTT_HOST") ?? "emqx";
+var mqttPort = int.Parse(Environment.GetEnvironmentVariable("VIDAR_MQTT_PORT") ?? "1883");
+var dysonBaseTopic = Environment.GetEnvironmentVariable("VIDAR_DYSON_BASE_TOPIC") ?? "dyson2mqtt";
 
 builder.Services.AddAkka("vidar", (configBuilder, sp) =>
 {
+    configBuilder.AddHocon(Vidar.Core.ClusterDefaults.SplitBrainResolverHocon, HoconAddMode.Prepend);
+
     configBuilder
         .WithRemoting(hostname, port)
         .WithClustering(new ClusterOptions
@@ -30,8 +33,7 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
         .WithSingletonProxy<PluginRegistry>("plugin-registry", new ClusterSingletonOptions { Role = "host" })
         .WithActors((system, registry, resolver) =>
         {
-            var cloudIot = sp.GetRequiredService<DysonCloudIot>();
-            system.ActorOf(DysonBridgeActor.Props(cloudIot), "dyson-bridge");
+            system.ActorOf(DysonBridgeActor.Props(mqttHost, mqttPort, dysonBaseTopic), "dyson-bridge");
         });
 });
 

@@ -16,6 +16,8 @@ var hostUrl = Environment.GetEnvironmentVariable("VIDAR_HOST_URL") ?? "http://vi
 
 builder.Services.AddAkka("vidar", (configBuilder, sp) =>
 {
+    configBuilder.AddHocon(Vidar.Core.ClusterDefaults.SplitBrainResolverHocon, HoconAddMode.Prepend);
+
     configBuilder
         .WithRemoting(hostname, port)
         .WithClustering(new ClusterOptions

@@ -6,6 +6,9 @@ services:
       CLUSTER_IP: lighthouse
       CLUSTER_PORT: "4053"
       CLUSTER_SEEDS: akka.tcp://vidar@lighthouse:4053
+    # Adds the Split Brain Resolver to lighthouse's Akka config (it's usually the leader).
+    volumes:
+      - ./docker/lighthouse/akka.hocon:/app/akka.hocon:ro
     restart: unless-stopped
 
   vidar-host:
@@ -102,15 +105,39 @@ services:
       context: .
       dockerfile: src/Vidar.Communication.Dyson/Dockerfile
     depends_on:
-      - lighthouse
-    # Runs on the compose bridge network like the other workers so it can resolve
-    # `lighthouse` and join the cluster. mDNS discovery is unavailable here (needs
-    # host networking + multicast); device IPs are entered manually during onboarding.
-    # Outbound LAN MQTT to a device IP still works through bridge NAT.
+      lighthouse:
+        condition: service_started
+      emqx:
+        condition: service_started
+      vidar-host:
+        condition: service_healthy
+    restart: unless-stopped
+    # Dyson's newer devices are cloud-only (AWS IoT). The standalone dyson2mqtt sidecar
+    # bridges them onto the local broker; this worker consumes that broker.
     environment:
       - VIDAR_CLUSTER_SEED=lighthouse:4053
       - VIDAR_HOSTNAME=vidar-comm-dyson
       - VIDAR_AKKA_PORT=4059
+      - VIDAR_MQTT_HOST=emqx
+      - VIDAR_MQTT_PORT=1883
+      - VIDAR_DYSON_BASE_TOPIC=dyson2mqtt
+
+  dyson2mqtt:
+    build:
+      context: ./tools/dyson2mqtt
+    depends_on:
+      - emqx
+      - mongodb
+    # Standalone Dyson cloud (AWS IoT) -> MQTT bridge, like zigbee2mqtt. Reads the account
+    # token + device list from Mongo (populated by Vidar onboarding) and republishes device
+    # state to the broker under dyson2mqtt/<serial>. Broker is fully configurable via env.
+    environment:
+      - MQTT_HOST=emqx
+      - MQTT_PORT=1883
+      - MQTT_BASE_TOPIC=dyson2mqtt
+      - MONGO_URI=mongodb://mongodb:27017
+      - MONGO_DB=vidar
+    restart: unless-stopped
 
   mongodb:
     image: mongo:8

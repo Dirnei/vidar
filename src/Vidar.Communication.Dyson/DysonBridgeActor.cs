@@ -11,10 +11,12 @@ public sealed class DysonBridgeActor : PluginActorBase
 {
     protected override string PluginId => "dyson";
 
-    public static Akka.Actor.Props Props(DysonCloudIot cloudIot) =>
-        Akka.Actor.Props.Create(() => new DysonBridgeActor(cloudIot));
+    public static Akka.Actor.Props Props(string brokerHost, int brokerPort, string baseTopic) =>
+        Akka.Actor.Props.Create(() => new DysonBridgeActor(brokerHost, brokerPort, baseTopic));
 
-    private readonly DysonCloudIot _cloudIot;
+    private readonly string _brokerHost;
+    private readonly int _brokerPort;
+    private readonly string _baseTopic;
 
     // Manifest cache: serial → (credential, display name)
     private readonly Dictionary<string, (DysonDeviceCredential Cred, string Name)> _manifest = new();
@@ -27,9 +29,11 @@ public sealed class DysonBridgeActor : PluginActorBase
     // Pending restarts waiting for old child to terminate: serial → (new cred, deviceId)
     private readonly Dictionary<string, (DysonDeviceCredential Cred, Guid DeviceId)> _pendingRestarts = new();
 
-    public DysonBridgeActor(DysonCloudIot cloudIot)
+    public DysonBridgeActor(string brokerHost, int brokerPort, string baseTopic)
     {
-        _cloudIot = cloudIot;
+        _brokerHost = brokerHost;
+        _brokerPort = brokerPort;
+        _baseTopic = baseTopic;
 
         Receive<DeviceCommand>(cmd =>
         {
@@ -171,7 +175,7 @@ public sealed class DysonBridgeActor : PluginActorBase
     private void SpawnChild(string serial, DysonDeviceCredential cred, Guid deviceId)
     {
         var childName = $"dyson-device-{serial}";
-        var child = Context.ActorOf(DysonDeviceActor.Props(cred, deviceId, AccountToken(Settings), _cloudIot), childName);
+        var child = Context.ActorOf(DysonDeviceActor.Props(cred, deviceId, _brokerHost, _brokerPort, _baseTopic), childName);
         _children[serial] = child;
         _childSerials[child] = serial;
 

@@ -68,6 +68,8 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
     var webhookRetention = TimeSpan.FromHours(
         int.TryParse(Environment.GetEnvironmentVariable("VIDAR_WEBHOOK_RETENTION_HOURS"), out var h) ? h : 24);
 
+    configBuilder.AddHocon(Vidar.Core.ClusterDefaults.SplitBrainResolverHocon, HoconAddMode.Prepend);
+
     configBuilder
         .WithRemoting(hostname, 4053)
         .WithClustering(new ClusterOptions

@@ -10,7 +10,7 @@
     <PackageReference Include="Akka.Hosting" Version="1.5.68" />
     <PackageReference Include="Akka.Remote.Hosting" Version="1.5.68" />
     <PackageReference Include="Akka.Streams" Version="1.5.68" />
-<PackageReference Include="MQTTnet" Version="4.3.7.1207" />
+    <PackageReference Include="MQTTnet" Version="5.1.0.1559" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.2" />
   </ItemGroup>
 

@@ -16,6 +16,8 @@ builder.Services.AddSingleton(new ShellyHttpClient(new HttpClient()));
 builder.Services.AddAkka("vidar", (configBuilder, sp) =>
 {
     var httpClient = sp.GetRequiredService<ShellyHttpClient>();
+    configBuilder.AddHocon(Vidar.Core.ClusterDefaults.SplitBrainResolverHocon, HoconAddMode.Prepend);
+
     configBuilder
         .WithRemoting(hostname, port)
         .WithClustering(new ClusterOptions

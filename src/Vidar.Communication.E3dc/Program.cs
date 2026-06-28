@@ -14,6 +14,8 @@ var port = int.Parse(Environment.GetEnvironmentVariable("VIDAR_AKKA_PORT") ?? "4
 
 builder.Services.AddAkka("vidar", (configBuilder, sp) =>
 {
+    configBuilder.AddHocon(Vidar.Core.ClusterDefaults.SplitBrainResolverHocon, HoconAddMode.Prepend);
+
     configBuilder
         .WithRemoting(hostname, port)
         .WithClustering(new ClusterOptions
