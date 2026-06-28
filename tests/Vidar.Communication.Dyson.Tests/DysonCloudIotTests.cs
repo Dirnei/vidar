@@ -45,7 +45,10 @@ public class DysonCloudIotTests
         Assert.Equal("/v2/authorize/iot-credentials", req.RequestUri!.AbsolutePath);
         Assert.Equal("Bearer", req.Headers.Authorization!.Scheme);
         Assert.Equal("acct-token", req.Headers.Authorization.Parameter);
-        Assert.Contains("X6P-EU-SKA0802A", await req.Content!.ReadAsStringAsync());
+        var sentBody = await req.Content!.ReadAsStringAsync();
+        // The Dyson API rejects camelCase "serial" with 400 — the body MUST be PascalCase "Serial".
+        Assert.Contains("\"Serial\"", sentBody);
+        Assert.Contains("X6P-EU-SKA0802A", sentBody);
     }
 
     [Fact]

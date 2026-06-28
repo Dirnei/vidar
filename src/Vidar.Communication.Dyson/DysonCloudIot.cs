@@ -25,9 +25,14 @@ public sealed class DysonCloudIot
 
     public async Task<DysonIoTCredentials> GetCredentialsAsync(string serial, string accountToken, CancellationToken ct)
     {
+        // NOTE: the Dyson API requires the body field to be PascalCase "Serial".
+        // System.Net.Http.Json's JsonContent.Create uses web defaults (camelCase) which yields
+        // {"serial":...} and gets rejected with 400. JsonSerializer.Serialize keeps PascalCase.
         var req = new HttpRequestMessage(HttpMethod.Post, "/v2/authorize/iot-credentials")
         {
-            Content = JsonContent.Create(new { Serial = serial }),
+            Content = new StringContent(
+                System.Text.Json.JsonSerializer.Serialize(new { Serial = serial }),
+                System.Text.Encoding.UTF8, "application/json"),
         };
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accountToken);
 
