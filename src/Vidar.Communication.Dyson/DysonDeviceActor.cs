@@ -44,6 +44,7 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
     private sealed record MqttMessage(string Topic, string Payload);
     private sealed class ConnectToBroker { public static readonly ConnectToBroker Instance = new(); }
     private sealed class CheckConnection { public static readonly CheckConnection Instance = new(); }
+    private sealed class ScheduleReconnect { public static readonly ScheduleReconnect Instance = new(); }
 
     public static Props Props(DysonDeviceCredential cred, Guid deviceId) =>
         Akka.Actor.Props.Create(() => new DysonDeviceActor(cred, deviceId));
@@ -62,12 +63,15 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
 
         ReceiveAsync<ConnectToBroker>(_ => ConnectAsync());
 
+        Receive<ScheduleReconnect>(_ =>
+            Timers.StartSingleTimer("reconnect", ConnectToBroker.Instance, TimeSpan.FromSeconds(15)));
+
         Receive<CheckConnection>(_ =>
         {
             if (_mqttClient == null || !_mqttClient.IsConnected)
             {
-                _log.Warning("MQTT client not connected for device {Serial}, reconnecting...", _cred.Serial);
-                Self.Tell(ConnectToBroker.Instance);
+                _log.Warning("MQTT client not connected for device {Serial}, scheduling reconnect...", _cred.Serial);
+                Timers.StartSingleTimer("reconnect", ConnectToBroker.Instance, TimeSpan.FromSeconds(15));
             }
         });
 
@@ -126,7 +130,7 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
                 .WithTcpServer(_cred.Ip!, 1883)
                 .WithCredentials(_cred.Serial, _cred.MqttPassword)
                 .WithProtocolVersion(MqttProtocolVersion.V311)
-                .WithClientId($"vidar-dyson-{_cred.Serial}-{Guid.NewGuid():N}")
+                .WithClientId($"vidar{Guid.NewGuid():N}".Substring(0, 23))
                 .Build();
 
             _inboundChannel = Channel.CreateBounded<MqttMessage>(1000);
@@ -146,7 +150,7 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
             _mqttClient.DisconnectedAsync += _ =>
             {
                 _log.Warning("MQTT disconnected for device {Serial}, scheduling reconnect...", _cred.Serial);
-                self.Tell(ConnectToBroker.Instance);
+                self.Tell(ScheduleReconnect.Instance);
                 return Task.CompletedTask;
             };
 
@@ -157,6 +161,7 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
             {
                 _log.Warning("Dyson {Serial} refused connection: {Code}", _cred.Serial, connectResult.ResultCode);
                 SetTransport(DysonTransport.Offline);
+                Timers.StartSingleTimer("reconnect", ConnectToBroker.Instance, TimeSpan.FromSeconds(15));
                 return;
             }
 
@@ -179,6 +184,7 @@ public sealed class DysonDeviceActor : ReceiveActor, IWithTimers
         {
             _log.Error(ex, "Failed to connect to Dyson device {Serial} at {Ip}", _cred.Serial, _cred.Ip);
             SetTransport(DysonTransport.Offline);
+            Timers.StartSingleTimer("reconnect", ConnectToBroker.Instance, TimeSpan.FromSeconds(15));
         }
     }
 
