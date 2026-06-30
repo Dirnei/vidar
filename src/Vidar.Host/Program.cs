@@ -11,6 +11,7 @@ using Vidar.Core.Webhooks;
 using Vidar.Host.Actors;
 using Vidar.Host.Dyson;
 using Vidar.Host.Persistence;
+using Vidar.Host.Roborock;
 using Vidar.Host.Webhooks;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -40,6 +41,9 @@ builder.Services.AddSingleton<IThresholdRuleRepository>(new MongoThresholdRuleRe
 builder.Services.AddSingleton<IThresholdEventLogRepository>(new MongoThresholdEventLogRepository(database));
 builder.Services.AddHttpClient<DysonCloudClient>(c =>
     c.BaseAddress = new Uri("https://appapi.cp.dyson.com"));
+var roborock2mqttUrl = Environment.GetEnvironmentVariable("ROBOROCK2MQTT_URL") ?? "http://roborock2mqtt:8895";
+builder.Services.AddHttpClient<IRoborockAuth, SidecarRoborockAuth>(c =>
+    c.BaseAddress = new Uri(roborock2mqttUrl));
 builder.Services.AddHttpClient("shelly", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(5);
