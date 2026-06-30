@@ -1,0 +1,3 @@
+python-roborock==2.19.0
+paho-mqtt==2.1.0
+pymongo==4.10.1
