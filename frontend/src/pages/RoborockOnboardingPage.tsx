@@ -84,11 +84,12 @@ function friendlyError(err: unknown, fallback: string): string {
 
 // ---- Password fields (default path) ----
 
-function PasswordForm({ onConnected, onUseCode }: {
+function PasswordForm({ email, setEmail, onConnected, onUseCode }: {
+  email: string;
+  setEmail: (v: string) => void;
   onConnected: (devices: RoborockDevice[]) => void;
   onUseCode: () => void;
 }) {
-  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -181,11 +182,12 @@ function PasswordForm({ onConnected, onUseCode }: {
 
 // ---- Email-code path (alternative) ----
 
-function CodeForm({ onConnected, onUsePassword }: {
+function CodeForm({ email, setEmail, onConnected, onUsePassword }: {
+  email: string;
+  setEmail: (v: string) => void;
   onConnected: (devices: RoborockDevice[]) => void;
   onUsePassword: () => void;
 }) {
-  const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
   const [codeSent, setCodeSent] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -360,6 +362,7 @@ interface RoborockOnboardingWizardProps {
 export function RoborockOnboardingWizard({ onClose, onSuccess }: RoborockOnboardingWizardProps) {
   const navigate = useNavigate();
   const [mode, setMode] = useState<'password' | 'code'>('password');
+  const [email, setEmail] = useState('');
   const [devices, setDevices] = useState<RoborockDevice[] | null>(null);
 
   function handleConnected(found: RoborockDevice[]) {
@@ -417,9 +420,9 @@ export function RoborockOnboardingWizard({ onClose, onSuccess }: RoborockOnboard
         {devices !== null ? (
           <SuccessView deviceCount={devices.length} onClose={onClose} onGoToSetup={handleGoToSetup} />
         ) : mode === 'password' ? (
-          <PasswordForm onConnected={handleConnected} onUseCode={() => setMode('code')} />
+          <PasswordForm email={email} setEmail={setEmail} onConnected={handleConnected} onUseCode={() => setMode('code')} />
         ) : (
-          <CodeForm onConnected={handleConnected} onUsePassword={() => setMode('password')} />
+          <CodeForm email={email} setEmail={setEmail} onConnected={handleConnected} onUsePassword={() => setMode('password')} />
         )}
       </div>
     </div>

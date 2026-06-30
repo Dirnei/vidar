@@ -657,14 +657,12 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
         />
       )}
 
-      {/* Roborock onboarding wizard */}
+      {/* Roborock onboarding wizard. onSuccess only refreshes the list — the wizard stays
+          mounted so its success screen renders; the user closes it via Close / Go to Setup. */}
       {showRoborockWizard && (
         <RoborockOnboardingWizard
           onClose={() => setShowRoborockWizard(false)}
-          onSuccess={() => {
-            setShowRoborockWizard(false);
-            onSaved();
-          }}
+          onSuccess={onSaved}
         />
       )}
     </div>
