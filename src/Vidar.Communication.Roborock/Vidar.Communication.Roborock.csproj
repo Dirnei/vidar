@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
 
   <PropertyGroup>
-    <UserSecretsId>dotnet-Vidar.Communication.Dyson-a1b2c3d4-e5f6-7890-abcd-ef1234567890</UserSecretsId>
+    <UserSecretsId>dotnet-Vidar.Communication.Roborock-d31d2f85-b761-4803-8a3c-34d815468c3c</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
