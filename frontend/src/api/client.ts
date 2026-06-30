@@ -1,4 +1,4 @@
-import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry, Application, WebhookRoute, WebhookEventPage, ThresholdRule, ThresholdEventPage, DysonDevice } from '../types';
+import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry, Application, WebhookRoute, WebhookEventPage, ThresholdRule, ThresholdEventPage, DysonDevice, RoborockDevice } from '../types';
 
 const BASE = '/api';
 
@@ -206,5 +206,23 @@ export function dysonVerifyAuth(body: { region: string; email: string; password:
 
 export function dysonGetAccount(): Promise<{ connected: boolean; email?: string; deviceCount?: number }> {
   return request('/dyson/account');
+}
+
+// --- Roborock ---
+
+export function roborockLogin(email: string, password: string): Promise<RoborockDevice[]> {
+  return request('/roborock/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+}
+
+export function roborockRequestCode(email: string): Promise<{ sent: boolean }> {
+  return request('/roborock/request-code', { method: 'POST', body: JSON.stringify({ email }) });
+}
+
+export function roborockCodeLogin(email: string, code: string): Promise<RoborockDevice[]> {
+  return request('/roborock/code-login', { method: 'POST', body: JSON.stringify({ email, code }) });
+}
+
+export function roborockGetAccount(): Promise<{ connected: boolean; email?: string; deviceCount?: number }> {
+  return request('/roborock/account');
 }
 

@@ -27,6 +27,7 @@ public sealed class ApplicationsController : ControllerBase
         ["homeconnect"] = ("Home Connect", "provider"),
         ["e3dc"] = ("E3/DC S10", "provider"),
         ["dyson"] = ("Dyson", "provider"),
+        ["roborock"] = ("Roborock", "provider"),
     };
 
     public ApplicationsController(

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { getApplications, getWebhookRoutes, saveApplication, dysonGetAccount } from '../api/client';
+import { getApplications, getWebhookRoutes, saveApplication, dysonGetAccount, roborockGetAccount } from '../api/client';
 import type { Application, WebhookRoute } from '../types';
 import { DysonOnboardingWizard } from './DysonOnboardingPage';
+import { RoborockOnboardingWizard } from './RoborockOnboardingPage';
 
 // ---- Types ----
 
@@ -80,6 +81,12 @@ const APP_DEFS: AppDef[] = [
     id: 'dyson',
     icon: '\u{1F300}',
     description: 'Dyson Connected devices via Dyson cloud account. Use the Connect wizard to authenticate and add your fans and purifiers.',
+    fields: [],
+  },
+  {
+    id: 'roborock',
+    icon: '\u{1F9F9}',
+    description: 'Roborock vacuums via your Roborock account. Use the Connect wizard to sign in; control runs locally with the cloud used once to pair.',
     fields: [],
   },
 ];
@@ -370,12 +377,20 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
   const [saved, setSaved] = useState(false);
   const [showDysonWizard, setShowDysonWizard] = useState(false);
   const [dysonAccount, setDysonAccount] = useState<{ connected: boolean; email?: string; deviceCount?: number } | null>(null);
+  const [showRoborockWizard, setShowRoborockWizard] = useState(false);
+  const [roborockAccount, setRoborockAccount] = useState<{ connected: boolean; email?: string; deviceCount?: number } | null>(null);
 
   // Fetch Dyson account info once (and when wizard completes)
   useEffect(() => {
     if (app.id !== 'dyson') return;
     dysonGetAccount().then(setDysonAccount).catch(() => setDysonAccount(null));
   }, [app.id, showDysonWizard]);
+
+  // Fetch Roborock account info once (and when wizard completes)
+  useEffect(() => {
+    if (app.id !== 'roborock') return;
+    roborockGetAccount().then(setRoborockAccount).catch(() => setRoborockAccount(null));
+  }, [app.id, showRoborockWizard]);
 
   // Sync when app data reloads
   useEffect(() => {
@@ -452,6 +467,29 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
           <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
             Account not connected.{' '}
             <button type="button" style={dysonLinkStyle} onClick={() => setShowDysonWizard(true)}>
+              Connect now
+            </button>
+          </span>
+        </div>
+      )}
+
+      {/* Roborock account status */}
+      {app.id === 'roborock' && roborockAccount?.connected && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-green)', flexShrink: 0, display: 'inline-block' }} />
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+            Connected as {roborockAccount.email} · {roborockAccount.deviceCount} device{roborockAccount.deviceCount !== 1 ? 's' : ''} ·{' '}
+            <button type="button" style={dysonLinkStyle} onClick={() => setShowRoborockWizard(true)}>
+              Reconnect
+            </button>
+          </span>
+        </div>
+      )}
+      {app.id === 'roborock' && roborockAccount && !roborockAccount.connected && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+            Account not connected.{' '}
+            <button type="button" style={dysonLinkStyle} onClick={() => setShowRoborockWizard(true)}>
               Connect now
             </button>
           </span>
@@ -596,6 +634,16 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
             Connect account
           </button>
         )}
+        {app.id === 'roborock' && (
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setShowRoborockWizard(true)}
+            style={{ marginLeft: 'auto' }}
+          >
+            Connect account
+          </button>
+        )}
       </div>
 
       {/* Dyson onboarding wizard */}
@@ -604,6 +652,17 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
           onClose={() => setShowDysonWizard(false)}
           onSuccess={() => {
             setShowDysonWizard(false);
+            onSaved();
+          }}
+        />
+      )}
+
+      {/* Roborock onboarding wizard */}
+      {showRoborockWizard && (
+        <RoborockOnboardingWizard
+          onClose={() => setShowRoborockWizard(false)}
+          onSuccess={() => {
+            setShowRoborockWizard(false);
             onSaved();
           }}
         />

@@ -193,3 +193,11 @@ export interface DysonDevice {
   variant: string | null;
   ip?: string | null;
 }
+
+export interface RoborockDevice {
+  duid: string;
+  name: string;
+  model: string;
+  localKey: string;
+  ip: string;
+}

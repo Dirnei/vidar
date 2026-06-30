@@ -47,7 +47,7 @@ public sealed class RoborockController : ControllerBase
         try
         {
             await _auth.RequestCodeAsync(req.Email, ct);
-            return Ok();
+            return Ok(new { sent = true });
         }
         catch (HttpRequestException ex)
         {

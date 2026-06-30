@@ -9,3 +9,6 @@ frontend/build/
 .superpowers/
 .env
 docs/superpowers/
+# Python (sidecars)
+__pycache__/
+*.pyc
