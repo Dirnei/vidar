@@ -94,7 +94,6 @@ class DeviceBridge:
         self.ip = manifest.get("ip")
         self.target = target
         self.state_topic = f"{BASE_TOPIC}/{self.duid}"
-        self.set_topic = f"{BASE_TOPIC}/{self.duid}/set"
         self.transport = "offline"
         self.rooms = []
         self.client = None
@@ -111,48 +110,69 @@ class DeviceBridge:
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
         backoff = 15
-        while not self._stop.is_set():
-            try:
-                self.loop.run_until_complete(self._connect_and_poll())
-                backoff = 15
-            except Exception as e:  # noqa: BLE001
-                log(f"[{self.duid}] error: {e}; retry in {backoff}s")
-                self.transport = "offline"
-                self._publish_offline()
-                self._stop.wait(backoff)
-                backoff = min(backoff * 2, 120)
+        try:
+            while not self._stop.is_set():
+                try:
+                    self.loop.run_until_complete(self._connect_and_poll())
+                    backoff = 15
+                except Exception as e:  # noqa: BLE001
+                    log(f"[{self.duid}] error: {e}; retry in {backoff}s")
+                    self.transport = "offline"
+                    self._publish_offline()
+                    self._stop.wait(backoff)
+                    backoff = min(backoff * 2, 120)
+        finally:
+            self.loop.close()
 
     async def _connect_and_poll(self):
-        from roborock.containers import DeviceData, HomeDataDevice, HomeDataProduct
+        from roborock.containers import DeviceData, HomeDataDevice
         from roborock.version_1_apis import RoborockLocalClientV1, RoborockMqttClientV1
 
         device = HomeDataDevice(duid=self.duid, name=self.name, local_key=self.local_key,
                                 fv="", pv="1.0")
-        product = HomeDataProduct(id="", name=self.model, model=self.model, category="")
         device_data = DeviceData(device=device, model=self.model, host=self.ip)
 
-        # local-first
         try:
-            if not self.ip:
-                raise RuntimeError("no local ip")
-            self.client = RoborockLocalClientV1(device_data)
-            await self.client.async_connect()
-            self.transport = "local"
-        except Exception as e:  # noqa: BLE001
-            log(f"[{self.duid}] local failed ({e}); falling back to cloud")
-            self.client = RoborockMqttClientV1(self.user_data, device_data)
-            await self.client.async_connect()
-            self.transport = "cloud"
+            # local-first
+            try:
+                if not self.ip:
+                    raise RuntimeError("no local ip")
+                self.client = RoborockLocalClientV1(device_data)
+                await self.client.async_connect()
+                self.transport = "local"
+            except Exception as e:  # noqa: BLE001
+                log(f"[{self.duid}] local failed ({e}); falling back to cloud")
+                self.client = RoborockMqttClientV1(self.user_data, device_data)
+                await self.client.async_connect()
+                self.transport = "cloud"
 
-        log(f"[{self.duid}] connected ({self.transport})")
-        await self._refresh_rooms()
-        while not self._stop.is_set():
-            status = await self.client.get_status()
-            payload = map_status_to_payload(
-                status.as_dict() if hasattr(status, "as_dict") else dict(status),
-                self.rooms, self.transport)
-            self.target.publish(self.state_topic, json.dumps(payload), qos=0, retain=True)
-            await asyncio.sleep(POLL_INTERVAL)
+            log(f"[{self.duid}] connected ({self.transport})")
+            await self._refresh_rooms()
+            while not self._stop.is_set():
+                status = await self.client.get_status()
+                payload = map_status_to_payload(
+                    status.as_dict() if hasattr(status, "as_dict") else dict(status),
+                    self.rooms, self.transport)
+                self.target.publish(self.state_topic, json.dumps(payload), qos=0, retain=True)
+                await asyncio.sleep(POLL_INTERVAL)
+        finally:
+            await self._disconnect_client()
+
+    async def _disconnect_client(self):
+        client, self.client = self.client, None
+        if client is None:
+            return
+        for method in ("async_disconnect", "async_release", "disconnect"):
+            fn = getattr(client, method, None)
+            if fn is None:
+                continue
+            try:
+                result = fn()
+                if asyncio.iscoroutine(result):
+                    await result
+            except Exception as e:  # noqa: BLE001
+                log(f"[{self.duid}] disconnect ({method}) failed: {e}")
+            return
 
     async def _refresh_rooms(self):
         try:
