@@ -5,7 +5,7 @@ Owns the Roborock protocol (cloud auth + local-key bootstrap, local-first/cloud-
 transport) via python-roborock and republishes each device's status to <base>/<duid>
 (retained). Commands published to <base>/<duid>/set are forwarded to the device.
 """
-import json, os, sys, time
+import asyncio, json, os, sys, threading, time
 
 BASE_TOPIC = os.environ.get("MQTT_BASE_TOPIC", "roborock2mqtt").strip("/")
 MQTT_HOST = os.environ.get("MQTT_HOST", "emqx")
@@ -82,9 +82,156 @@ def translate_command(cmd):
     raise ValueError(f"unknown capability {cap!r}")
 
 
-if __name__ == "__main__":
-    ud, devs = load_manifest_from_mongo()
-    log(f"roborock2mqtt: {len(devs)} device(s); broker {MQTT_HOST}:{MQTT_PORT} base '{BASE_TOPIC}'")
-    if not ud or not devs:
+class DeviceBridge:
+    """Owns one vacuum: local-first/cloud-fallback transport, republished to the broker."""
+
+    def __init__(self, user_data, manifest, target):
+        self.user_data = user_data
+        self.duid = manifest["duid"]
+        self.name = manifest.get("name", self.duid)
+        self.model = manifest.get("model", "")
+        self.local_key = manifest["localKey"]
+        self.ip = manifest.get("ip")
+        self.target = target
+        self.state_topic = f"{BASE_TOPIC}/{self.duid}"
+        self.set_topic = f"{BASE_TOPIC}/{self.duid}/set"
+        self.transport = "offline"
+        self.rooms = []
+        self.client = None
+        self.loop = None
+        self._stop = threading.Event()
+
+    def start(self):
+        threading.Thread(target=self._run, name=f"dev-{self.duid}", daemon=True).start()
+
+    def stop(self):
+        self._stop.set()
+
+    def _run(self):
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+        backoff = 15
+        while not self._stop.is_set():
+            try:
+                self.loop.run_until_complete(self._connect_and_poll())
+                backoff = 15
+            except Exception as e:  # noqa: BLE001
+                log(f"[{self.duid}] error: {e}; retry in {backoff}s")
+                self.transport = "offline"
+                self._publish_offline()
+                self._stop.wait(backoff)
+                backoff = min(backoff * 2, 120)
+
+    async def _connect_and_poll(self):
+        from roborock.containers import DeviceData, HomeDataDevice, HomeDataProduct
+        from roborock.version_1_apis import RoborockLocalClientV1, RoborockMqttClientV1
+
+        device = HomeDataDevice(duid=self.duid, name=self.name, local_key=self.local_key,
+                                fv="", pv="1.0")
+        product = HomeDataProduct(id="", name=self.model, model=self.model, category="")
+        device_data = DeviceData(device=device, model=self.model, host=self.ip)
+
+        # local-first
+        try:
+            if not self.ip:
+                raise RuntimeError("no local ip")
+            self.client = RoborockLocalClientV1(device_data)
+            await self.client.async_connect()
+            self.transport = "local"
+        except Exception as e:  # noqa: BLE001
+            log(f"[{self.duid}] local failed ({e}); falling back to cloud")
+            self.client = RoborockMqttClientV1(self.user_data, device_data)
+            await self.client.async_connect()
+            self.transport = "cloud"
+
+        log(f"[{self.duid}] connected ({self.transport})")
+        await self._refresh_rooms()
+        while not self._stop.is_set():
+            status = await self.client.get_status()
+            payload = map_status_to_payload(
+                status.as_dict() if hasattr(status, "as_dict") else dict(status),
+                self.rooms, self.transport)
+            self.target.publish(self.state_topic, json.dumps(payload), qos=0, retain=True)
+            await asyncio.sleep(POLL_INTERVAL)
+
+    async def _refresh_rooms(self):
+        try:
+            mapping = await self.client.get_room_mapping()  # [[segment_id, iot_id], ...]
+            self.rooms = [{"id": int(seg), "name": str(iot)} for seg, iot in (mapping or [])]
+        except Exception as e:  # noqa: BLE001
+            log(f"[{self.duid}] room mapping failed: {e}")
+            self.rooms = []
+
+    def _publish_offline(self):
+        self.target.publish(self.state_topic,
+                            json.dumps({"_transport": "offline", "_rooms": self.rooms}),
+                            qos=0, retain=True)
+
+    def forward_command(self, payload):
+        from roborock import RoborockCommand
+
+        try:
+            cmd = json.loads(payload)
+            name, params = translate_command(cmd)
+        except Exception as e:  # noqa: BLE001
+            log(f"[{self.duid}] bad command: {e}")
+            return
+        if not self.client or not self.loop:
+            log(f"[{self.duid}] command dropped (not connected)")
+            return
+        rcmd = getattr(RoborockCommand, name)
+        fut = asyncio.run_coroutine_threadsafe(
+            self.client.send_command(rcmd, params), self.loop)
+        try:
+            fut.result(timeout=15)
+            log(f"[{self.duid}] sent {name} {params}")
+        except Exception as e:  # noqa: BLE001
+            log(f"[{self.duid}] command {name} failed: {e}")
+
+
+def main():
+    import paho.mqtt.client as mqtt
+    from roborock.containers import UserData
+
+    user_data_dict, manifest = load_manifest_from_mongo()
+    if not user_data_dict or not manifest:
         log("FATAL: no Roborock account/manifest in Mongo (complete onboarding first)")
         sys.exit(2)
+    user_data = UserData.from_dict(user_data_dict)
+    bridges = {}
+
+    target = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="roborock2mqtt")
+    if MQTT_USERNAME:
+        target.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+
+    def on_connect(cl, u, flags, rc, props=None):
+        log(f"target broker connected ({rc})")
+        cl.subscribe(f"{BASE_TOPIC}/+/set")
+
+    def on_message(cl, u, msg):
+        parts = msg.topic.split("/")
+        if len(parts) >= 3 and parts[-1] == "set":
+            b = bridges.get(parts[-2])
+            if b:
+                b.forward_command(msg.payload.decode(errors="replace"))
+
+    target.on_connect = on_connect
+    target.on_message = on_message
+    target.connect(MQTT_HOST, MQTT_PORT, keepalive=30)
+    target.loop_start()
+
+    for m in manifest:
+        b = DeviceBridge(user_data, m, target)
+        bridges[m["duid"]] = b
+        b.start()
+
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        for b in bridges.values():
+            b.stop()
+
+
+if __name__ == "__main__":
+    main()
