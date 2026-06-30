@@ -49,6 +49,39 @@ def load_manifest_from_mongo():
     return user_data, devices
 
 
+def map_status_to_payload(status, rooms, transport):
+    out = dict(status)
+    out["_transport"] = transport
+    out["_rooms"] = rooms or []
+    return out
+
+
+def _parse_segments(value):
+    if isinstance(value, (list, tuple)):
+        return [int(v) for v in value]
+    return [int(p) for p in str(value).split(",") if p.strip()]
+
+
+def translate_command(cmd):
+    cap = cmd.get("capability")
+    val = cmd.get("value")
+    if cap == "vacuum.start":
+        return "APP_START", []
+    if cap == "vacuum.stop":
+        return "APP_STOP", []
+    if cap == "vacuum.pause":
+        return "APP_PAUSE", []
+    if cap == "vacuum.dock":
+        return "APP_CHARGE", []
+    if cap == "vacuum.locate":
+        return "FIND_ME", []
+    if cap == "vacuum.fanPower":
+        return "SET_CUSTOM_MODE", [int(val)]
+    if cap == "vacuum.cleanSegments":
+        return "APP_SEGMENT_CLEAN", [{"segments": _parse_segments(val), "repeat": 1}]
+    raise ValueError(f"unknown capability {cap!r}")
+
+
 if __name__ == "__main__":
     ud, devs = load_manifest_from_mongo()
     log(f"roborock2mqtt: {len(devs)} device(s); broker {MQTT_HOST}:{MQTT_PORT} base '{BASE_TOPIC}'")
