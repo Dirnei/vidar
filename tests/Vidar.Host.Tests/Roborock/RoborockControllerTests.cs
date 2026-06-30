@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json;
 using Akka.Actor;
 using Akka.Hosting;
@@ -82,7 +83,9 @@ public class RoborockControllerTests
 
         Assert.IsType<OkObjectResult>(result);
         Assert.NotNull(repo.Saved);
-        var manifest = JsonDocument.Parse(repo.Saved!.Settings["account.manifest"]).RootElement;
+        Assert.True(repo.Saved!.Enabled);
+        Assert.Equal("code-user-data", repo.Saved.Settings["account.userData"]);
+        var manifest = JsonDocument.Parse(repo.Saved.Settings["account.manifest"]).RootElement;
         Assert.Equal("duid-2", manifest[0].GetProperty("duid").GetString());
         pluginRegistry.Received(1).Tell(
             Arg.Is<RouteToPlugin>(r => r.PluginId == "roborock" && r.Message is IntegrationConfigChanged),
@@ -125,5 +128,35 @@ public class RoborockControllerTests
         Assert.True(doc.RootElement.GetProperty("connected").GetBoolean());
         Assert.Equal("me@example.com", doc.RootElement.GetProperty("email").GetString());
         Assert.Equal(1, doc.RootElement.GetProperty("deviceCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task Account_ReturnsNotConnected_WhenConfigDisabled()
+    {
+        var preloaded = new ApplicationConfig
+        {
+            Id = "roborock", Name = "Roborock", Enabled = false,
+            Settings = new Dictionary<string, string> { ["account.email"] = "me@example.com" },
+        };
+        var (controller, _, _, _) = CreateController(preloaded);
+
+        var result = await controller.Account();
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var json = JsonSerializer.Serialize(ok.Value);
+        using var doc = JsonDocument.Parse(json);
+        Assert.False(doc.RootElement.GetProperty("connected").GetBoolean());
+    }
+
+    [Fact]
+    public async Task Login_Returns401_WhenAuthRejects()
+    {
+        var (controller, _, auth, _) = CreateController();
+        auth.PasswordLoginAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns<RoborockAuthResult>(_ => throw new HttpRequestException("nope", null, HttpStatusCode.Unauthorized));
+
+        var result = await controller.Login(new RoborockLoginRequest("user@test.com", "wrong"), default);
+
+        Assert.Equal(401, Assert.IsType<ObjectResult>(result).StatusCode);
     }
 }

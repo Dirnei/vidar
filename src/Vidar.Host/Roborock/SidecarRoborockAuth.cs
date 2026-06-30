@@ -14,8 +14,9 @@ public sealed class SidecarRoborockAuth : IRoborockAuth
     {
         var response = await _http.PostAsJsonAsync("/auth/login", new { email, password }, ct);
         response.EnsureSuccessStatusCode();
-        var result = await response.Content.ReadFromJsonAsync<SidecarAuthResponse>(cancellationToken: ct);
-        return ToAuthResult(result!);
+        var body = await response.Content.ReadFromJsonAsync<SidecarAuthResponse>(cancellationToken: ct)
+            ?? throw new InvalidOperationException("Roborock onboarding sidecar returned an empty response.");
+        return ToAuthResult(body);
     }
 
     public async Task RequestCodeAsync(string email, CancellationToken ct)
@@ -28,8 +29,9 @@ public sealed class SidecarRoborockAuth : IRoborockAuth
     {
         var response = await _http.PostAsJsonAsync("/auth/code-login", new { email, code }, ct);
         response.EnsureSuccessStatusCode();
-        var result = await response.Content.ReadFromJsonAsync<SidecarAuthResponse>(cancellationToken: ct);
-        return ToAuthResult(result!);
+        var body = await response.Content.ReadFromJsonAsync<SidecarAuthResponse>(cancellationToken: ct)
+            ?? throw new InvalidOperationException("Roborock onboarding sidecar returned an empty response.");
+        return ToAuthResult(body);
     }
 
     private static RoborockAuthResult ToAuthResult(SidecarAuthResponse r) =>

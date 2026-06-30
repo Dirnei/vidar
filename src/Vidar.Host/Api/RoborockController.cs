@@ -29,24 +29,45 @@ public sealed class RoborockController : ControllerBase
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] RoborockLoginRequest req, CancellationToken ct)
     {
-        var result = await _auth.PasswordLoginAsync(req.Email, req.Password, ct);
-        await PersistAndNotify(req.Email, result);
-        return Ok(result.Devices);
+        try
+        {
+            var result = await _auth.PasswordLoginAsync(req.Email, req.Password, ct);
+            await PersistAndNotify(req.Email, result);
+            return Ok(result.Devices);
+        }
+        catch (HttpRequestException ex)
+        {
+            return AuthError(ex);
+        }
     }
 
     [HttpPost("request-code")]
     public async Task<IActionResult> RequestCode([FromBody] RoborockEmailRequest req, CancellationToken ct)
     {
-        await _auth.RequestCodeAsync(req.Email, ct);
-        return Ok();
+        try
+        {
+            await _auth.RequestCodeAsync(req.Email, ct);
+            return Ok();
+        }
+        catch (HttpRequestException ex)
+        {
+            return AuthError(ex);
+        }
     }
 
     [HttpPost("code-login")]
     public async Task<IActionResult> CodeLogin([FromBody] RoborockCodeRequest req, CancellationToken ct)
     {
-        var result = await _auth.CodeLoginAsync(req.Email, req.Code, ct);
-        await PersistAndNotify(req.Email, result);
-        return Ok(result.Devices);
+        try
+        {
+            var result = await _auth.CodeLoginAsync(req.Email, req.Code, ct);
+            await PersistAndNotify(req.Email, result);
+            return Ok(result.Devices);
+        }
+        catch (HttpRequestException ex)
+        {
+            return AuthError(ex);
+        }
     }
 
     [HttpGet("account")]
@@ -61,6 +82,19 @@ public sealed class RoborockController : ControllerBase
             try { count = JsonDocument.Parse(m).RootElement.GetArrayLength(); } catch { }
         return Ok(new { connected = true, email, deviceCount = count });
     }
+
+    // Surface upstream Roborock failures distinctly so the wizard can tell the user what to do,
+    // instead of reporting every failure as a generic "cloud unavailable" 502.
+    private IActionResult AuthError(HttpRequestException ex) => ex.StatusCode switch
+    {
+        System.Net.HttpStatusCode.TooManyRequests => Problem(
+            "Roborock temporarily rate-limited the request. Wait a few minutes and try again.",
+            statusCode: StatusCodes.Status429TooManyRequests),
+        System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden => Problem(
+            "Roborock rejected the sign-in. Re-check the email/password (or code) and try again.",
+            statusCode: StatusCodes.Status401Unauthorized),
+        _ => Problem(ex.Message, statusCode: StatusCodes.Status502BadGateway),
+    };
 
     private async Task PersistAndNotify(string email, RoborockAuthResult result)
     {
