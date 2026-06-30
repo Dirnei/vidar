@@ -37,4 +37,19 @@ public class RoborockBridgeManifestTests
     {
         Assert.Empty(RoborockBridgeActor.ParseManifest(new Dictionary<string, string>()));
     }
+
+    [Fact]
+    public void NameFallsBackToDuidWhenAbsent()
+    {
+        var settings = new Dictionary<string, string>
+        {
+            ["account.manifest"] = """
+            [{"duid":"abc123","model":"roborock.vacuum.a187","localKey":"KEY","ip":"192.168.1.50"}]
+            """,
+        };
+        var parsed = RoborockBridgeActor.ParseManifest(settings);
+        var (cred, name) = Assert.Single(parsed);
+        Assert.Equal("abc123", name);
+        Assert.Equal("abc123", cred.Name);
+    }
 }
