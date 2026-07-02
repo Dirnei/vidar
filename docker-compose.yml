@@ -100,6 +100,23 @@ services:
       - VIDAR_HOSTNAME=vidar-comm-e3dc
       - VIDAR_AKKA_PORT=4058
 
+  vidar-comm-ecowitt:
+    build:
+      context: .
+      dockerfile: src/Vidar.Communication.Ecowitt/Dockerfile
+    depends_on:
+      - lighthouse
+      - emqx
+    env_file:
+      - .env
+    environment:
+      - VIDAR_CLUSTER_SEED=lighthouse:4053
+      - VIDAR_HOSTNAME=vidar-comm-ecowitt
+      - VIDAR_AKKA_PORT=4061
+      - VIDAR_ECOWITT_MQTT_HOST=emqx
+      - VIDAR_ECOWITT_MQTT_PORT=1883
+      - VIDAR_ECOWITT_TOPIC=ecowitt
+
   vidar-comm-dyson:
     build:
       context: .
