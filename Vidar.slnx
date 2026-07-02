@@ -6,6 +6,7 @@
     <Project Path="src/Vidar.Communication.UniFi/Vidar.Communication.UniFi.csproj" />
     <Project Path="src/Vidar.Communication.Dyson/Vidar.Communication.Dyson.csproj" />
     <Project Path="src/Vidar.Communication.E3dc/Vidar.Communication.E3dc.csproj" />
+    <Project Path="src/Vidar.Communication.Ecowitt/Vidar.Communication.Ecowitt.csproj" />
     <Project Path="src/Vidar.Communication.Zigbee2Mqtt/Vidar.Communication.Zigbee2Mqtt.csproj" />
     <Project Path="src/Vidar.Core/Vidar.Core.csproj" />
     <Project Path="src/Vidar.Host/Vidar.Host.csproj" />
@@ -13,6 +14,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Vidar.Communication.Dyson.Tests/Vidar.Communication.Dyson.Tests.csproj" />
     <Project Path="tests/Vidar.Communication.E3dc.Tests/Vidar.Communication.E3dc.Tests.csproj" />
+    <Project Path="tests/Vidar.Communication.Ecowitt.Tests/Vidar.Communication.Ecowitt.Tests.csproj" />
     <Project Path="tests/Vidar.Communication.HomeConnect.Tests/Vidar.Communication.HomeConnect.Tests.csproj" />
     <Project Path="tests/Vidar.Communication.Roborock.Tests/Vidar.Communication.Roborock.Tests.csproj" />
     <Project Path="tests/Vidar.Communication.Shelly.Tests/Vidar.Communication.Shelly.Tests.csproj" />
