@@ -80,9 +80,15 @@ public static class EcowittStateMapper
     public static string? TryGetPassKey(IReadOnlyDictionary<string, string> fields) =>
         fields.TryGetValue("PASSKEY", out var p) && !string.IsNullOrWhiteSpace(p) ? p : null;
 
-    public static List<DeviceStateUpdate> Map(Guid deviceId, IReadOnlyDictionary<string, string> fields)
+    /// <summary>
+    /// Resolves each numeric capability to the first listed field that is both
+    /// present and parses as a number. This is the single source of truth for
+    /// "which numeric fields count" so that <see cref="Map"/> and
+    /// <see cref="BuildCapabilities"/> can never disagree.
+    /// </summary>
+    private static IEnumerable<(NumericField Field, double Value)> ResolveNumericFields(
+        IReadOnlyDictionary<string, string> fields)
     {
-        var updates = new List<DeviceStateUpdate>();
         var seen = new HashSet<string>();
 
         foreach (var f in NumericFields)
@@ -94,9 +100,17 @@ public static class EcowittStateMapper
             if (!double.TryParse(raw, NumberStyles.Float | NumberStyles.AllowThousands,
                     CultureInfo.InvariantCulture, out var num))
                 continue;
-            updates.Add(new DeviceStateUpdate(deviceId, f.Capability, f.Convert(num)));
             seen.Add(f.Capability);
+            yield return (f, num);
         }
+    }
+
+    public static List<DeviceStateUpdate> Map(Guid deviceId, IReadOnlyDictionary<string, string> fields)
+    {
+        var updates = new List<DeviceStateUpdate>();
+
+        foreach (var (f, num) in ResolveNumericFields(fields))
+            updates.Add(new DeviceStateUpdate(deviceId, f.Capability, f.Convert(num)));
 
         foreach (var (field, capability, _) in BatteryFields)
         {
@@ -111,14 +125,9 @@ public static class EcowittStateMapper
     public static List<CapabilityDescriptor> BuildCapabilities(IReadOnlyDictionary<string, string> fields)
     {
         var caps = new List<CapabilityDescriptor>();
-        var seen = new HashSet<string>();
 
-        foreach (var f in NumericFields)
+        foreach (var (f, _) in ResolveNumericFields(fields))
         {
-            if (seen.Contains(f.Capability))
-                continue;
-            if (!fields.ContainsKey(f.Field))
-                continue;
             caps.Add(new CapabilityDescriptor
             {
                 Key = f.Capability,
@@ -127,7 +136,6 @@ public static class EcowittStateMapper
                 Min = f.Min,
                 Max = f.Max,
             });
-            seen.Add(f.Capability);
         }
 
         foreach (var (field, capability, label) in BatteryFields)

@@ -139,6 +139,25 @@ public sealed class EcowittStateMapperTests
     }
 
     [Fact]
+    public void Map_And_BuildCapabilities_AgreeOnUnparseableNumericField()
+    {
+        var fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["tempf"] = "N/A",
+            ["humidity"] = "50",
+        };
+
+        var updates = EcowittStateMapper.Map(_deviceId, fields);
+        var caps = EcowittStateMapper.BuildCapabilities(fields);
+
+        Assert.DoesNotContain(updates, u => u.CapabilityKey == "outdoorTemperature");
+        Assert.DoesNotContain(caps, c => c.Key == "outdoorTemperature");
+
+        Assert.Contains(updates, u => u.CapabilityKey == "outdoorHumidity");
+        Assert.Contains(caps, c => c.Key == "outdoorHumidity");
+    }
+
+    [Fact]
     public void BuildMetadata_IncludesModelAndStationType()
     {
         var meta = EcowittStateMapper.BuildMetadata(SampleFields());
