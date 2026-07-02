@@ -109,6 +109,7 @@ services:
       - emqx
     env_file:
       - .env
+    restart: unless-stopped
     environment:
       - VIDAR_CLUSTER_SEED=lighthouse:4053
       - VIDAR_HOSTNAME=vidar-comm-ecowitt

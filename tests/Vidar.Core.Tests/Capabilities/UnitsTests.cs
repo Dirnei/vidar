@@ -52,6 +52,12 @@ public sealed class UnitsTests
     }
 
     [Fact]
+    public void FormatNumeric_DegreesHasNoSpaceBeforeSymbol()
+    {
+        Assert.Equal("75°", Units.FormatNumeric(75, UnitType.Degrees));
+    }
+
+    [Fact]
     public void FormatBoolean_UsesSemanticLabels()
     {
         Assert.Equal("On", Units.FormatBoolean(true, UnitType.OnOff));
@@ -66,6 +72,7 @@ public sealed class UnitsTests
     [InlineData(UnitType.Millimeters, "mm")]
     [InlineData(UnitType.Degrees, "°")]
     [InlineData(UnitType.WattsPerSquareMeter, "W/m²")]
+    [InlineData(UnitType.UvIndex, "")]
     public void Symbol_ReturnsWeatherUnitSymbols(UnitType unit, string expected)
     {
         Assert.Equal(expected, Units.Symbol(unit));

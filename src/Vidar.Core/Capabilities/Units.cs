@@ -66,6 +66,8 @@ public static class Units
                 string.Create(CultureInfo.InvariantCulture, $"{value / 1000:F1} kWh"),
             UnitType.Percent =>
                 string.Create(CultureInfo.InvariantCulture, $"{value:F0}%"),
+            UnitType.Degrees =>
+                string.Create(CultureInfo.InvariantCulture, $"{value:G}°"),
             _ when sym.Length > 0 =>
                 string.Create(CultureInfo.InvariantCulture, $"{value:G} {sym}"),
             _ => value.ToString("G", CultureInfo.InvariantCulture),

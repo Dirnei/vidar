@@ -67,7 +67,7 @@ public sealed class EcowittBridgeActor : PluginActorBase
         }
         else
         {
-            PublishStatus("stopped", 0);
+            PublishStatus("stopped", _discovered ? 1 : 0);
         }
     }
 

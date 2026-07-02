@@ -1,3 +1,4 @@
+using Akka.Actor;
 using Akka.Cluster.Tools.PublishSubscribe;
 using Akka.Configuration;
 using Akka.Hosting;
@@ -60,11 +61,21 @@ public sealed class EcowittBridgeActorTests : TestKit
         var shardProxy = CreateTestProbe();
         RegisterProbes(pluginRegistry, shardProxy);
 
+        var mediator = DistributedPubSub.Get(Sys).Mediator;
+        var statusProbe = CreateTestProbe();
+        mediator.Tell(new Subscribe("application-status", statusProbe.Ref), statusProbe.Ref);
+        statusProbe.ExpectMsg<SubscribeAck>();
+
         var bridge = Sys.ActorOf(EcowittBridgeActor.Props(Config));
+        Watch(bridge);
 
         bridge.Tell(new PluginRegistered(
             "ecowitt", false, new Dictionary<string, string>(), []), TestActor);
 
+        statusProbe.ExpectMsg<ApplicationStatusUpdate>(
+            m => m.Status == "stopped", TimeSpan.FromSeconds(3));
+
+        // The actor must survive the disabled-config path — no Terminated on the watcher.
         ExpectNoMsg(TimeSpan.FromMilliseconds(300));
     }
 
@@ -75,12 +86,23 @@ public sealed class EcowittBridgeActorTests : TestKit
         var shardProxy = CreateTestProbe();
         RegisterProbes(pluginRegistry, shardProxy);
 
-        var bridge = Sys.ActorOf(EcowittBridgeActor.Props(Config));
+        var mediator = DistributedPubSub.Get(Sys).Mediator;
+        var statusProbe = CreateTestProbe();
+        mediator.Tell(new Subscribe("application-status", statusProbe.Ref), statusProbe.Ref);
+        statusProbe.ExpectMsg<SubscribeAck>();
 
-        // localhost:1883 is not listening in the test env; connect fails gracefully.
+        var bridge = Sys.ActorOf(EcowittBridgeActor.Props(Config));
+        Watch(bridge);
+
+        // localhost:1883 is not listening in the test env; connect fails gracefully and
+        // the bridge publishes an "error" status instead of crashing.
         bridge.Tell(new PluginRegistered(
             "ecowitt", true, new Dictionary<string, string>(), []), TestActor);
 
-        ExpectNoMsg(TimeSpan.FromMilliseconds(500));
+        statusProbe.ExpectMsg<ApplicationStatusUpdate>(
+            m => m.Status == "error", TimeSpan.FromSeconds(10));
+
+        // The actor must survive the failed-connect path — no Terminated on the watcher.
+        ExpectNoMsg(TimeSpan.FromMilliseconds(300));
     }
 }
