@@ -85,7 +85,7 @@ def translate_command(cmd):
 class DeviceBridge:
     """Owns one vacuum: local-first/cloud-fallback transport, republished to the broker."""
 
-    def __init__(self, user_data, manifest, target):
+    def __init__(self, user_data, manifest, target, room_names=None):
         self.user_data = user_data
         self.duid = manifest["duid"]
         self.name = manifest.get("name", self.duid)
@@ -93,6 +93,8 @@ class DeviceBridge:
         self.local_key = manifest["localKey"]
         self.ip = manifest.get("ip")
         self.target = target
+        # iot room id -> friendly name (from home data at onboarding/startup)
+        self.room_names = room_names or {}
         self.state_topic = f"{BASE_TOPIC}/{self.duid}"
         self.transport = "offline"
         self.rooms = []
@@ -175,9 +177,21 @@ class DeviceBridge:
             return
 
     async def _refresh_rooms(self):
+        # get_room_mapping() returns list[RoomMapping] with .segment_id and .iot_id (NOT tuples).
+        # iot_id joins to a HomeDataRoom.id -> friendly name via self.room_names.
         try:
-            mapping = await self.client.get_room_mapping()  # [[segment_id, iot_id], ...]
-            self.rooms = [{"id": int(seg), "name": str(iot)} for seg, iot in (mapping or [])]
+            mapping = await self.client.get_room_mapping()
+            rooms = []
+            for rm in (mapping or []):
+                seg = getattr(rm, "segment_id", None)
+                iot = getattr(rm, "iot_id", None)
+                if seg is None:
+                    continue
+                name = (self.room_names.get(iot)
+                        or self.room_names.get(str(iot))
+                        or str(iot))
+                rooms.append({"id": int(seg), "name": name})
+            self.rooms = rooms
         except Exception as e:  # noqa: BLE001
             log(f"[{self.duid}] room mapping failed: {e}")
             self.rooms = []
@@ -209,17 +223,138 @@ class DeviceBridge:
             log(f"[{self.duid}] command {name} failed: {e}")
 
 
+# ── Onboarding (cloud auth via python-roborock) ──────────────────────────────
+# Runs in-process as an HTTP server the Vidar host calls at http://roborock2mqtt:8895.
+# python-roborock is the only client that speaks Roborock's auth, so onboarding lives here.
+
+ONBOARD_PORT = int(os.environ.get("ROBOROCK_ONBOARD_PORT", "8895"))
+
+
+def _run_async(coro):
+    """Run a coroutine to completion in a throwaway event loop (for the HTTP thread)."""
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+async def _assemble_account(api, user_data):
+    """From an authenticated api+user_data, build the manifest devices + room list."""
+    from roborock.containers import DeviceData
+    from roborock.version_1_apis import RoborockMqttClientV1
+
+    try:
+        home = await api.get_home_data_v3(user_data)
+    except Exception:  # noqa: BLE001 — older accounts / API variance
+        home = await api.get_home_data(user_data)
+
+    products = {p.id: p for p in (home.products or [])}
+    all_devices = list(home.devices or []) + list(getattr(home, "received_devices", None) or [])
+    rooms = [{"id": r.id, "name": r.name} for r in (home.rooms or [])]
+
+    devices = []
+    for d in all_devices:
+        model = products[d.product_id].model if d.product_id in products else ""
+        ip = ""
+        try:
+            mc = RoborockMqttClientV1(user_data, DeviceData(device=d, model=model))
+            await mc.async_connect()
+            net = await mc.get_networking()
+            ip = (getattr(net, "ip", "") if net else "") or ""
+            await mc.async_disconnect()
+        except Exception as e:  # noqa: BLE001 — ip is best-effort; local falls back to cloud
+            log(f"networking for {d.duid} failed: {e}")
+        devices.append({"duid": d.duid, "name": d.name, "model": model,
+                        "localKey": d.local_key, "ip": ip})
+    return devices, rooms
+
+
+async def _login_password(email, password):
+    from roborock.web_api import RoborockApiClient
+    api = RoborockApiClient(email)
+    user_data = await api.pass_login(password)
+    devices, rooms = await _assemble_account(api, user_data)
+    return {"userDataJson": json.dumps(user_data.as_dict()), "devices": devices, "rooms": rooms}
+
+
+async def _request_code(email):
+    from roborock.web_api import RoborockApiClient
+    await RoborockApiClient(email).request_code()
+
+
+async def _code_login(email, code):
+    from roborock.web_api import RoborockApiClient
+    api = RoborockApiClient(email)
+    user_data = await api.code_login(code)
+    devices, rooms = await _assemble_account(api, user_data)
+    return {"userDataJson": json.dumps(user_data.as_dict()), "devices": devices, "rooms": rooms}
+
+
+def _auth_status_code(exc):
+    """Map a python-roborock auth failure to an HTTP status the host understands."""
+    name = type(exc).__name__.lower()
+    msg = str(exc).lower()
+    if any(k in name for k in ("credential", "auth", "email", "login")) \
+            or any(k in msg for k in ("password", "credential", "unauthorized", "invalid")):
+        return 401
+    return 502
+
+
+def start_onboarding_server():
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class OnboardHandler(BaseHTTPRequestHandler):
+        def _send(self, code, obj):
+            body = json.dumps(obj).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            raw = self.rfile.read(length) if length else b"{}"
+            try:
+                req = json.loads(raw or b"{}")
+            except Exception:  # noqa: BLE001
+                self._send(400, {"error": "invalid json"})
+                return
+            path = self.path.rstrip("/")
+            try:
+                if path == "/auth/login":
+                    self._send(200, _run_async(_login_password(req["email"], req["password"])))
+                elif path == "/auth/request-code":
+                    _run_async(_request_code(req["email"]))
+                    self._send(200, {"sent": True})
+                elif path == "/auth/code-login":
+                    self._send(200, _run_async(_code_login(req["email"], req["code"])))
+                else:
+                    self._send(404, {"error": "not found"})
+            except Exception as e:  # noqa: BLE001
+                code = _auth_status_code(e)
+                log(f"onboard {path} -> {code}: {e}")
+                self._send(code, {"error": str(e)})
+
+        def log_message(self, *a):  # silence default request logging
+            pass
+
+    srv = ThreadingHTTPServer(("0.0.0.0", ONBOARD_PORT), OnboardHandler)
+    threading.Thread(target=srv.serve_forever, name="onboard-http", daemon=True).start()
+    log(f"onboarding HTTP server listening on :{ONBOARD_PORT}")
+
+
+# ── Main: serve onboarding, then poll Mongo and bridge each device ────────────
+
 def main():
     import paho.mqtt.client as mqtt
     from roborock.containers import UserData
 
-    user_data_dict, manifest = load_manifest_from_mongo()
-    if not user_data_dict or not manifest:
-        log("FATAL: no Roborock account/manifest in Mongo (complete onboarding first)")
-        sys.exit(2)
-    user_data = UserData.from_dict(user_data_dict)
-    bridges = {}
+    if os.environ.get("ROBOROCK_ONBOARD_HTTP") == "1":
+        start_onboarding_server()
 
+    bridges = {}
     target = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="roborock2mqtt")
     if MQTT_USERNAME:
         target.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
@@ -237,20 +372,36 @@ def main():
 
     target.on_connect = on_connect
     target.on_message = on_message
-    target.connect(MQTT_HOST, MQTT_PORT, keepalive=30)
+
+    # EMQX may not be ready the instant this starts; retry the broker connect.
+    while True:
+        try:
+            target.connect(MQTT_HOST, MQTT_PORT, keepalive=30)
+            break
+        except Exception as e:  # noqa: BLE001
+            log(f"broker connect failed ({e}); retry in 5s")
+            time.sleep(5)
     target.loop_start()
 
-    for m in manifest:
-        b = DeviceBridge(user_data, m, target)
-        bridges[m["duid"]] = b
-        b.start()
-
-    try:
-        while True:
-            time.sleep(3600)
-    except KeyboardInterrupt:
-        for b in bridges.values():
-            b.stop()
+    # Poll Mongo for the onboarded manifest and start a bridge per new device. This survives the
+    # pre-onboarding state (no exit), so the onboarding HTTP endpoints can populate Mongo first.
+    logged_waiting = False
+    while True:
+        user_data_dict, manifest = load_manifest_from_mongo()
+        if user_data_dict and manifest:
+            user_data = UserData.from_dict(user_data_dict)
+            for m in manifest:
+                if m["duid"] in bridges:
+                    continue
+                b = DeviceBridge(user_data, m, target)
+                bridges[m["duid"]] = b
+                b.start()
+                log(f"started bridge for {m['duid']} ({m.get('name')})")
+            logged_waiting = False
+        elif not logged_waiting:
+            log("no Roborock manifest in Mongo yet; waiting for onboarding")
+            logged_waiting = True
+        time.sleep(POLL_INTERVAL)
 
 
 if __name__ == "__main__":

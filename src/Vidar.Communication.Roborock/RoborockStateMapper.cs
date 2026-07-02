@@ -16,7 +16,8 @@ public static class RoborockStateMapper
         if (root.TryGetProperty("battery", out var bat) && bat.ValueKind == JsonValueKind.Number)
             result.Add(("vacuum.battery", bat.GetInt32()));
 
-        if (root.TryGetProperty("fan_power", out var fp) && fp.ValueKind == JsonValueKind.Number)
+        // python-roborock's Status.as_dict() camelizes keys, so fan_power -> fanPower.
+        if (root.TryGetProperty("fanPower", out var fp) && fp.ValueKind == JsonValueKind.Number)
             result.Add(("vacuum.fanPower", fp.GetInt32()));
 
         return result;
