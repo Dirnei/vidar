@@ -12,6 +12,7 @@ export type UnitType =
   | 'Celsius' | 'Fahrenheit'
   | 'Percent'
   | 'Lux'
+  | 'Hectopascals' | 'KilometersPerHour' | 'Millimeters' | 'Degrees' | 'UvIndex' | 'WattsPerSquareMeter'
   | 'Number'
   | 'OnOff' | 'OpenClosed' | 'Detected' | 'YesNo'
   | 'Text' | 'Url';

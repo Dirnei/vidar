@@ -21,6 +21,8 @@ function valueKindFor(unit: UnitType): ValueKind {
   switch (unit) {
     case 'Watts': case 'Kilowatts': case 'WattHours': case 'KilowattHours':
     case 'Celsius': case 'Fahrenheit': case 'Percent': case 'Lux': case 'Number':
+    case 'Hectopascals': case 'KilometersPerHour': case 'Millimeters':
+    case 'Degrees': case 'UvIndex': case 'WattsPerSquareMeter':
       return 'Numeric';
     case 'OnOff': case 'OpenClosed': case 'Detected': case 'YesNo':
       return 'Boolean';

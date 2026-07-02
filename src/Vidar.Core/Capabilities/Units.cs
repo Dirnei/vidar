@@ -21,6 +21,12 @@ public static class Units
         UnitType.Fahrenheit => "°F",
         UnitType.Percent => "%",
         UnitType.Lux => "lx",
+        UnitType.Hectopascals => "hPa",
+        UnitType.KilometersPerHour => "km/h",
+        UnitType.Millimeters => "mm",
+        UnitType.Degrees => "°",
+        UnitType.WattsPerSquareMeter => "W/m²",
+        UnitType.UvIndex => "",
         _ => "",
     };
 

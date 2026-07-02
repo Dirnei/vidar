@@ -23,6 +23,14 @@ public enum UnitType
     // Numeric — Generic
     Number,
 
+    // Numeric — Weather
+    Hectopascals,
+    KilometersPerHour,
+    Millimeters,
+    Degrees,
+    UvIndex,
+    WattsPerSquareMeter,
+
     // Boolean
     OnOff,
     OpenClosed,

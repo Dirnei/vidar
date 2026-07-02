@@ -631,6 +631,12 @@ function formatWithUnit(val: unknown, unit: UnitType): string {
       case 'Fahrenheit': return `${val.toFixed(1)} °F`;
       case 'Percent': return `${Math.round(val)}%`;
       case 'Lux': return `${Math.round(val)} lx`;
+      case 'Hectopascals': return `${Math.round(val)} hPa`;
+      case 'KilometersPerHour': return `${val.toFixed(1)} km/h`;
+      case 'Millimeters': return `${val.toFixed(1)} mm`;
+      case 'Degrees': return `${Math.round(val)}°`;
+      case 'UvIndex': return `${Math.round(val)}`;
+      case 'WattsPerSquareMeter': return `${Math.round(val)} W/m²`;
       case 'Number': return `${Math.round(val * 100) / 100}`;
       default: return String(val);
     }

@@ -59,4 +59,27 @@ public sealed class UnitsTests
         Assert.Equal("Open", Units.FormatBoolean(true, UnitType.OpenClosed));
         Assert.Equal("Closed", Units.FormatBoolean(false, UnitType.OpenClosed));
     }
+
+    [Theory]
+    [InlineData(UnitType.Hectopascals, "hPa")]
+    [InlineData(UnitType.KilometersPerHour, "km/h")]
+    [InlineData(UnitType.Millimeters, "mm")]
+    [InlineData(UnitType.Degrees, "°")]
+    [InlineData(UnitType.WattsPerSquareMeter, "W/m²")]
+    public void Symbol_ReturnsWeatherUnitSymbols(UnitType unit, string expected)
+    {
+        Assert.Equal(expected, Units.Symbol(unit));
+    }
+
+    [Theory]
+    [InlineData(UnitType.Hectopascals)]
+    [InlineData(UnitType.KilometersPerHour)]
+    [InlineData(UnitType.Millimeters)]
+    [InlineData(UnitType.Degrees)]
+    [InlineData(UnitType.UvIndex)]
+    [InlineData(UnitType.WattsPerSquareMeter)]
+    public void KindOf_WeatherUnitsAreNumeric(UnitType unit)
+    {
+        Assert.Equal(ValueKind.Numeric, Units.KindOf(unit));
+    }
 }
