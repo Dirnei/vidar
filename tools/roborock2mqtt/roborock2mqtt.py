@@ -231,7 +231,8 @@ class DeviceBridge:
 
     def _publish_offline(self):
         self.target.publish(self.state_topic,
-                            json.dumps({"_transport": "offline", "_rooms": self.rooms}),
+                            json.dumps({"_transport": "offline",
+                                        "_rooms": self.rooms, "_scenes": self.scenes}),
                             qos=0, retain=True)
 
     def forward_command(self, payload):
