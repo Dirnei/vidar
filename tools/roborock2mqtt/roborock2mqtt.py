@@ -22,19 +22,19 @@ def log(*a):
 
 
 def load_manifest_from_mongo():
-    """Return (user_data_dict, [manifest dicts]) from vidar.integrations/_id:'roborock'."""
+    """Return (user_data_dict, [manifest dicts], email) from vidar.integrations/_id:'roborock'."""
     try:
         from pymongo import MongoClient
     except ImportError:
-        return None, []
+        return None, [], None
     try:
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         cfg = client[MONGO_DB]["integrations"].find_one({"_id": "roborock"})
     except Exception as e:  # noqa: BLE001
         log("Mongo read failed:", e)
-        return None, []
+        return None, [], None
     if not cfg:
-        return None, []
+        return None, [], None
     settings = cfg.get("Settings", {}) or {}
     user_data = None
     try:
@@ -46,7 +46,8 @@ def load_manifest_from_mongo():
         devices = json.loads(settings.get("account.manifest", "[]"))
     except (ValueError, TypeError):
         pass
-    return user_data, devices
+    email = settings.get("account.email")
+    return user_data, devices, email
 
 
 def map_status_to_payload(status, rooms, transport):
@@ -85,14 +86,17 @@ def translate_command(cmd):
 class DeviceBridge:
     """Owns one vacuum: local-first/cloud-fallback transport, republished to the broker."""
 
-    def __init__(self, user_data, manifest, target, room_names=None):
+    def __init__(self, user_data, manifest, target, home_device, room_names=None):
         self.user_data = user_data
         self.duid = manifest["duid"]
         self.name = manifest.get("name", self.duid)
         self.model = manifest.get("model", "")
-        self.local_key = manifest["localKey"]
         self.ip = manifest.get("ip")
         self.target = target
+        # The real HomeDataDevice from Roborock's home data — python-roborock's DeviceData
+        # requires it (it has product_id, pv/protocol version, local_key, etc.); a hand-built
+        # one is missing required fields and picks the wrong protocol.
+        self.home_device = home_device
         # iot room id -> friendly name (from home data at onboarding/startup)
         self.room_names = room_names or {}
         self.state_topic = f"{BASE_TOPIC}/{self.duid}"
@@ -127,41 +131,55 @@ class DeviceBridge:
             self.loop.close()
 
     async def _connect_and_poll(self):
-        from roborock.containers import DeviceData, HomeDataDevice
-        from roborock.version_1_apis import RoborockLocalClientV1, RoborockMqttClientV1
+        from roborock.containers import DeviceData
 
-        device = HomeDataDevice(duid=self.duid, name=self.name, local_key=self.local_key,
-                                fv="", pv="1.0")
-        device_data = DeviceData(device=device, model=self.model, host=self.ip)
-
+        device_data = DeviceData(device=self.home_device, model=self.model, host=self.ip)
         try:
-            # local-first
-            try:
-                if not self.ip:
-                    raise RuntimeError("no local ip")
-                self.client = RoborockLocalClientV1(device_data)
-                await self.client.async_connect()
-                self.transport = "local"
-            except Exception as e:  # noqa: BLE001
-                log(f"[{self.duid}] local failed ({e}); falling back to cloud")
-                self.client = RoborockMqttClientV1(self.user_data, device_data)
-                await self.client.async_connect()
-                self.transport = "cloud"
-
+            status = await self._select_transport(device_data)
             log(f"[{self.duid}] connected ({self.transport})")
             await self._refresh_rooms()
             while not self._stop.is_set():
-                status = await self.client.get_status()
+                if status is None:
+                    status = await self.client.get_status()
                 payload = map_status_to_payload(
                     status.as_dict() if hasattr(status, "as_dict") else dict(status),
                     self.rooms, self.transport)
                 self.target.publish(self.state_topic, json.dumps(payload), qos=0, retain=True)
+                status = None
                 await asyncio.sleep(POLL_INTERVAL)
         finally:
             await self._disconnect_client()
 
+    async def _select_transport(self, device_data):
+        """Local-first, cloud-fallback. Newer devices (e.g. Qrevo) connect locally but return an
+        empty status, so local is only used if get_status actually yields state. Returns the first
+        status so the poll loop can publish it without a second round-trip."""
+        from roborock.version_1_apis import RoborockLocalClientV1, RoborockMqttClientV1
+
+        if self.ip:
+            try:
+                c = RoborockLocalClientV1(device_data)
+                await c.async_connect()
+                st = await c.get_status()
+                if getattr(st, "state", None) is not None:
+                    self.client, self.transport = c, "local"
+                    return st
+                log(f"[{self.duid}] local connected but returned no state; falling back to cloud")
+                await self._disconnect(c)
+            except Exception as e:  # noqa: BLE001
+                log(f"[{self.duid}] local failed ({e}); falling back to cloud")
+
+        c = RoborockMqttClientV1(self.user_data, device_data)
+        await c.async_connect()
+        st = await c.get_status()
+        self.client, self.transport = c, "cloud"
+        return st
+
     async def _disconnect_client(self):
         client, self.client = self.client, None
+        await self._disconnect(client)
+
+    async def _disconnect(self, client):
         if client is None:
             return
         for method in ("async_disconnect", "async_release", "disconnect"):
@@ -270,6 +288,18 @@ async def _assemble_account(api, user_data):
     return devices, rooms
 
 
+async def _home_devices(email, user_data):
+    """Fetch the real {duid: HomeDataDevice} for this account (needed to build DeviceData)."""
+    from roborock.web_api import RoborockApiClient
+    api = RoborockApiClient(email)
+    try:
+        home = await api.get_home_data_v3(user_data)
+    except Exception:  # noqa: BLE001
+        home = await api.get_home_data(user_data)
+    devs = list(home.devices or []) + list(getattr(home, "received_devices", None) or [])
+    return {d.duid: d for d in devs}
+
+
 async def _login_password(email, password):
     from roborock.web_api import RoborockApiClient
     api = RoborockApiClient(email)
@@ -278,14 +308,25 @@ async def _login_password(email, password):
     return {"userDataJson": json.dumps(user_data.as_dict()), "devices": devices, "rooms": rooms}
 
 
+# Roborock binds an emailed code to the requesting client's header id, which is a hash of
+# username + a per-instance random device_identifier. request_code and code_login therefore
+# MUST present the SAME device_identifier, so we persist it per email across the two HTTP calls.
+_ONBOARD_IDENTIFIERS = {}
+
+
 async def _request_code(email):
     from roborock.web_api import RoborockApiClient
-    await RoborockApiClient(email).request_code()
+    api = RoborockApiClient(email)
+    _ONBOARD_IDENTIFIERS[email] = api._device_identifier
+    await api.request_code()
 
 
 async def _code_login(email, code):
     from roborock.web_api import RoborockApiClient
     api = RoborockApiClient(email)
+    ident = _ONBOARD_IDENTIFIERS.get(email)
+    if ident:
+        api._device_identifier = ident  # reuse the id the code was issued against
     user_data = await api.code_login(code)
     devices, rooms = await _assemble_account(api, user_data)
     return {"userDataJson": json.dumps(user_data.as_dict()), "devices": devices, "rooms": rooms}
@@ -313,9 +354,27 @@ def start_onboarding_server():
             self.end_headers()
             self.wfile.write(body)
 
-        def do_POST(self):
+        def _read_body(self):
+            # .NET's PostAsJsonAsync sends the body chunked (no Content-Length); handle both.
+            te = (self.headers.get("Transfer-Encoding") or "").lower()
+            if "chunked" in te:
+                chunks = []
+                while True:
+                    line = self.rfile.readline().strip()
+                    if not line:
+                        continue
+                    size = int(line.split(b";")[0], 16)
+                    if size == 0:
+                        self.rfile.readline()  # trailing CRLF
+                        break
+                    chunks.append(self.rfile.read(size))
+                    self.rfile.readline()  # CRLF after each chunk
+                return b"".join(chunks)
             length = int(self.headers.get("Content-Length", 0) or 0)
-            raw = self.rfile.read(length) if length else b"{}"
+            return self.rfile.read(length) if length else b""
+
+        def do_POST(self):
+            raw = self._read_body() or b"{}"
             try:
                 req = json.loads(raw or b"{}")
             except Exception:  # noqa: BLE001
@@ -387,16 +446,25 @@ def main():
     # pre-onboarding state (no exit), so the onboarding HTTP endpoints can populate Mongo first.
     logged_waiting = False
     while True:
-        user_data_dict, manifest = load_manifest_from_mongo()
-        if user_data_dict and manifest:
+        user_data_dict, manifest, email = load_manifest_from_mongo()
+        if user_data_dict and manifest and email:
             user_data = UserData.from_dict(user_data_dict)
-            for m in manifest:
-                if m["duid"] in bridges:
-                    continue
-                b = DeviceBridge(user_data, m, target)
-                bridges[m["duid"]] = b
-                b.start()
-                log(f"started bridge for {m['duid']} ({m.get('name')})")
+            new = [m for m in manifest if m["duid"] not in bridges]
+            if new:
+                try:
+                    home_devices = _run_async(_home_devices(email, user_data))
+                except Exception as e:  # noqa: BLE001
+                    log(f"home data fetch failed ({e}); retry next poll")
+                    home_devices = {}
+                for m in new:
+                    hd = home_devices.get(m["duid"])
+                    if hd is None:
+                        log(f"device {m['duid']} not found in home data yet; will retry")
+                        continue
+                    b = DeviceBridge(user_data, m, target, hd)
+                    bridges[m["duid"]] = b
+                    b.start()
+                    log(f"started bridge for {m['duid']} ({m.get('name')})")
             logged_waiting = False
         elif not logged_waiting:
             log("no Roborock manifest in Mongo yet; waiting for onboarding")
