@@ -29,3 +29,14 @@ def test_translate_clean_segments():
     name, params = r.translate_command({"capability": "vacuum.cleanSegments", "value": "16,17"})
     assert name == "APP_SEGMENT_CLEAN"
     assert params == [{"segments": [16, 17], "repeat": 1}]
+
+
+def test_map_status_attaches_scenes():
+    out = r.map_status_to_payload({"state": 8}, [{"id": 16, "name": "Kitchen"}], "cloud",
+                                  scenes=[{"id": 1234, "name": "After dinner"}])
+    assert out["_scenes"] == [{"id": 1234, "name": "After dinner"}]
+    assert out["_rooms"] == [{"id": 16, "name": "Kitchen"}]
+
+def test_map_status_scenes_default_empty():
+    out = r.map_status_to_payload({"state": 8}, [], "cloud")
+    assert out["_scenes"] == []

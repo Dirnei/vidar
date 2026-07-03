@@ -50,10 +50,11 @@ def load_manifest_from_mongo():
     return user_data, devices, email
 
 
-def map_status_to_payload(status, rooms, transport):
+def map_status_to_payload(status, rooms, transport, scenes=None):
     out = dict(status)
     out["_transport"] = transport
     out["_rooms"] = rooms or []
+    out["_scenes"] = scenes or []
     return out
 
 
@@ -86,7 +87,7 @@ def translate_command(cmd):
 class DeviceBridge:
     """Owns one vacuum: local-first/cloud-fallback transport, republished to the broker."""
 
-    def __init__(self, user_data, manifest, target, home_device, room_names=None):
+    def __init__(self, user_data, manifest, target, home_device, room_names=None, email=None):
         self.user_data = user_data
         self.duid = manifest["duid"]
         self.name = manifest.get("name", self.duid)
@@ -99,6 +100,8 @@ class DeviceBridge:
         self.home_device = home_device
         # iot room id -> friendly name (from home data at onboarding/startup)
         self.room_names = room_names or {}
+        self.email = email
+        self.scenes = []
         self.state_topic = f"{BASE_TOPIC}/{self.duid}"
         self.transport = "offline"
         self.rooms = []
@@ -138,12 +141,13 @@ class DeviceBridge:
             status = await self._select_transport(device_data)
             log(f"[{self.duid}] connected ({self.transport})")
             await self._refresh_rooms()
+            self.scenes = await self._fetch_scenes()
             while not self._stop.is_set():
                 if status is None:
                     status = await self.client.get_status()
                 payload = map_status_to_payload(
                     status.as_dict() if hasattr(status, "as_dict") else dict(status),
-                    self.rooms, self.transport)
+                    self.rooms, self.transport, self.scenes)
                 self.target.publish(self.state_topic, json.dumps(payload), qos=0, retain=True)
                 status = None
                 await asyncio.sleep(POLL_INTERVAL)
@@ -213,6 +217,17 @@ class DeviceBridge:
         except Exception as e:  # noqa: BLE001
             log(f"[{self.duid}] room mapping failed: {e}")
             self.rooms = []
+
+    async def _fetch_scenes(self):
+        if not self.email:
+            return []
+        try:
+            from roborock.web_api import RoborockApiClient
+            scenes = await RoborockApiClient(self.email).get_scenes(self.user_data, self.duid)
+            return [{"id": s.id, "name": s.name} for s in (scenes or [])]
+        except Exception as e:  # noqa: BLE001
+            log(f"[{self.duid}] scene fetch failed: {e}")
+            return []
 
     def _publish_offline(self):
         self.target.publish(self.state_topic,
@@ -297,7 +312,8 @@ async def _home_devices(email, user_data):
     except Exception:  # noqa: BLE001
         home = await api.get_home_data(user_data)
     devs = list(home.devices or []) + list(getattr(home, "received_devices", None) or [])
-    return {d.duid: d for d in devs}
+    room_names = {r.id: r.name for r in (getattr(home, "rooms", None) or [])}
+    return {d.duid: d for d in devs}, room_names
 
 
 async def _login_password(email, password):
@@ -452,16 +468,16 @@ def main():
             new = [m for m in manifest if m["duid"] not in bridges]
             if new:
                 try:
-                    home_devices = _run_async(_home_devices(email, user_data))
+                    home_devices, room_names = _run_async(_home_devices(email, user_data))
                 except Exception as e:  # noqa: BLE001
                     log(f"home data fetch failed ({e}); retry next poll")
-                    home_devices = {}
+                    home_devices, room_names = {}, {}
                 for m in new:
                     hd = home_devices.get(m["duid"])
                     if hd is None:
                         log(f"device {m['duid']} not found in home data yet; will retry")
                         continue
-                    b = DeviceBridge(user_data, m, target, hd)
+                    b = DeviceBridge(user_data, m, target, hd, room_names, email)
                     bridges[m["duid"]] = b
                     b.start()
                     log(f"started bridge for {m['duid']} ({m.get('name')})")
