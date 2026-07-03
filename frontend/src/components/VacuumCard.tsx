@@ -123,7 +123,9 @@ export function VacuumCard({ device, state, cmd }: Props) {
 
       {/* Actions */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {actionButton('Start', () => cmd('vacuum.start', true), true)}
+        {vstate === 'paused'
+          ? actionButton('Resume', () => cmd('vacuum.resume', true), true)
+          : actionButton('Start', () => cmd('vacuum.start', true), true)}
         {actionButton('Pause', () => cmd('vacuum.pause', true))}
         {actionButton('Stop', () => cmd('vacuum.stop', true))}
         {actionButton('Return to dock', () => cmd('vacuum.dock', true))}

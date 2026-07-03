@@ -41,4 +41,12 @@ public class RoborockModelRegistryTests
         Assert.False(byKey["vacuum.scenes"].Commandable);
         Assert.True(byKey["vacuum.runScene"].Commandable);
     }
+
+    [Fact]
+    public void ExposesResumeAction()
+    {
+        var byKey = RoborockModelRegistry.Capabilities("roborock.vacuum.a187").ToDictionary(c => c.Key);
+        Assert.True(byKey["vacuum.resume"].Commandable);
+        Assert.Equal(Vidar.Core.Capabilities.UnitType.Action, byKey["vacuum.resume"].Unit);
+    }
 }

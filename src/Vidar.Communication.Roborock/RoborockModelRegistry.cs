@@ -23,6 +23,7 @@ public static class RoborockModelRegistry
         Cmd("vacuum.pause", "Pause", UnitType.Action),
         Cmd("vacuum.dock", "Return to dock", UnitType.Action),
         Cmd("vacuum.locate", "Locate", UnitType.Action),
+        Cmd("vacuum.resume", "Resume", UnitType.Action),
         Cmd("vacuum.cleanSegments", "Clean rooms", UnitType.Text),
         Read("vacuum.rooms", "Rooms", UnitType.Text),
         Read("vacuum.scenes", "Routines", UnitType.Text),

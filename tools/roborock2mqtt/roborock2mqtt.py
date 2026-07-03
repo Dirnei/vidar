@@ -102,6 +102,7 @@ class DeviceBridge:
         self.room_names = room_names or {}
         self.email = email
         self.scenes = []
+        self.last_in_cleaning = None
         self.state_topic = f"{BASE_TOPIC}/{self.duid}"
         self.transport = "offline"
         self.rooms = []
@@ -145,6 +146,9 @@ class DeviceBridge:
             while not self._stop.is_set():
                 if status is None:
                     status = await self.client.get_status()
+                # Remember the clean type so a Resume command picks the right resume variant.
+                ic = getattr(status, "in_cleaning", None)
+                self.last_in_cleaning = int(ic) if isinstance(ic, int) else self.last_in_cleaning
                 payload = map_status_to_payload(
                     status.as_dict() if hasattr(status, "as_dict") else dict(status),
                     self.rooms, self.transport, self.scenes)
@@ -242,6 +246,9 @@ class DeviceBridge:
         if cmd.get("capability") == "vacuum.runScene":
             self._run_scene(cmd.get("value"))
             return
+        if cmd.get("capability") == "vacuum.resume":
+            self._resume()
+            return
         from roborock import RoborockCommand
         try:
             name, params = translate_command(cmd)
@@ -259,6 +266,28 @@ class DeviceBridge:
             log(f"[{self.duid}] sent {name} {params}")
         except Exception as e:  # noqa: BLE001
             log(f"[{self.duid}] command {name} failed: {e}")
+
+    def _resume(self):
+        # Resume the RIGHT job: a paused room (segment) clean and a paused zone clean each have
+        # their own resume command; a paused full clean resumes with APP_START. in_cleaning:
+        # 2 = zone, 3 = segment/room, else full/none.
+        if not self.client or not self.loop:
+            log(f"[{self.duid}] resume dropped (not connected)")
+            return
+        from roborock import RoborockCommand
+        ic = self.last_in_cleaning
+        if ic == 3:
+            rcmd = RoborockCommand.RESUME_SEGMENT_CLEAN
+        elif ic == 2:
+            rcmd = RoborockCommand.RESUME_ZONED_CLEAN
+        else:
+            rcmd = RoborockCommand.APP_START
+        fut = asyncio.run_coroutine_threadsafe(self.client.send_command(rcmd, []), self.loop)
+        try:
+            fut.result(timeout=15)
+            log(f"[{self.duid}] resumed ({rcmd}) in_cleaning={ic}")
+        except Exception as e:  # noqa: BLE001
+            log(f"[{self.duid}] resume failed: {e}")
 
     def _run_scene(self, scene_id):
         if not self.loop or not self.email or scene_id is None:

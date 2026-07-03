@@ -47,4 +47,11 @@ public class RoborockCommandBuilderTests
         Assert.Equal("vacuum.runScene", cap);
         Assert.Equal(1234, val.GetInt32());
     }
+
+    [Fact]
+    public void BuildsResume()
+    {
+        var (cap, _) = Parse(RoborockCommandBuilder.Build("vacuum.resume", true));
+        Assert.Equal("vacuum.resume", cap);
+    }
 }
