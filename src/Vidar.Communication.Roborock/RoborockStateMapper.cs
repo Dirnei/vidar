@@ -46,7 +46,7 @@ public static class RoborockStateMapper
         {
             var item = new Dictionary<string, object>();
             if (e.TryGetProperty("id", out var id))
-                item["id"] = id.ValueKind == JsonValueKind.Number ? id.GetInt64() : id.ToString();
+                item["id"] = id.ValueKind == JsonValueKind.Number ? id.GetInt64() : (object?)id.GetString() ?? "";
             if (e.TryGetProperty("name", out var name))
                 item["name"] = name.GetString() ?? "";
             items.Add(item);
