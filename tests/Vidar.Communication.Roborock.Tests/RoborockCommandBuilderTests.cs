@@ -39,4 +39,12 @@ public class RoborockCommandBuilderTests
     {
         Assert.Null(RoborockCommandBuilder.Build("vacuum.bogus", true));
     }
+
+    [Fact]
+    public void BuildsRunSceneWithId()
+    {
+        var (cap, val) = Parse(RoborockCommandBuilder.Build("vacuum.runScene", 1234));
+        Assert.Equal("vacuum.runScene", cap);
+        Assert.Equal(1234, val.GetInt32());
+    }
 }

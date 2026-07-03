@@ -7,7 +7,7 @@ public static class RoborockCommandBuilder
     private static readonly HashSet<string> Known = new()
     {
         "vacuum.start", "vacuum.stop", "vacuum.pause", "vacuum.dock",
-        "vacuum.locate", "vacuum.fanPower", "vacuum.cleanSegments",
+        "vacuum.locate", "vacuum.fanPower", "vacuum.cleanSegments", "vacuum.runScene",
     };
 
     public static string? Build(string capabilityKey, object value)
