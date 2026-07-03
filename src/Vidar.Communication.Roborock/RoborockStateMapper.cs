@@ -20,6 +20,9 @@ public static class RoborockStateMapper
         if (root.TryGetProperty("fanPower", out var fp) && fp.ValueKind == JsonValueKind.Number)
             result.Add(("vacuum.fanPower", fp.GetInt32()));
 
+        AddList(result, root, "_rooms", "vacuum.rooms");
+        AddList(result, root, "_scenes", "vacuum.scenes");
+
         return result;
     }
 
@@ -32,4 +35,23 @@ public static class RoborockStateMapper
         9 or 12 => "error",
         _ => "idle",
     };
+
+    private static void AddList(List<(string, object)> result, JsonElement root,
+        string field, string capabilityKey)
+    {
+        if (!root.TryGetProperty(field, out var arr) || arr.ValueKind != JsonValueKind.Array)
+            return;
+        var items = new List<Dictionary<string, object>>();
+        foreach (var e in arr.EnumerateArray())
+        {
+            var item = new Dictionary<string, object>();
+            if (e.TryGetProperty("id", out var id))
+                item["id"] = id.ValueKind == JsonValueKind.Number ? id.GetInt64() : id.ToString();
+            if (e.TryGetProperty("name", out var name))
+                item["name"] = name.GetString() ?? "";
+            items.Add(item);
+        }
+        if (items.Count > 0)
+            result.Add((capabilityKey, items));
+    }
 }

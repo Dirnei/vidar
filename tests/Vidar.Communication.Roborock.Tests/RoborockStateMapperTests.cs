@@ -33,4 +33,28 @@ public class RoborockStateMapperTests
         var updates = RoborockStateMapper.MapState("{\"_transport\":\"local\",\"_rooms\":[]}");
         Assert.DoesNotContain(updates, u => u.CapabilityKey == "vacuum.battery");
     }
+
+    [Fact]
+    public void MapsRoomsAndScenes()
+    {
+        var json = """
+        {"state":8,"battery":50,
+         "_rooms":[{"id":16,"name":"Kitchen"},{"id":17,"name":"Hall"}],
+         "_scenes":[{"id":1234,"name":"After dinner"}]}
+        """;
+        var updates = RoborockStateMapper.MapState(json).ToDictionary(u => u.CapabilityKey, u => u.Value);
+        var rooms = Assert.IsAssignableFrom<System.Collections.IEnumerable>(updates["vacuum.rooms"]).Cast<object>().ToList();
+        Assert.Equal(2, rooms.Count);
+        var scenes = Assert.IsAssignableFrom<System.Collections.IEnumerable>(updates["vacuum.scenes"]).Cast<object>().ToList();
+        Assert.Single(scenes);
+    }
+
+    [Fact]
+    public void OmitsRoomsWhenEmptyOrAbsent()
+    {
+        var updates = RoborockStateMapper.MapState("{\"state\":8,\"_rooms\":[]}")
+            .Select(u => u.CapabilityKey).ToHashSet();
+        Assert.DoesNotContain("vacuum.rooms", updates);
+        Assert.DoesNotContain("vacuum.scenes", updates);
+    }
 }
