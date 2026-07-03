@@ -31,4 +31,14 @@ public class RoborockModelRegistryTests
         Assert.False(RoborockModelRegistry.IsSupported(""));
         Assert.True(RoborockModelRegistry.IsSupported("roborock.vacuum.a187"));
     }
+
+    [Fact]
+    public void ExposesRoomsScenesAndRunScene()
+    {
+        var caps = RoborockModelRegistry.Capabilities("roborock.vacuum.a187");
+        var byKey = caps.ToDictionary(c => c.Key);
+        Assert.False(byKey["vacuum.rooms"].Commandable);
+        Assert.False(byKey["vacuum.scenes"].Commandable);
+        Assert.True(byKey["vacuum.runScene"].Commandable);
+    }
 }
