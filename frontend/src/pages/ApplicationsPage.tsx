@@ -89,6 +89,19 @@ const APP_DEFS: AppDef[] = [
     description: 'Roborock vacuums via your Roborock account. Use the Connect wizard to sign in; control runs locally with the cloud used once to pair.',
     fields: [],
   },
+  {
+    id: 'ecowitt',
+    icon: '\u{1F326}\u{FE0F}',
+    description: 'Ecowitt weather station via the gateway’s native MQTT publications on EMQX. Point the gateway at EMQX with a matching topic, then set the connection here.',
+    fields: [
+      { key: 'mqttHost', label: 'MQTT Broker Host', placeholder: 'emqx', defaultValue: 'emqx', type: 'text' },
+      { key: 'mqttPort', label: 'MQTT Port', placeholder: '1883', defaultValue: '1883', type: 'text' },
+      { key: 'mqttUser', label: 'MQTT Username', placeholder: 'optional', type: 'text' },
+      { key: 'mqttPassword', label: 'MQTT Password', placeholder: 'optional', type: 'password' },
+      { key: 'topic', label: 'Base Topic', placeholder: 'ecowitt', defaultValue: 'ecowitt', type: 'text' },
+      { key: 'staleAfterSeconds', label: 'Stale After (seconds)', placeholder: '300', defaultValue: '300', type: 'text' },
+    ],
+  },
 ];
 
 // ---- Status colors ----

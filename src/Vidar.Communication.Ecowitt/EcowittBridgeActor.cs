@@ -17,8 +17,9 @@ public sealed class EcowittBridgeActor : PluginActorBase
 {
     protected override string PluginId => "ecowitt";
 
-    private readonly EcowittConfig _defaultConfig;
-    private EcowittConfig _config;
+    // Null until the user supplies at least an MQTT host + topic via the Applications UI.
+    // While null the actor stays idle and never touches the broker.
+    private EcowittConfig? _config;
 
     private HiveMQClient? _mqttClient;
     private Guid _deviceId;
@@ -28,16 +29,14 @@ public sealed class EcowittBridgeActor : PluginActorBase
 
     private sealed class ConnectToBroker { public static readonly ConnectToBroker Instance = new(); }
     private sealed class CheckConnection { public static readonly CheckConnection Instance = new(); }
-    private sealed record PayloadReceived(string Payload);
+    // Internal (not private) so tests can drive the payload path without a live broker.
+    internal sealed record PayloadReceived(string Payload);
 
-    public static Props Props(EcowittConfig config) =>
-        Akka.Actor.Props.Create(() => new EcowittBridgeActor(config));
+    public static Props Props() =>
+        Akka.Actor.Props.Create(() => new EcowittBridgeActor());
 
-    public EcowittBridgeActor(EcowittConfig config)
+    public EcowittBridgeActor()
     {
-        _defaultConfig = config;
-        _config = config;
-
         ReceiveAsync<ConnectToBroker>(_ => ConnectAsync());
         Receive<CheckConnection>(_ => OnCheckConnection());
         Receive<PayloadReceived>(msg => OnPayload(msg.Payload));
@@ -60,44 +59,59 @@ public sealed class EcowittBridgeActor : PluginActorBase
     protected override void OnPluginRegistered(bool enabled, Dictionary<string, string> settings,
         List<Vidar.Core.Messages.RegisterDeviceForPolling> registrations)
     {
-        if (enabled)
+        if (enabled && ApplySettings(settings))
         {
-            ApplySettings(settings);
             Self.Tell(ConnectToBroker.Instance);
         }
         else
         {
-            PublishStatus("stopped", _discovered ? 1 : 0);
+            // Disabled, or enabled but not yet configured — stay idle, no broker contact.
+            PublishStatus(enabled ? "unconfigured" : "stopped", _discovered ? 1 : 0);
         }
     }
 
     protected override void OnConfigChanged(bool enabled, Dictionary<string, string> settings)
     {
-        if (!enabled)
+        if (enabled && ApplySettings(settings))
         {
-            _ = DisconnectAsync();
-            PublishStatus("stopped", _discovered ? 1 : 0);
+            Self.Tell(ConnectToBroker.Instance);
             return;
         }
 
-        ApplySettings(settings);
-        Self.Tell(ConnectToBroker.Instance);
+        _ = DisconnectAsync();
+        PublishStatus(enabled ? "unconfigured" : "stopped", _discovered ? 1 : 0);
     }
 
-    private void ApplySettings(Dictionary<string, string> s)
+    /// <summary>
+    /// Builds the runtime config from UI settings. Returns false (and clears the config)
+    /// when the required connection details — MQTT host and topic — are missing, so the
+    /// caller leaves the actor idle rather than dialing a guessed broker.
+    /// </summary>
+    private bool ApplySettings(Dictionary<string, string> s)
     {
+        var host = s.GetValueOrDefault("mqttHost");
+        var topic = s.GetValueOrDefault("topic");
+        if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(topic))
+        {
+            _config = null;
+            return false;
+        }
+
         _config = new EcowittConfig(
-            MqttHost: s.GetValueOrDefault("mqttHost") ?? _defaultConfig.MqttHost,
-            MqttPort: int.TryParse(s.GetValueOrDefault("mqttPort"), out var p) ? p : _defaultConfig.MqttPort,
-            MqttUser: s.GetValueOrDefault("mqttUser") ?? _defaultConfig.MqttUser,
-            MqttPassword: s.GetValueOrDefault("mqttPassword") ?? _defaultConfig.MqttPassword,
-            Topic: s.GetValueOrDefault("topic") ?? _defaultConfig.Topic,
-            StaleAfterSeconds: int.TryParse(s.GetValueOrDefault("staleAfterSeconds"), out var st)
-                ? st : _defaultConfig.StaleAfterSeconds);
+            MqttHost: host,
+            MqttPort: int.TryParse(s.GetValueOrDefault("mqttPort"), out var p) ? p : 1883,
+            MqttUser: s.GetValueOrDefault("mqttUser"),
+            MqttPassword: s.GetValueOrDefault("mqttPassword"),
+            Topic: topic,
+            StaleAfterSeconds: int.TryParse(s.GetValueOrDefault("staleAfterSeconds"), out var st) ? st : 300);
+        return true;
     }
 
     private async Task ConnectAsync()
     {
+        if (_config is not { } config)
+            return;
+
         try
         {
             if (_mqttClient != null)
@@ -108,16 +122,16 @@ public sealed class EcowittBridgeActor : PluginActorBase
             }
 
             var options = new HiveMQClientOptionsBuilder()
-                .WithBroker(_config.MqttHost)
-                .WithPort(_config.MqttPort)
+                .WithBroker(config.MqttHost)
+                .WithPort(config.MqttPort)
                 .WithClientId($"vidar-ecowitt-{Guid.NewGuid():N}");
 
-            if (!string.IsNullOrEmpty(_config.MqttUser))
-                options.WithUserName(_config.MqttUser);
-            if (!string.IsNullOrEmpty(_config.MqttPassword))
+            if (!string.IsNullOrEmpty(config.MqttUser))
+                options.WithUserName(config.MqttUser);
+            if (!string.IsNullOrEmpty(config.MqttPassword))
             {
                 var secure = new SecureString();
-                foreach (var c in _config.MqttPassword) secure.AppendChar(c);
+                foreach (var c in config.MqttPassword) secure.AppendChar(c);
                 secure.MakeReadOnly();
                 options.WithPassword(secure);
             }
@@ -140,17 +154,17 @@ public sealed class EcowittBridgeActor : PluginActorBase
             Log.Info("Ecowitt MQTT connect result: {Result}", result.ReasonCode);
 
             // The gateway may publish to the exact topic or a subtree — subscribe to both.
-            await _mqttClient.SubscribeAsync(_config.Topic, QualityOfService.AtLeastOnceDelivery);
-            await _mqttClient.SubscribeAsync($"{_config.Topic}/#", QualityOfService.AtLeastOnceDelivery);
+            await _mqttClient.SubscribeAsync(config.Topic, QualityOfService.AtLeastOnceDelivery);
+            await _mqttClient.SubscribeAsync($"{config.Topic}/#", QualityOfService.AtLeastOnceDelivery);
 
             Log.Info("Connected to {Host}:{Port}, subscribed to {Topic}(/#)",
-                _config.MqttHost, _config.MqttPort, _config.Topic);
+                config.MqttHost, config.MqttPort, config.Topic);
             PublishStatus("running", _discovered ? 1 : 0);
         }
         catch (Exception ex)
         {
             Log.Error(ex, "Failed to connect to MQTT broker at {Host}:{Port}",
-                _config.MqttHost, _config.MqttPort);
+                config.MqttHost, config.MqttPort);
             PublishStatus("error", _discovered ? 1 : 0, ex.Message);
         }
     }
@@ -177,18 +191,27 @@ public sealed class EcowittBridgeActor : PluginActorBase
 
         _lastMessageUtc = DateTime.UtcNow;
 
-        if (!_discovered || _nativeId != passkey)
+        // Resolve the target device id on EVERY payload. Until the station is adopted,
+        // GetDeviceId returns null and we report to a stable synthetic id; once the user
+        // adopts it (registering PASSKEY -> the real device id), state must follow to that
+        // device. Re-resolving here — rather than only on first discovery — is what lets a
+        // late adoption, or a startup race where the registration lands after the first
+        // payload, redirect state onto the adopted device instead of stranding it on the
+        // synthetic id.
+        var configured = GetDeviceId(passkey);
+        var targetId = configured ?? (_deviceId == Guid.Empty ? Guid.NewGuid() : _deviceId);
+
+        if (!_discovered || _nativeId != passkey || targetId != _deviceId)
         {
             _nativeId = passkey;
-            var configured = GetDeviceId(passkey);
-            _deviceId = configured ?? (_deviceId == Guid.Empty ? Guid.NewGuid() : _deviceId);
+            _deviceId = targetId;
 
             Discover(_deviceId, passkey,
                 EcowittStateMapper.BuildCapabilities(fields),
                 EcowittStateMapper.BuildMetadata(fields));
             _discovered = true;
             PublishStatus("running", 1);
-            Log.Info("Discovered Ecowitt station {PassKey}", passkey);
+            Log.Info("Reporting Ecowitt station {PassKey} as device {DeviceId}", passkey, _deviceId);
         }
 
         foreach (var update in EcowittStateMapper.Map(_deviceId, fields))
@@ -197,7 +220,8 @@ public sealed class EcowittBridgeActor : PluginActorBase
 
     private void OnCheckConnection()
     {
-        if (!IsEnabled)
+        // Nothing to watch while disabled or not yet configured.
+        if (!IsEnabled || _config is not { } config)
             return;
 
         if (_mqttClient == null || !_mqttClient.IsConnected())
@@ -207,10 +231,10 @@ public sealed class EcowittBridgeActor : PluginActorBase
             return;
         }
 
-        if (_discovered && _config.StaleAfterSeconds > 0 &&
-            (DateTime.UtcNow - _lastMessageUtc).TotalSeconds > _config.StaleAfterSeconds)
+        if (_discovered && config.StaleAfterSeconds > 0 &&
+            (DateTime.UtcNow - _lastMessageUtc).TotalSeconds > config.StaleAfterSeconds)
         {
-            PublishStatus("degraded", 1, $"No data received for over {_config.StaleAfterSeconds}s");
+            PublishStatus("degraded", 1, $"No data received for over {config.StaleAfterSeconds}s");
         }
     }
 }

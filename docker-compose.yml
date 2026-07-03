@@ -114,9 +114,6 @@ services:
       - VIDAR_CLUSTER_SEED=lighthouse:4053
       - VIDAR_HOSTNAME=vidar-comm-ecowitt
       - VIDAR_AKKA_PORT=4061
-      - VIDAR_ECOWITT_MQTT_HOST=emqx
-      - VIDAR_ECOWITT_MQTT_PORT=1883
-      - VIDAR_ECOWITT_TOPIC=ecowitt
 
   vidar-comm-dyson:
     build:

@@ -27,8 +27,14 @@ public sealed class EcowittBridgeActorTests : TestKit
         }
     ").WithFallback(DistributedPubSub.DefaultConfig());
 
-    private static readonly EcowittConfig Config =
-        new("localhost", 1883, null, null, "ecowitt", 300);
+    // A fully-configured settings dict pointing at an unreachable broker.
+    private static Dictionary<string, string> ConfiguredSettings() => new()
+    {
+        ["mqttHost"] = "localhost",
+        ["mqttPort"] = "1883",
+        ["topic"] = "ecowitt",
+        ["staleAfterSeconds"] = "300",
+    };
 
     public EcowittBridgeActorTests() : base(TestConfig, "EcowittBridgeActorTests")
     {
@@ -48,7 +54,7 @@ public sealed class EcowittBridgeActorTests : TestKit
         var shardProxy = CreateTestProbe();
         RegisterProbes(pluginRegistry, shardProxy);
 
-        Sys.ActorOf(EcowittBridgeActor.Props(Config));
+        Sys.ActorOf(EcowittBridgeActor.Props());
 
         var msg = pluginRegistry.ExpectMsg<RegisterPlugin>(TimeSpan.FromSeconds(3));
         Assert.Equal("ecowitt", msg.PluginId);
@@ -66,7 +72,7 @@ public sealed class EcowittBridgeActorTests : TestKit
         mediator.Tell(new Subscribe("application-status", statusProbe.Ref), statusProbe.Ref);
         statusProbe.ExpectMsg<SubscribeAck>();
 
-        var bridge = Sys.ActorOf(EcowittBridgeActor.Props(Config));
+        var bridge = Sys.ActorOf(EcowittBridgeActor.Props());
         Watch(bridge);
 
         bridge.Tell(new PluginRegistered(
@@ -91,18 +97,77 @@ public sealed class EcowittBridgeActorTests : TestKit
         mediator.Tell(new Subscribe("application-status", statusProbe.Ref), statusProbe.Ref);
         statusProbe.ExpectMsg<SubscribeAck>();
 
-        var bridge = Sys.ActorOf(EcowittBridgeActor.Props(Config));
+        var bridge = Sys.ActorOf(EcowittBridgeActor.Props());
         Watch(bridge);
 
-        // localhost:1883 is not listening in the test env; connect fails gracefully and
-        // the bridge publishes an "error" status instead of crashing.
+        // localhost:1883 is not listening in the test env; with a full config the bridge
+        // attempts the connect, fails gracefully, and publishes "error" instead of crashing.
         bridge.Tell(new PluginRegistered(
-            "ecowitt", true, new Dictionary<string, string>(), []), TestActor);
+            "ecowitt", true, ConfiguredSettings(), []), TestActor);
 
         statusProbe.ExpectMsg<ApplicationStatusUpdate>(
             m => m.Status == "error", TimeSpan.FromSeconds(10));
 
         // The actor must survive the failed-connect path — no Terminated on the watcher.
         ExpectNoMsg(TimeSpan.FromMilliseconds(300));
+    }
+
+    [Fact]
+    public void AdoptionAfterFirstPayload_RedirectsStateToAdoptedDevice()
+    {
+        var pluginRegistry = CreateTestProbe();
+        var shardProxy = CreateTestProbe();
+        RegisterProbes(pluginRegistry, shardProxy);
+
+        var bridge = Sys.ActorOf(EcowittBridgeActor.Props());
+
+        const string passkey = "ABC123DEF456";
+        var payload = $"PASSKEY={passkey}&stationtype=GW3000A&tempf=68.0&humidity=63";
+
+        // First payload arrives before the station is adopted: the actor mints a synthetic
+        // device id and reports state there.
+        bridge.Tell(new EcowittBridgeActor.PayloadReceived(payload), TestActor);
+        var first = shardProxy.ExpectMsg<DeviceStateUpdate>(TimeSpan.FromSeconds(3));
+        var syntheticId = first.DeviceId;
+        shardProxy.ReceiveWhile(TimeSpan.FromMilliseconds(200), _ => 0); // drain remaining updates
+
+        // The user adopts the station: the host registers PASSKEY -> the real device id.
+        var adoptedId = Guid.NewGuid();
+        bridge.Tell(new RegisterDeviceForPolling(adoptedId, "ecowitt", passkey, "", 0, []), TestActor);
+
+        // The next payload must now route state to the adopted device, not the synthetic id.
+        bridge.Tell(new EcowittBridgeActor.PayloadReceived(payload), TestActor);
+        var afterAdopt = shardProxy.ExpectMsg<DeviceStateUpdate>(TimeSpan.FromSeconds(3));
+
+        Assert.NotEqual(syntheticId, adoptedId); // sanity: the ids really differ
+        Assert.Equal(adoptedId, afterAdopt.DeviceId);
+    }
+
+    [Fact]
+    public void EnabledButNotConfigured_StaysIdle_NoBrokerContact()
+    {
+        var pluginRegistry = CreateTestProbe();
+        var shardProxy = CreateTestProbe();
+        RegisterProbes(pluginRegistry, shardProxy);
+
+        var mediator = DistributedPubSub.Get(Sys).Mediator;
+        var statusProbe = CreateTestProbe();
+        mediator.Tell(new Subscribe("application-status", statusProbe.Ref), statusProbe.Ref);
+        statusProbe.ExpectMsg<SubscribeAck>();
+
+        var bridge = Sys.ActorOf(EcowittBridgeActor.Props());
+        Watch(bridge);
+
+        // Enabled but no MQTT host/topic supplied — the actor must not dial any broker.
+        // It reports "unconfigured" and never attempts a connection (so never "error").
+        bridge.Tell(new PluginRegistered(
+            "ecowitt", true, new Dictionary<string, string>(), []), TestActor);
+
+        statusProbe.ExpectMsg<ApplicationStatusUpdate>(
+            m => m.Status == "unconfigured", TimeSpan.FromSeconds(3));
+
+        // No "error" (or any further) status should follow, and the actor stays alive
+        // even across a health-tick — confirming it never touched a broker.
+        statusProbe.ExpectNoMsg(TimeSpan.FromSeconds(1));
     }
 }

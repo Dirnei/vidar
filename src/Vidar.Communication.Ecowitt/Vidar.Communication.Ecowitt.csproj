@@ -17,4 +17,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Vidar.Core\Vidar.Core.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Vidar.Communication.Ecowitt.Tests" />
+  </ItemGroup>
 </Project>

@@ -11,14 +11,6 @@ var clusterSeed = Environment.GetEnvironmentVariable("VIDAR_CLUSTER_SEED") ?? "l
 var hostname = Environment.GetEnvironmentVariable("VIDAR_HOSTNAME") ?? "localhost";
 var port = int.Parse(Environment.GetEnvironmentVariable("VIDAR_AKKA_PORT") ?? "4061");
 
-var config = new EcowittConfig(
-    MqttHost: Environment.GetEnvironmentVariable("VIDAR_ECOWITT_MQTT_HOST") ?? "emqx",
-    MqttPort: int.TryParse(Environment.GetEnvironmentVariable("VIDAR_ECOWITT_MQTT_PORT"), out var p) ? p : 1883,
-    MqttUser: Environment.GetEnvironmentVariable("VIDAR_ECOWITT_MQTT_USER"),
-    MqttPassword: Environment.GetEnvironmentVariable("VIDAR_ECOWITT_MQTT_PASSWORD"),
-    Topic: Environment.GetEnvironmentVariable("VIDAR_ECOWITT_TOPIC") ?? "ecowitt",
-    StaleAfterSeconds: int.TryParse(Environment.GetEnvironmentVariable("VIDAR_ECOWITT_STALE_SECONDS"), out var st) ? st : 300);
-
 builder.Services.AddAkka("vidar", (configBuilder, sp) =>
 {
     configBuilder.AddHocon(Vidar.Core.ClusterDefaults.SplitBrainResolverHocon, HoconAddMode.Prepend);
@@ -35,7 +27,7 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
         .WithSingletonProxy<PluginRegistry>("plugin-registry", new ClusterSingletonOptions { Role = "host" })
         .WithActors((system, registry, resolver) =>
         {
-            system.ActorOf(EcowittBridgeActor.Props(config), "ecowitt-bridge");
+            system.ActorOf(EcowittBridgeActor.Props(), "ecowitt-bridge");
         });
 });
 
