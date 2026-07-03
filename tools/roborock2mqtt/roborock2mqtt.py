@@ -209,9 +209,7 @@ class DeviceBridge:
                 iot = getattr(rm, "iot_id", None)
                 if seg is None:
                     continue
-                name = (self.room_names.get(iot)
-                        or self.room_names.get(str(iot))
-                        or str(iot))
+                name = self.room_names.get(str(iot)) or str(iot)
                 rooms.append({"id": int(seg), "name": name})
             self.rooms = rooms
         except Exception as e:  # noqa: BLE001
@@ -333,7 +331,8 @@ async def _home_devices(email, user_data):
     except Exception:  # noqa: BLE001
         home = await api.get_home_data(user_data)
     devs = list(home.devices or []) + list(getattr(home, "received_devices", None) or [])
-    room_names = {r.id: r.name for r in (getattr(home, "rooms", None) or [])}
+    # HomeDataRoom.id is an int but get_room_mapping's iot_id is a string — key by str for lookup.
+    room_names = {str(r.id): r.name for r in (getattr(home, "rooms", None) or [])}
     return {d.duid: d for d in devs}, room_names
 
 
