@@ -10,6 +10,7 @@ import { SliderControl } from '../components/SliderControl';
 import { CapabilityIcon, primaryCapabilityIcon } from '../components/CapabilityIcon';
 import { ColorWheel, ColorTempSlider } from '../components/ColorPicker';
 import { useExpertMode } from '../components/ExpertMode';
+import { VacuumCard } from '../components/VacuumCard';
 
 export function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -317,7 +318,18 @@ export function DeviceDetailPage() {
           display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(220px, 100%), 1fr))',
           gap: 14, marginBottom: 28,
         }}>
-          {device.capabilities.map(cap => renderCapabilityCard(cap, state, cmd, device, updateSent, setUpdateSent))}
+          {device.capabilities.some(c => c.key === 'vacuum.state') ? (
+            <>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <VacuumCard device={device} state={state} cmd={cmd} />
+              </div>
+              {device.capabilities
+                .filter(c => !c.key.startsWith('vacuum.'))
+                .map(cap => renderCapabilityCard(cap, state, cmd, device, updateSent, setUpdateSent))}
+            </>
+          ) : (
+            device.capabilities.map(cap => renderCapabilityCard(cap, state, cmd, device, updateSent, setUpdateSent))
+          )}
         </div>
       )}
 
