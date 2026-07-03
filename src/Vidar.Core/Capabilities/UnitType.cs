@@ -40,4 +40,8 @@ public enum UnitType
     // String
     Text,
     Url,
+
+    // Action — a momentary command with no persistent state (renders as a button, not a toggle).
+    // e.g. a vacuum's start / stop / dock / locate.
+    Action,
 }

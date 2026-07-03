@@ -7,6 +7,8 @@ public static class Units
     public static ValueKind KindOf(UnitType unit) => unit switch
     {
         UnitType.OnOff or UnitType.OpenClosed or UnitType.Detected or UnitType.YesNo => ValueKind.Boolean,
+        // An Action carries no state; treat its command value as boolean (a momentary trigger).
+        UnitType.Action => ValueKind.Boolean,
         UnitType.Text or UnitType.Url => ValueKind.String,
         _ => ValueKind.Numeric,
     };

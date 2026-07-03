@@ -15,7 +15,8 @@ export type UnitType =
   | 'Hectopascals' | 'KilometersPerHour' | 'Millimeters' | 'Degrees' | 'UvIndex' | 'WattsPerSquareMeter'
   | 'Number'
   | 'OnOff' | 'OpenClosed' | 'Detected' | 'YesNo'
-  | 'Text' | 'Url';
+  | 'Text' | 'Url'
+  | 'Action';
 
 export interface CapabilityDescriptor {
   key: string;

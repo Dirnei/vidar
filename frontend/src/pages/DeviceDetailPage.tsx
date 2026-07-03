@@ -675,6 +675,23 @@ function renderCapabilityCard(
   // This is what makes cloud devices like the Dyson fan controllable, not just readable.
   if (cap.commandable && !RICH_CONTROL_KEYS.has(cap.key)) {
     const raw = state[cap.key];
+    // A momentary action (e.g. a vacuum's Start / Dock / Locate) is a fire-and-forget command
+    // with no persistent state, so it renders as a button — never a toggle.
+    if (cap.unit === 'Action') {
+      return (
+        <div key={cap.key} style={capCardStyle}>
+          <Indicator color={accent} />
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{ width: '100%', marginTop: 2 }}
+            onClick={() => cmd(cap.key, true)}
+          >
+            {cap.label}
+          </button>
+        </div>
+      );
+    }
     if (isBooleanUnit(cap.unit)) {
       const isOn = Boolean(raw);
       return (
@@ -690,18 +707,22 @@ function renderCapabilityCard(
         </div>
       );
     }
-    const num = typeof raw === 'number' ? raw : (cap.min ?? 0);
-    return (
-      <div key={cap.key} style={capCardStyle}>
-        <Indicator color={accent} />
-        <div style={capLabelStyle}>{cap.label}</div>
-        <div style={capValueStyle(accent)}>{formatWithUnit(num, cap.unit)}</div>
-        <div style={{ marginTop: 12 }}>
-          <SliderControl value={num} min={cap.min ?? 0} max={cap.max ?? 100}
-            accentColor={accent} onCommit={v => cmd(cap.key, v)} />
+    // Ranged numeric control -> slider. Commandable strings (e.g. cleanSegments room lists) have
+    // no generic input yet, so they fall through to the read-only default below.
+    if (cap.unit !== 'Text' && cap.unit !== 'Url') {
+      const num = typeof raw === 'number' ? raw : (cap.min ?? 0);
+      return (
+        <div key={cap.key} style={capCardStyle}>
+          <Indicator color={accent} />
+          <div style={capLabelStyle}>{cap.label}</div>
+          <div style={capValueStyle(accent)}>{formatWithUnit(num, cap.unit)}</div>
+          <div style={{ marginTop: 12 }}>
+            <SliderControl value={num} min={cap.min ?? 0} max={cap.max ?? 100}
+              accentColor={accent} onCommit={v => cmd(cap.key, v)} />
+          </div>
         </div>
-      </div>
-    );
+      );
+    }
   }
 
   switch (cap.key) {

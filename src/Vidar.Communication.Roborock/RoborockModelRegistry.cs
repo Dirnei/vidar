@@ -18,11 +18,11 @@ public static class RoborockModelRegistry
         Read("vacuum.state", "State", UnitType.Text),
         Read("vacuum.battery", "Battery", UnitType.Percent, 0, 100),
         Cmd("vacuum.fanPower", "Suction", UnitType.Number, 101, 106),
-        Cmd("vacuum.start", "Start", UnitType.OnOff),
-        Cmd("vacuum.stop", "Stop", UnitType.OnOff),
-        Cmd("vacuum.pause", "Pause", UnitType.OnOff),
-        Cmd("vacuum.dock", "Return to dock", UnitType.OnOff),
-        Cmd("vacuum.locate", "Locate", UnitType.OnOff),
+        Cmd("vacuum.start", "Start", UnitType.Action),
+        Cmd("vacuum.stop", "Stop", UnitType.Action),
+        Cmd("vacuum.pause", "Pause", UnitType.Action),
+        Cmd("vacuum.dock", "Return to dock", UnitType.Action),
+        Cmd("vacuum.locate", "Locate", UnitType.Action),
         Cmd("vacuum.cleanSegments", "Clean rooms", UnitType.Text),
     };
 

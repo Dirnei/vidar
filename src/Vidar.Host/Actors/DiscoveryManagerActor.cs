@@ -36,20 +36,28 @@ public sealed class DiscoveryManagerActor : ReceiveActor
                 d.NativeId == msg.NativeId && d.CommunicationType == msg.CommunicationType);
             if (configured != null)
             {
-                var reportedKeys = msg.Capabilities.Select(c => c.Key).ToHashSet();
-                var existingKeys = configured.Capabilities.Select(c => c.Key).ToHashSet();
-
-                if (!reportedKeys.SetEquals(existingKeys))
+                // Re-sync when anything about the descriptors changed — not just the key set. A
+                // capability can change its unit, commandable flag, or range between plugin
+                // versions (e.g. a vacuum action moving from OnOff to Action); a key-only check
+                // would leave the configured device on stale metadata.
+                if (CapabilitiesSignature(msg.Capabilities) != CapabilitiesSignature(configured.Capabilities))
                 {
                     configured.Capabilities.Clear();
                     configured.Capabilities.AddRange(msg.Capabilities);
                     await deviceRepo.UpdateAsync(configured);
                     _log.Info("Synced capabilities for configured device {NativeId}: {Caps}",
-                        msg.NativeId, string.Join(",", reportedKeys));
+                        msg.NativeId, string.Join(",", msg.Capabilities.Select(c => c.Key)));
                 }
             }
         });
     }
+
+    // Structural fingerprint of a capability set — order-independent, covering every field that
+    // affects how a capability is rendered or commanded, so any descriptor change triggers a re-sync.
+    private static string CapabilitiesSignature(IEnumerable<Vidar.Core.Capabilities.CapabilityDescriptor> caps) =>
+        string.Join(";", caps
+            .OrderBy(c => c.Key, StringComparer.Ordinal)
+            .Select(c => $"{c.Key}|{c.Label}|{c.Unit}|{c.Commandable}|{c.Min}|{c.Max}"));
 
     protected override void PreStart()
     {

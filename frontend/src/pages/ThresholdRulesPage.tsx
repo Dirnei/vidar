@@ -25,6 +25,7 @@ function valueKindFor(unit: UnitType): ValueKind {
     case 'Degrees': case 'UvIndex': case 'WattsPerSquareMeter':
       return 'Numeric';
     case 'OnOff': case 'OpenClosed': case 'Detected': case 'YesNo':
+    case 'Action':
       return 'Boolean';
     case 'Text': case 'Url':
       return 'String';
