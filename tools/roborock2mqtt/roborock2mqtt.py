@@ -236,10 +236,16 @@ class DeviceBridge:
                             qos=0, retain=True)
 
     def forward_command(self, payload):
-        from roborock import RoborockCommand
-
         try:
             cmd = json.loads(payload)
+        except Exception as e:  # noqa: BLE001
+            log(f"[{self.duid}] bad command: {e}")
+            return
+        if cmd.get("capability") == "vacuum.runScene":
+            self._run_scene(cmd.get("value"))
+            return
+        from roborock import RoborockCommand
+        try:
             name, params = translate_command(cmd)
         except Exception as e:  # noqa: BLE001
             log(f"[{self.duid}] bad command: {e}")
@@ -255,6 +261,20 @@ class DeviceBridge:
             log(f"[{self.duid}] sent {name} {params}")
         except Exception as e:  # noqa: BLE001
             log(f"[{self.duid}] command {name} failed: {e}")
+
+    def _run_scene(self, scene_id):
+        if not self.loop or not self.email or scene_id is None:
+            log(f"[{self.duid}] runScene dropped (no loop/email/id)")
+            return
+        async def go():
+            from roborock.web_api import RoborockApiClient
+            await RoborockApiClient(self.email).execute_scene(self.user_data, int(scene_id))
+        fut = asyncio.run_coroutine_threadsafe(go(), self.loop)
+        try:
+            fut.result(timeout=15)
+            log(f"[{self.duid}] ran scene {scene_id}")
+        except Exception as e:  # noqa: BLE001
+            log(f"[{self.duid}] runScene {scene_id} failed: {e}")
 
 
 # ── Onboarding (cloud auth via python-roborock) ──────────────────────────────
