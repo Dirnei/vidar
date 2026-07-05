@@ -31,6 +31,9 @@ public enum UnitType
     UvIndex,
     WattsPerSquareMeter,
 
+    // Numeric — Duration
+    Minutes,
+
     // Boolean
     OnOff,
     OpenClosed,

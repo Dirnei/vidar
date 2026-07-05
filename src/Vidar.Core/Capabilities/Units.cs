@@ -28,6 +28,7 @@ public static class Units
         UnitType.Millimeters => "mm",
         UnitType.Degrees => "°",
         UnitType.WattsPerSquareMeter => "W/m²",
+        UnitType.Minutes => "min",
         UnitType.UvIndex => "",
         _ => "",
     };
