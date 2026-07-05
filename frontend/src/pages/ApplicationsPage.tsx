@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { getApplications, getWebhookRoutes, saveApplication, dysonGetAccount, roborockGetAccount } from '../api/client';
+import { getApplications, getWebhookRoutes, saveApplication, dysonGetAccount, roborockGetAccount, dreoGetAccount } from '../api/client';
 import type { Application, WebhookRoute } from '../types';
 import { DysonOnboardingWizard } from './DysonOnboardingPage';
 import { RoborockOnboardingWizard } from './RoborockOnboardingPage';
+import { DreoOnboardingWizard } from './DreoOnboardingPage';
 
 // ---- Types ----
 
@@ -102,6 +103,13 @@ const APP_DEFS: AppDef[] = [
     name: 'Bambu Lab',
     icon: '\u{1F5A8}\u{FE0F}',
     description: 'Bambu Lab 3D printers over local MQTT (LAN Mode). Add a printer by IP + access code on the Setup page.',
+    fields: [],
+  },
+  {
+    id: 'dreo',
+    name: 'Dreo',
+    icon: '\u{1F4A8}',
+    description: 'Dreo smart ceiling fans via your Dreo account. Use the Connect wizard to sign in.',
     fields: [],
   },
   {
@@ -408,6 +416,8 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
   const [dysonAccount, setDysonAccount] = useState<{ connected: boolean; email?: string; deviceCount?: number } | null>(null);
   const [showRoborockWizard, setShowRoborockWizard] = useState(false);
   const [roborockAccount, setRoborockAccount] = useState<{ connected: boolean; email?: string; deviceCount?: number } | null>(null);
+  const [showDreoWizard, setShowDreoWizard] = useState(false);
+  const [dreoAccount, setDreoAccount] = useState<{ connected: boolean; email?: string; deviceCount?: number } | null>(null);
 
   // Fetch Dyson account info once (and when wizard completes)
   useEffect(() => {
@@ -420,6 +430,12 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
     if (app.id !== 'roborock') return;
     roborockGetAccount().then(setRoborockAccount).catch(() => setRoborockAccount(null));
   }, [app.id, showRoborockWizard]);
+
+  // Fetch Dreo account info once (and when wizard completes)
+  useEffect(() => {
+    if (app.id !== 'dreo') return;
+    dreoGetAccount().then(setDreoAccount).catch(() => setDreoAccount(null));
+  }, [app.id, showDreoWizard]);
 
   // Sync when app data reloads
   useEffect(() => {
@@ -525,6 +541,28 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
         </div>
       )}
 
+      {/* Dreo account status */}
+      {app.id === 'dreo' && dreoAccount?.connected && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-green)', flexShrink: 0, display: 'inline-block' }} />
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+            Connected as {dreoAccount.email} · {dreoAccount.deviceCount} device{dreoAccount.deviceCount !== 1 ? 's' : ''} ·{' '}
+            <button type="button" style={dysonLinkStyle} onClick={() => setShowDreoWizard(true)}>
+              Reconnect
+            </button>
+          </span>
+        </div>
+      )}
+      {app.id === 'dreo' && dreoAccount && !dreoAccount.connected && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+            Account not connected.{' '}
+            <button type="button" style={dysonLinkStyle} onClick={() => setShowDreoWizard(true)}>
+              Connect now
+            </button>
+          </span>
+        </div>
+      )}
 
       {/* Error banner */}
       {app.errorMessage && (
@@ -674,6 +712,16 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
             Connect account
           </button>
         )}
+        {app.id === 'dreo' && (
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setShowDreoWizard(true)}
+            style={{ marginLeft: 'auto' }}
+          >
+            Connect account
+          </button>
+        )}
       </div>
 
       {/* Dyson onboarding wizard */}
@@ -696,6 +744,14 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
         />
       )}
 
+      {/* Dreo onboarding wizard. onSuccess only refreshes the list — the wizard stays
+          mounted so its success screen renders; the user closes it via Close / Go to Setup. */}
+      {showDreoWizard && (
+        <DreoOnboardingWizard
+          onClose={() => setShowDreoWizard(false)}
+          onSuccess={onSaved}
+        />
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry, Application, WebhookRoute, WebhookEventPage, ThresholdRule, ThresholdEventPage, DysonDevice, RoborockDevice } from '../types';
+import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry, Application, WebhookRoute, WebhookEventPage, ThresholdRule, ThresholdEventPage, DysonDevice, RoborockDevice, DreoDevice } from '../types';
 
 const BASE = '/api';
 
@@ -233,5 +233,15 @@ export function discoverBambuDevice(host: string, accessCode: string): Promise<{
     method: 'POST',
     body: JSON.stringify({ host, accessCode }),
   });
+}
+
+// --- Dreo ---
+
+export function dreoLogin(email: string, password: string): Promise<DreoDevice[]> {
+  return request('/dreo/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+}
+
+export function dreoGetAccount(): Promise<{ connected: boolean; email?: string; deviceCount?: number }> {
+  return request('/dreo/account');
 }
 

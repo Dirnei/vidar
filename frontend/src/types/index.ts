@@ -211,3 +211,9 @@ export interface BambuPrinter {
   model: string;
   name: string;
 }
+
+export interface DreoDevice {
+  serial: string;
+  model: string;
+  name: string;
+}
