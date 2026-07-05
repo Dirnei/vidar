@@ -26,7 +26,7 @@ public sealed class PluginRegistryActor : ReceiveActor
         Receive<RouteToPlugin>(msg =>
         {
             if (_plugins.TryGetValue(msg.PluginId, out var plugin))
-                plugin.Tell(msg.Message);
+                plugin.Forward(msg.Message);   // preserve original sender so Ask replies route back
             else
                 _log.Warning("RouteToPlugin for '{PluginId}' dropped — not registered", msg.PluginId);
         });

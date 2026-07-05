@@ -1,4 +1,8 @@
+using Akka.Actor;
+using Akka.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Vidar.Core.Messages;
+using Vidar.Core.Plugins;
 using Vidar.Host.Persistence;
 
 namespace Vidar.Host.Api;
@@ -11,17 +15,20 @@ public sealed class SnapshotController : ControllerBase
     private readonly IApplicationConfigRepository _appConfigRepo;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<SnapshotController> _logger;
+    private readonly IRequiredActor<PluginRegistry> _pluginRegistryProvider;
 
     public SnapshotController(
         IDeviceRepository deviceRepo,
         IApplicationConfigRepository appConfigRepo,
         IHttpClientFactory httpClientFactory,
-        ILogger<SnapshotController> logger)
+        ILogger<SnapshotController> logger,
+        IRequiredActor<PluginRegistry> pluginRegistryProvider)
     {
         _deviceRepo = deviceRepo;
         _appConfigRepo = appConfigRepo;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
+        _pluginRegistryProvider = pluginRegistryProvider;
     }
 
     [HttpGet("{id:guid}/snapshot")]
@@ -29,6 +36,23 @@ public sealed class SnapshotController : ControllerBase
     {
         var device = await _deviceRepo.GetByIdAsync(id);
         if (device == null) return NotFound();
+
+        if (device.CommunicationType == "bambu")
+        {
+            var registry = await _pluginRegistryProvider.GetAsync();
+            SnapshotResult result;
+            try
+            {
+                result = await registry.Ask<SnapshotResult>(
+                    new RouteToPlugin("bambu", new CaptureSnapshot(device.NativeId)),
+                    TimeSpan.FromSeconds(20));
+            }
+            catch (AskTimeoutException) { return StatusCode(504, "Snapshot timed out"); }
+
+            if (result.Jpeg is null || result.Jpeg.Length == 0)
+                return StatusCode(503, "No snapshot available (printer offline or camera disabled)");
+            return File(result.Jpeg, "image/jpeg");
+        }
 
         if (device.CommunicationType != "unifi" || !device.NativeId.StartsWith("protect-"))
             return BadRequest("Device does not support snapshots");
