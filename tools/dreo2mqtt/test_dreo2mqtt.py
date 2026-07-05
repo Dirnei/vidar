@@ -33,3 +33,17 @@ def test_control_envelope():
     env = dreocloud.control_envelope("SN1", {"poweron": True}, 1234)
     assert env == {"devicesn": "SN1", "method": "control",
                    "params": {"poweron": True}, "timestamp": 1234}
+
+
+import dreo2mqtt
+
+
+def test_extract_reported_prefers_reported_dict():
+    serial, state = dreo2mqtt.extract_reported(
+        {"devicesn": "SN1", "reported": {"poweron": True, "windlevel": 2}})
+    assert serial == "SN1"
+    assert state == {"poweron": True, "windlevel": 2}
+
+
+def test_extract_reported_returns_none_without_serial():
+    assert dreo2mqtt.extract_reported({"reported": {"poweron": True}}) is None
