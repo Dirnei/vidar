@@ -9,6 +9,7 @@ using Vidar.Core.Sharding;
 using Vidar.Core.Plugins;
 using Vidar.Core.Webhooks;
 using Vidar.Host.Actors;
+using Vidar.Host.Dreo;
 using Vidar.Host.Dyson;
 using Vidar.Host.Persistence;
 using Vidar.Host.Roborock;
@@ -44,6 +45,9 @@ builder.Services.AddHttpClient<DysonCloudClient>(c =>
 var roborock2mqttUrl = Environment.GetEnvironmentVariable("ROBOROCK2MQTT_URL") ?? "http://roborock2mqtt:8895";
 builder.Services.AddHttpClient<IRoborockAuth, SidecarRoborockAuth>(c =>
     c.BaseAddress = new Uri(roborock2mqttUrl));
+var dreo2mqttUrl = Environment.GetEnvironmentVariable("DREO2MQTT_URL") ?? "http://dreo2mqtt:8896";
+builder.Services.AddHttpClient<IDreoAuth, SidecarDreoAuth>(c =>
+    c.BaseAddress = new Uri(dreo2mqttUrl));
 builder.Services.AddHttpClient("shelly", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(5);

@@ -26,6 +26,7 @@ services:
       - VIDAR_HOSTNAME=vidar-host
       - VIDAR_MONGO_CONNECTION=mongodb://mongodb:27017
       - VIDAR_MONGO_DATABASE=vidar
+      - DREO2MQTT_URL=http://dreo2mqtt:8896
 
   vidar-comm-shelly:
     build:
@@ -233,6 +234,25 @@ services:
       - VIDAR_MQTT_HOST=emqx
       - VIDAR_MQTT_PORT=1883
       - VIDAR_DREO_BASE_TOPIC=dreo2mqtt
+
+  dreo2mqtt:
+    build:
+      context: ./tools/dreo2mqtt
+    depends_on:
+      - emqx
+      - mongodb
+    # Standalone Dreo cloud (WebSocket) -> MQTT bridge, like dyson2mqtt. Reads the account
+    # token + device manifest from Mongo (populated by Vidar onboarding) and republishes each
+    # fan's state to dreo2mqtt/<serial>. DREO_ONBOARD_HTTP=1 also serves the onboarding auth
+    # endpoint the host calls at http://dreo2mqtt:8896 (see DREO2MQTT_URL).
+    environment:
+      - MQTT_HOST=emqx
+      - MQTT_PORT=1883
+      - MQTT_BASE_TOPIC=dreo2mqtt
+      - MONGO_URI=mongodb://mongodb:27017
+      - MONGO_DB=vidar
+      - DREO_ONBOARD_HTTP=1
+    restart: unless-stopped
 
   mongodb:
     image: mongo:8
