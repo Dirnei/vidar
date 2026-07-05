@@ -212,6 +212,28 @@ services:
       - VIDAR_HOSTNAME=vidar-comm-bambu
       - VIDAR_AKKA_PORT=4062
 
+  vidar-comm-dreo:
+    build:
+      context: .
+      dockerfile: src/Vidar.Communication.Dreo/Dockerfile
+    depends_on:
+      lighthouse:
+        condition: service_started
+      emqx:
+        condition: service_started
+      vidar-host:
+        condition: service_healthy
+    restart: unless-stopped
+    # Dreo ceiling fans are cloud-only. The standalone dreo2mqtt sidecar bridges them
+    # onto the local broker via the Dreo cloud WebSocket; this worker consumes that broker.
+    environment:
+      - VIDAR_CLUSTER_SEED=lighthouse:4053
+      - VIDAR_HOSTNAME=vidar-comm-dreo
+      - VIDAR_AKKA_PORT=4063
+      - VIDAR_MQTT_HOST=emqx
+      - VIDAR_MQTT_PORT=1883
+      - VIDAR_DREO_BASE_TOPIC=dreo2mqtt
+
   mongodb:
     image: mongo:8
     volumes:
