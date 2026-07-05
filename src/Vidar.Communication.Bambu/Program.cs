@@ -27,7 +27,7 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
         .WithSingletonProxy<PluginRegistry>("plugin-registry", new ClusterSingletonOptions { Role = "host" })
         .WithActors((system, registry, resolver) =>
         {
-            // TODO(Task 10): spawn BambuBridgeActor
+            system.ActorOf(BambuBridgeActor.Props(), "bambu-bridge");
         });
 });
 
