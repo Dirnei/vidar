@@ -1,0 +1,9 @@
+{
+  "poweron": true,
+  "fanon": true,
+  "windlevel": 4,
+  "windtype": "natural",
+  "lighton": true,
+  "brightness": 60,
+  "colortemp": 35
+}
