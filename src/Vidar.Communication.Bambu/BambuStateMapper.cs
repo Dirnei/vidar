@@ -75,8 +75,8 @@ public static class BambuStateMapper
     {
         if (!p.TryGetProperty("lights_report", out var arr) || arr.ValueKind != JsonValueKind.Array) return;
         foreach (var l in arr.EnumerateArray())
-            if (l.TryGetProperty("node", out var n) && n.GetString() == "chamber_light"
-                && l.TryGetProperty("mode", out var m))
+            if (l.TryGetProperty("node", out var n) && n.ValueKind == JsonValueKind.String && n.GetString() == "chamber_light"
+                && l.TryGetProperty("mode", out var m) && m.ValueKind == JsonValueKind.String)
                 r.Add(("light_chamber", m.GetString() == "on"));
     }
 
@@ -87,7 +87,8 @@ public static class BambuStateMapper
         r.Add(("has_error", entries.Count > 0));
         if (entries.Count == 0) return;
         var first = entries[0];
-        if (first.TryGetProperty("attr", out var a) && first.TryGetProperty("code", out var c))
+        if (first.TryGetProperty("attr", out var a) && a.ValueKind == JsonValueKind.Number
+            && first.TryGetProperty("code", out var c) && c.ValueKind == JsonValueKind.Number)
             r.Add(("hms_error", BambuHmsCatalog.Describe(a.GetInt64(), c.GetInt64())));
     }
 
@@ -100,8 +101,13 @@ public static class BambuStateMapper
     private static void AddAms(List<(string, object)> r, JsonElement p)
     {
         if (!p.TryGetProperty("ams", out var ams) || ams.ValueKind != JsonValueKind.Object) return;
-        if (ams.TryGetProperty("tray_now", out var tn) && int.TryParse(tn.GetString(), out var active))
-            r.Add(("ams_active_tray", (double)active));
+        if (ams.TryGetProperty("tray_now", out var tn))
+        {
+            if (tn.ValueKind == JsonValueKind.String && int.TryParse(tn.GetString(), out var active))
+                r.Add(("ams_active_tray", (double)active));
+            else if (tn.ValueKind == JsonValueKind.Number)
+                r.Add(("ams_active_tray", (double)tn.GetInt32()));
+        }
         if (!ams.TryGetProperty("ams", out var units) || units.ValueKind != JsonValueKind.Array) return;
 
         var trayIndex = 0;

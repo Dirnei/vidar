@@ -57,6 +57,24 @@ public class BambuStateMapperTests
         Assert.Equal(55d, u["progress"]);
         Assert.DoesNotContain("nozzle_temp", u.Keys);
         Assert.DoesNotContain("chamber_temp", u.Keys);   // absent on P1/A1 too
+        Assert.Single(u);
+    }
+
+    [Fact]
+    public void Map_AmsTrayNowAsNumber_DoesNotThrow()
+    {
+        const string json = """
+        { "print": {
+            "mc_percent": 10,
+            "ams": { "tray_now": 0, "ams": [ { "tray": [ { "tray_type": "PLA", "tray_color": "FF0000FF", "remain": 75 } ] } ] }
+        } }
+        """;
+
+        var u = Map(json);
+        Assert.Equal(0d, u["ams_active_tray"]);
+
+        var caps = BambuStateMapper.BuildCapabilities(json);
+        Assert.Contains(caps, c => c.Key == "ams_active_tray");
     }
 
     [Fact]
