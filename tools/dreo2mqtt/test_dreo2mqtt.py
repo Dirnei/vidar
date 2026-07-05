@@ -47,3 +47,10 @@ def test_extract_reported_prefers_reported_dict():
 
 def test_extract_reported_returns_none_without_serial():
     assert dreo2mqtt.extract_reported({"reported": {"poweron": True}}) is None
+
+
+def test_load_manifest_from_mongo_returns_region_tuple_without_pymongo():
+    # pymongo isn't installed in this test env, so the ImportError fallback path runs;
+    # this pins the 3-tuple shape (token, manifest, region) the region-persistence fix relies on.
+    token, manifest, region = dreo2mqtt.load_manifest_from_mongo()
+    assert (token, manifest, region) == (None, [], None)

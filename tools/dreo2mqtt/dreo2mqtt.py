@@ -12,13 +12,13 @@ For each onboarded device it:
   - forwards commands published to <base>/<serial>/set to the device via `control_envelope`.
 
 It also serves a small onboarding HTTP endpoint (gated by DREO_ONBOARD_HTTP=1) that the Vidar
-host calls during account linking: POST /auth/login -> {"userDataJson": <token>, "devices": [...]}.
+host calls during account linking:
+  POST /auth/login -> {"userDataJson": <token>, "region": <resolved_region>, "devices": [...]}.
 
 Everything is configured by environment variables (12-factor); nothing is hard-coded.
 """
 import json
 import os
-import sys
 import threading
 import time
 
@@ -65,19 +65,19 @@ def extract_reported(msg: dict):
 # ── Account / manifest ─────────────────────────────────────────────────────────
 
 def load_manifest_from_mongo():
-    """Return (token, [manifest dicts]) from vidar.integrations/_id:'dreo'."""
+    """Return (token, [manifest dicts], region) from vidar.integrations/_id:'dreo'."""
     try:
         from pymongo import MongoClient
     except ImportError:
-        return None, []
+        return None, [], None
     try:
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
         cfg = client[MONGO_DB]["integrations"].find_one({"_id": "dreo"})
     except Exception as e:  # noqa: BLE001
         log("Mongo read failed:", e)
-        return None, []
+        return None, [], None
     if not cfg:
-        return None, []
+        return None, [], None
     settings = cfg.get("Settings", {}) or {}
     token = settings.get("account.token")
     devices = []
@@ -85,7 +85,8 @@ def load_manifest_from_mongo():
         devices = json.loads(settings.get("account.manifest", "[]"))
     except (ValueError, TypeError):
         pass
-    return token, devices
+    region = settings.get("account.region")
+    return token, devices, region
 
 
 def login(email, password, region=None):
@@ -123,11 +124,10 @@ class AccountBridge:
     """Owns the account's single realtime WebSocket and republishes every device's
     reported state to the target broker, keyed by serial."""
 
-    def __init__(self, token, region, target, serials):
+    def __init__(self, token, region, target):
         self.token = token
         self.region = region
         self.target = target
-        self.serials = set(serials)
         self.ws = None
         self._stop = threading.Event()
 
@@ -146,9 +146,9 @@ class AccountBridge:
         import websocket
 
         backoff = 15
-        url = dreocloud.ws_url(self.region, self.token)
         while not self._stop.is_set():
             try:
+                url = dreocloud.ws_url(self.region, self.token)
                 self.ws = websocket.WebSocketApp(
                     url,
                     on_message=self._on_message,
@@ -253,7 +253,7 @@ def start_onboarding_server():
                 if path == "/auth/login":
                     token, region = login(req["email"], req["password"])
                     devices = fetch_devices(token, region)
-                    self._send(200, {"userDataJson": token, "devices": devices})
+                    self._send(200, {"userDataJson": token, "region": region, "devices": devices})
                 else:
                     self._send(404, {"error": "not found"})
             except Exception as e:  # noqa: BLE001
@@ -312,11 +312,11 @@ def main():
     # survives the pre-onboarding state (no exit), so onboarding HTTP can populate Mongo first.
     logged_waiting = False
     while True:
-        token, manifest = load_manifest_from_mongo()
+        token, manifest, persisted_region = load_manifest_from_mongo()
         if token and manifest and account is None:
-            region = DEFAULT_REGION
+            region = (persisted_region or "").strip() or DEFAULT_REGION
             serials = [m["serial"] for m in manifest if m.get("serial")]
-            account = AccountBridge(token, region, target, serials)
+            account = AccountBridge(token, region, target)
             account.start()
             log(f"started account bridge for {len(serials)} device(s)")
             logged_waiting = False
