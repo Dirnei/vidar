@@ -71,7 +71,14 @@ public sealed class BambuDeviceActor : ReceiveActor, IWithTimers
                 return;
             }
             var payload = BambuCommandBuilder.Build(cmd.CapabilityKey, cmd.Value);
-            if (payload != null) _ = PublishRequest(payload);
+            if (payload != null)
+            {
+                PublishRequest(payload).ContinueWith(t =>
+                {
+                    if (t.IsFaulted)
+                        _log.Warning(t.Exception!.Flatten().InnerException, "Bambu {Serial} publish failed for {Key}", _cfg.Serial, cmd.CapabilityKey);
+                }, TaskScheduler.Default);
+            }
         });
 
         Receive<CaptureSnapshot>(_ =>
@@ -122,6 +129,8 @@ public sealed class BambuDeviceActor : ReceiveActor, IWithTimers
     {
         try
         {
+            _inbound?.Writer.TryComplete();
+
             if (_mqttClient != null)
             {
                 try { await _mqttClient.DisconnectAsync(); } catch { }
