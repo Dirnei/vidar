@@ -9,7 +9,7 @@ var builder = Host.CreateApplicationBuilder(args);
 
 var clusterSeed = Environment.GetEnvironmentVariable("VIDAR_CLUSTER_SEED") ?? "localhost:4053";
 var hostname = Environment.GetEnvironmentVariable("VIDAR_HOSTNAME") ?? "localhost";
-var port = int.Parse(Environment.GetEnvironmentVariable("VIDAR_AKKA_PORT") ?? "4062");
+var port = int.Parse(Environment.GetEnvironmentVariable("VIDAR_AKKA_PORT") ?? "4063");
 
 // Dreo ceiling fans are cloud-only and are bridged to the local MQTT broker by the standalone
 // `dreo2mqtt` sidecar. This worker consumes that broker; the cloud connection lives entirely
