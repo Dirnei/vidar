@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { bambuAddPrinter, bambuDeletePrinter, bambuListPrinters } from '../api/client';
 import type { BambuPrinter } from '../types';
 
@@ -92,12 +92,17 @@ function friendlyError(err: unknown, fallback: string): string {
 function PrinterRow({ printer, onDelete }: { printer: BambuPrinter; onDelete: (serial: string) => void }) {
   const [deleting, setDeleting] = useState(false);
   const [hover, setHover] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleDelete() {
     setDeleting(true);
+    setError(null);
     try {
       await bambuDeletePrinter(printer.serial);
       onDelete(printer.serial);
+    } catch (err) {
+      setError(friendlyError(err, 'Could not remove the printer'));
     } finally {
       setDeleting(false);
     }
@@ -109,66 +114,71 @@ function PrinterRow({ printer, onDelete }: { printer: BambuPrinter; onDelete: (s
       onMouseLeave={() => setHover(false)}
       style={{
         display: 'flex',
-        alignItems: 'center',
-        gap: 12,
+        flexDirection: 'column',
+        gap: 6,
         padding: '10px 12px',
         borderBottom: '1px solid var(--border-default)',
         transition: 'background 0.15s',
         background: hover ? 'var(--bg-hover)' : 'transparent',
       }}
     >
-      <div style={{
-        width: 3,
-        alignSelf: 'stretch',
-        borderRadius: 2,
-        background: hover ? 'var(--accent-primary)' : 'transparent',
-        transition: 'background 0.15s',
-        flexShrink: 0,
-      }} />
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{
-          fontSize: 14,
-          fontWeight: 600,
-          color: 'var(--text-primary)',
-          fontFamily: 'var(--font-body)',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}>
-          {printer.name || printer.serial}
-        </div>
-        <div style={{
-          fontSize: 12,
-          color: 'var(--text-muted)',
-          fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
-          letterSpacing: '0.02em',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}>
-          {printer.host} · {printer.serial}{printer.model ? ` · ${printer.model}` : ''}
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={handleDelete}
-        disabled={deleting}
-        aria-label={`Remove ${printer.name || printer.serial}`}
-        style={{
-          background: 'none',
-          border: 'none',
-          cursor: deleting ? 'default' : 'pointer',
-          padding: '4px 6px',
-          fontSize: 14,
-          lineHeight: 1,
-          color: hover ? 'var(--accent-red)' : 'var(--text-muted)',
-          opacity: hover || deleting ? 1 : 0,
-          transition: 'opacity 0.15s, color 0.15s',
+          width: 3,
+          alignSelf: 'stretch',
+          borderRadius: 2,
+          background: hover ? 'var(--accent-primary)' : 'transparent',
+          transition: 'background 0.15s',
           flexShrink: 0,
-        }}
-      >
-        {deleting ? '…' : '🗑'}
-      </button>
+        }} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: 14,
+            fontWeight: 600,
+            color: 'var(--text-primary)',
+            fontFamily: 'var(--font-body)',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+            {printer.name || printer.serial}
+          </div>
+          <div style={{
+            fontSize: 12,
+            color: 'var(--text-muted)',
+            fontFamily: 'var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace)',
+            letterSpacing: '0.02em',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+            {printer.host} · {printer.serial}{printer.model ? ` · ${printer.model}` : ''}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={deleting}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          aria-label={`Remove ${printer.name || printer.serial}`}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: deleting ? 'default' : 'pointer',
+            padding: '4px 6px',
+            fontSize: 14,
+            lineHeight: 1,
+            color: hover ? 'var(--accent-red)' : 'var(--text-muted)',
+            opacity: hover || focused || deleting ? 1 : 0,
+            transition: 'opacity 0.15s, color 0.15s',
+            flexShrink: 0,
+          }}
+        >
+          {deleting ? '…' : '🗑'}
+        </button>
+      </div>
+      {error && <ErrorBanner message={error} />}
     </div>
   );
 }
@@ -219,6 +229,13 @@ function AddPrinterForm({ onAdded }: AddFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justAdded, setJustAdded] = useState(false);
+  const justAddedTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (justAddedTimeoutRef.current !== null) clearTimeout(justAddedTimeoutRef.current);
+    };
+  }, []);
 
   const ready = name.trim() !== '' && host.trim() !== '' && serial.trim() !== '' && accessCode.trim() !== '';
 
@@ -240,7 +257,8 @@ function AddPrinterForm({ onAdded }: AddFormProps) {
       setSerial('');
       setAccessCode('');
       setJustAdded(true);
-      setTimeout(() => setJustAdded(false), 2000);
+      if (justAddedTimeoutRef.current !== null) clearTimeout(justAddedTimeoutRef.current);
+      justAddedTimeoutRef.current = setTimeout(() => setJustAdded(false), 2000);
     } catch (err) {
       setError(friendlyError(err, 'Could not add the printer'));
     } finally {
