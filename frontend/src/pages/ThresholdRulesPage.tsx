@@ -22,7 +22,7 @@ function valueKindFor(unit: UnitType): ValueKind {
     case 'Watts': case 'Kilowatts': case 'WattHours': case 'KilowattHours':
     case 'Celsius': case 'Fahrenheit': case 'Percent': case 'Lux': case 'Number':
     case 'Hectopascals': case 'KilometersPerHour': case 'Millimeters':
-    case 'Degrees': case 'UvIndex': case 'WattsPerSquareMeter':
+    case 'Degrees': case 'UvIndex': case 'WattsPerSquareMeter': case 'Minutes':
       return 'Numeric';
     case 'OnOff': case 'OpenClosed': case 'Detected': case 'YesNo':
     case 'Action':

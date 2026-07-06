@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
-import { getApplications, getWebhookRoutes, saveApplication, dysonGetAccount, roborockGetAccount } from '../api/client';
+import { getApplications, getWebhookRoutes, saveApplication, dysonGetAccount, roborockGetAccount, bambuListPrinters } from '../api/client';
 import type { Application, WebhookRoute } from '../types';
 import { DysonOnboardingWizard } from './DysonOnboardingPage';
 import { RoborockOnboardingWizard } from './RoborockOnboardingPage';
+import { BambuOnboardingWizard } from './BambuOnboardingPage';
 
 // ---- Types ----
 
@@ -87,6 +88,12 @@ const APP_DEFS: AppDef[] = [
     id: 'roborock',
     icon: '\u{1F9F9}',
     description: 'Roborock vacuums via your Roborock account. Use the Connect wizard to sign in; control runs locally with the cloud used once to pair.',
+    fields: [],
+  },
+  {
+    id: 'bambu',
+    icon: '\u{1F5A8}\u{FE0F}',
+    description: 'Bambu Lab 3D printers over local MQTT (LAN Only Mode). Add each printer with the IP, serial and access code from its network screen — no cloud account needed.',
     fields: [],
   },
   {
@@ -392,6 +399,8 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
   const [dysonAccount, setDysonAccount] = useState<{ connected: boolean; email?: string; deviceCount?: number } | null>(null);
   const [showRoborockWizard, setShowRoborockWizard] = useState(false);
   const [roborockAccount, setRoborockAccount] = useState<{ connected: boolean; email?: string; deviceCount?: number } | null>(null);
+  const [showBambuWizard, setShowBambuWizard] = useState(false);
+  const [bambuPrinterCount, setBambuPrinterCount] = useState<number | null>(null);
 
   // Fetch Dyson account info once (and when wizard completes)
   useEffect(() => {
@@ -404,6 +413,13 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
     if (app.id !== 'roborock') return;
     roborockGetAccount().then(setRoborockAccount).catch(() => setRoborockAccount(null));
   }, [app.id, showRoborockWizard]);
+
+  // Fetch the configured-printer count once (and whenever the wizard closes,
+  // since it's the roster's own add/delete calls that change the count)
+  useEffect(() => {
+    if (app.id !== 'bambu') return;
+    bambuListPrinters().then(list => setBambuPrinterCount(list.length)).catch(() => setBambuPrinterCount(null));
+  }, [app.id, showBambuWizard]);
 
   // Sync when app data reloads
   useEffect(() => {
@@ -504,6 +520,29 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
             Account not connected.{' '}
             <button type="button" style={dysonLinkStyle} onClick={() => setShowRoborockWizard(true)}>
               Connect now
+            </button>
+          </span>
+        </div>
+      )}
+
+      {/* Bambu printer roster status */}
+      {app.id === 'bambu' && bambuPrinterCount !== null && bambuPrinterCount > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-green)', flexShrink: 0, display: 'inline-block' }} />
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+            {bambuPrinterCount} printer{bambuPrinterCount !== 1 ? 's' : ''} configured ·{' '}
+            <button type="button" style={dysonLinkStyle} onClick={() => setShowBambuWizard(true)}>
+              Manage
+            </button>
+          </span>
+        </div>
+      )}
+      {app.id === 'bambu' && bambuPrinterCount === 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+            No printers configured yet.{' '}
+            <button type="button" style={dysonLinkStyle} onClick={() => setShowBambuWizard(true)}>
+              Add one
             </button>
           </span>
         </div>
@@ -657,6 +696,16 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
             Connect account
           </button>
         )}
+        {app.id === 'bambu' && (
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setShowBambuWizard(true)}
+            style={{ marginLeft: 'auto' }}
+          >
+            Manage printers
+          </button>
+        )}
       </div>
 
       {/* Dyson onboarding wizard */}
@@ -675,6 +724,16 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
       {showRoborockWizard && (
         <RoborockOnboardingWizard
           onClose={() => setShowRoborockWizard(false)}
+          onSuccess={onSaved}
+        />
+      )}
+
+      {/* Bambu onboarding wizard. It's a standing roster (add/delete), not a one-shot
+          login, so it stays open across multiple adds; onSuccess just refreshes the
+          card's printer count in the background. */}
+      {showBambuWizard && (
+        <BambuOnboardingWizard
+          onClose={() => setShowBambuWizard(false)}
           onSuccess={onSaved}
         />
       )}

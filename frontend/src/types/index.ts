@@ -14,6 +14,7 @@ export type UnitType =
   | 'Lux'
   | 'Hectopascals' | 'KilometersPerHour' | 'Millimeters' | 'Degrees' | 'UvIndex' | 'WattsPerSquareMeter'
   | 'Number'
+  | 'Minutes'
   | 'OnOff' | 'OpenClosed' | 'Detected' | 'YesNo'
   | 'Text' | 'Url'
   | 'Action';
@@ -202,4 +203,11 @@ export interface RoborockDevice {
   model: string;
   localKey: string;
   ip: string;
+}
+
+export interface BambuPrinter {
+  host: string;
+  serial: string;
+  model: string;
+  name: string;
 }

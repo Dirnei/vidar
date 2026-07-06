@@ -649,6 +649,7 @@ function formatWithUnit(val: unknown, unit: UnitType): string {
       case 'Degrees': return `${Math.round(val)}°`;
       case 'UvIndex': return `${Math.round(val)}`;
       case 'WattsPerSquareMeter': return `${Math.round(val)} W/m²`;
+      case 'Minutes': return `${Math.round(val)} min`;
       case 'Number': return `${Math.round(val * 100) / 100}`;
       default: return String(val);
     }

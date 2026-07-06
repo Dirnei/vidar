@@ -1,4 +1,4 @@
-import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry, Application, WebhookRoute, WebhookEventPage, ThresholdRule, ThresholdEventPage, DysonDevice, RoborockDevice } from '../types';
+import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry, Application, WebhookRoute, WebhookEventPage, ThresholdRule, ThresholdEventPage, DysonDevice, RoborockDevice, BambuPrinter } from '../types';
 
 const BASE = '/api';
 
@@ -224,5 +224,22 @@ export function roborockCodeLogin(email: string, code: string): Promise<Roborock
 
 export function roborockGetAccount(): Promise<{ connected: boolean; email?: string; deviceCount?: number }> {
   return request('/roborock/account');
+}
+
+// --- Bambu ---
+
+export function bambuAddPrinter(printer: { host: string; serial: string; accessCode: string; model?: string; name: string }): Promise<{ added: string }> {
+  return request('/bambu/printers', {
+    method: 'POST',
+    body: JSON.stringify({ model: '', ...printer }),
+  });
+}
+
+export function bambuListPrinters(): Promise<BambuPrinter[]> {
+  return request('/bambu/printers');
+}
+
+export function bambuDeletePrinter(serial: string): Promise<{ removed: string }> {
+  return request(`/bambu/printers/${encodeURIComponent(serial)}`, { method: 'DELETE' });
 }
 
