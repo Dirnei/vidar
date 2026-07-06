@@ -312,6 +312,13 @@ button, [role="switch"] {
   animation: fadeUp 0.3s ease-out;
 }
 
+/* Spinner for pending/working buttons */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Sidebar layout */
 .app-shell {
   display: flex;
