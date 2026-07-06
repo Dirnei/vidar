@@ -40,7 +40,10 @@ public sealed class BambuDeviceActorTests : TestKit
 
         actor.Tell(new CaptureSnapshot("SER1"));
 
-        var reply = ExpectMsg<SnapshotResult>(TimeSpan.FromSeconds(5));
+        // Cache miss triggers a fresh, off-mailbox capture attempt (PipeTo) against a printer
+        // that doesn't exist; give it enough headroom to fail (refused connection / no ffmpeg)
+        // and land back on the actor within the 15s capture timeout margin.
+        var reply = ExpectMsg<SnapshotResult>(TimeSpan.FromSeconds(20));
         Assert.Null(reply.Jpeg);
     }
 
@@ -54,8 +57,10 @@ public sealed class BambuDeviceActorTests : TestKit
         actor.Tell(new DeviceCommand(Guid.NewGuid(), "bambu", "SER2", "not_a_real_capability", 0d));
 
         // Follow up with a snapshot ask to prove the actor is still alive and responsive.
+        // Cache miss -> fresh off-mailbox capture attempt against a nonexistent printer, same
+        // headroom as CaptureSnapshot_WithNoCachedFrame_RepliesNull.
         actor.Tell(new CaptureSnapshot("SER2"));
-        var reply = ExpectMsg<SnapshotResult>(TimeSpan.FromSeconds(5));
+        var reply = ExpectMsg<SnapshotResult>(TimeSpan.FromSeconds(20));
         Assert.Null(reply.Jpeg);
     }
 }

@@ -33,6 +33,7 @@ public sealed class BambuDeviceActor : ReceiveActor, IWithTimers
     private byte[]? _latestJpeg;
     private string? _lastState;
     private bool _online;
+    private bool _captureInFlight;
 
     // Fixed backoff for reconnecting to the printer's local broker (no cloud rate limits here).
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(15);
@@ -42,6 +43,7 @@ public sealed class BambuDeviceActor : ReceiveActor, IWithTimers
     private sealed class Reconnect { public static readonly Reconnect Instance = new(); }
     private sealed record AutoSnapshot;
     private sealed record SnapshotCaptured(byte[]? Jpeg);
+    private sealed record SnapshotForRequest(byte[]? Jpeg, IActorRef ReplyTo);
     private sealed record StateObserved(string State);
 
     public static Props Props(BambuConfig cfg, Guid deviceId) =>
@@ -83,18 +85,40 @@ public sealed class BambuDeviceActor : ReceiveActor, IWithTimers
 
         Receive<CaptureSnapshot>(_ =>
         {
-            Sender.Tell(new SnapshotResult(_latestJpeg));
-            Self.Tell(new AutoSnapshot()); // refresh the cache for the next ask
+            if (_latestJpeg != null)
+            {
+                Sender.Tell(new SnapshotResult(_latestJpeg));
+                Self.Tell(new AutoSnapshot()); // refresh the cache for the next ask
+                return;
+            }
+
+            // Cache miss: capture a fresh frame and reply when it lands, without blocking the
+            // actor's mailbox (PipeTo runs the capture off-thread and delivers the result as a
+            // normal message, so DeviceCommand/reconnect/etc. keep flowing in the meantime).
+            var replyTo = Sender;
+            BambuSnapshot.CaptureAsync(_cfg.Host, _cfg.AccessCode, SnapshotTimeout, CancellationToken.None)
+                .PipeTo(Self, success: jpeg => new SnapshotForRequest(jpeg, replyTo),
+                              failure: _ => new SnapshotForRequest(null, replyTo));
         });
 
-        ReceiveAsync<AutoSnapshot>(async _ =>
+        Receive<SnapshotForRequest>(m =>
         {
-            var jpeg = await BambuSnapshot.CaptureAsync(_cfg.Host, _cfg.AccessCode, SnapshotTimeout, CancellationToken.None);
-            Self.Tell(new SnapshotCaptured(jpeg));
+            if (m.Jpeg != null) _latestJpeg = m.Jpeg;
+            m.ReplyTo.Tell(new SnapshotResult(m.Jpeg));
+        });
+
+        Receive<AutoSnapshot>(_ =>
+        {
+            if (_captureInFlight) return;
+            _captureInFlight = true;
+            BambuSnapshot.CaptureAsync(_cfg.Host, _cfg.AccessCode, SnapshotTimeout, CancellationToken.None)
+                .PipeTo(Self, success: jpeg => new SnapshotCaptured(jpeg),
+                              failure: _ => new SnapshotCaptured(null));
         });
 
         Receive<SnapshotCaptured>(m =>
         {
+            _captureInFlight = false;
             if (m.Jpeg != null) _latestJpeg = m.Jpeg;
         });
 
