@@ -195,6 +195,23 @@ services:
       - ROBOROCK_ONBOARD_HTTP=1
     restart: unless-stopped
 
+  vidar-comm-bambu:
+    build:
+      context: .
+      dockerfile: src/Vidar.Communication.Bambu/Dockerfile
+    depends_on:
+      lighthouse:
+        condition: service_started
+      vidar-host:
+        condition: service_healthy
+    restart: unless-stopped
+    # Bambu printers run their own local MQTT broker; this worker connects directly to each
+    # printer (no sidecar, no EMQX). It needs LAN reachability to the printers and ffmpeg for snapshots.
+    environment:
+      - VIDAR_CLUSTER_SEED=lighthouse:4053
+      - VIDAR_HOSTNAME=vidar-comm-bambu
+      - VIDAR_AKKA_PORT=4062
+
   mongodb:
     image: mongo:8
     volumes:
