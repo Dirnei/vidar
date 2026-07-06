@@ -28,6 +28,7 @@ public sealed class ApplicationsController : ControllerBase
         ["e3dc"] = ("E3/DC S10", "provider"),
         ["dyson"] = ("Dyson", "provider"),
         ["roborock"] = ("Roborock", "provider"),
+        ["bambu"] = ("Bambu Lab", "provider"),
         ["ecowitt"] = ("Ecowitt Weather", "provider"),
     };
 
