@@ -89,7 +89,7 @@ public sealed class PluginRegistryActor : ReceiveActor
             registrations.Add(new RegisterDeviceForPolling(
                 d.Id, d.CommunicationType, d.NativeId,
                 hostArg,
-                generation, d.Capabilities));
+                generation, d.Capabilities, d.Settings));
         }
         return registrations;
     }

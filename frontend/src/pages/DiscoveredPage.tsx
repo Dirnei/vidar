@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { DiscoveredDevice, Room, ActiveFilters, FilterSection } from '../types';
-import { getDiscoveredDevices, getRooms, configureDiscoveredDevice, discoverShellyDevice } from '../api/client';
+import { getDiscoveredDevices, getRooms, configureDiscoveredDevice, discoverShellyDevice, discoverBambuDevice } from '../api/client';
 import { ConfigureDeviceModal } from '../components/ConfigureDeviceModal';
 import { CapabilityIcon, primaryCapabilityIcon } from '../components/CapabilityIcon';
 import { FilterPanel, MobileFilterDrawer } from '../components/FilterPanel';
@@ -12,6 +12,8 @@ export function DiscoveredPage() {
   const [loading, setLoading] = useState(true);
   const [configuring, setConfiguring] = useState<DiscoveredDevice | null>(null);
   const [shellyHost, setShellyHost] = useState('');
+  const [bambuHost, setBambuHost] = useState('');
+  const [bambuAccessCode, setBambuAccessCode] = useState('');
   const [probing, setProbing] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [search, setSearch] = useState('');
@@ -50,6 +52,32 @@ export function DiscoveredPage() {
         setFeedback({ type: 'error', message: result.message ?? `No device found at ${host}` });
       }
       await loadData();
+    } catch (err) {
+      setFeedback({ type: 'error', message: `Failed to reach ${host}: ${err instanceof Error ? err.message : 'unknown error'}` });
+    } finally {
+      setProbing(false);
+    }
+  }
+
+  async function handleDiscoverBambu() {
+    const host = bambuHost.trim();
+    const code = bambuAccessCode.trim();
+    if (!host || !code) return;
+    setProbing(true);
+    setFeedback(null);
+    try {
+      const result = await discoverBambuDevice(host, code);
+      setFeedback({ type: 'success', message: result.message ?? `Connecting to ${host}…` });
+      setBambuHost('');
+      setBambuAccessCode('');
+      // Discovery is asynchronous: the worker connects over MQTT and publishes the printer to the
+      // discovered list once it responds. Refresh a few times so it appears without a manual reload.
+      void (async () => {
+        for (let i = 0; i < 4; i++) {
+          await new Promise((r) => setTimeout(r, 4000));
+          await loadData();
+        }
+      })();
     } catch (err) {
       setFeedback({ type: 'error', message: `Failed to reach ${host}: ${err instanceof Error ? err.message : 'unknown error'}` });
     } finally {
@@ -268,6 +296,63 @@ export function DiscoveredPage() {
                 {feedback.message}
               </div>
             )}
+          </div>
+
+          {/* Add Bambu printer card */}
+          <div
+            style={{
+              background: 'var(--bg-elevated)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: 'var(--radius-lg)',
+              padding: '20px 22px',
+              marginBottom: 28,
+              boxShadow: 'var(--shadow-card)',
+            }}
+          >
+            <div
+              style={{
+                fontFamily: 'var(--font-heading)',
+                fontSize: 14,
+                fontWeight: 600,
+                color: 'var(--text-secondary)',
+                marginBottom: 14,
+                letterSpacing: '-0.01em',
+              }}
+            >
+              Add Bambu Printer by IP
+            </div>
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <input
+                style={inputStyle}
+                type="text"
+                placeholder="Printer IP (e.g. 192.168.1.50)"
+                value={bambuHost}
+                disabled={probing}
+                onChange={(e) => setBambuHost(e.target.value)}
+                onFocus={handleInputFocus}
+                onBlur={handleInputBlur}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleDiscoverBambu(); }}
+              />
+              <input
+                style={inputStyle}
+                type="text"
+                placeholder="Access code (from printer LAN screen)"
+                value={bambuAccessCode}
+                disabled={probing}
+                onChange={(e) => setBambuAccessCode(e.target.value)}
+                onFocus={handleInputFocus}
+                onBlur={handleInputBlur}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleDiscoverBambu(); }}
+              />
+              <button
+                className="btn-primary"
+                style={{ flexShrink: 0, opacity: probing ? 0.5 : 1 }}
+                disabled={probing}
+                onClick={handleDiscoverBambu}
+              >
+                {probing ? 'Connecting…' : 'Discover'}
+              </button>
+            </div>
           </div>
 
           {/* Discovered devices list */}

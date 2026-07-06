@@ -6,4 +6,8 @@ public sealed record RegisterDeviceForPolling(
     string NativeId,
     string Host,
     int Generation,
-    List<CapabilityDescriptor> Capabilities);
+    List<CapabilityDescriptor> Capabilities,
+    // Per-device settings (persisted on the DeviceConfiguration) carried through to the worker.
+    // Lets a plugin recover a device's connection secrets (e.g. a Bambu printer's access code)
+    // on restart. Null for plugins/paths that don't need it (e.g. Shelly, which uses Host).
+    Dictionary<string, string>? Settings = null);

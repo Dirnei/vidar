@@ -1,21 +1,29 @@
-using System.Text.Json;
 using Akka.Actor;
 using Akka.Event;
+using MQTTnet;
 using Vidar.Core.Capabilities;
 using Vidar.Core.Messages;
 using Vidar.Core.Plugins;
 
 namespace Vidar.Communication.Bambu;
 
+// Local, add-by-IP integration modelled on ShellyBridgeActor (NOT a cloud-account manifest like
+// Dyson). A printer is probed by IP + access code, its serial is read off the local MQTT stream,
+// and it enters the standard discovered-devices pipeline. On accept, the per-device settings
+// (host, accessCode) arrive via RegisterDeviceForPolling.Settings and one child actor is spawned.
 public sealed class BambuBridgeActor : PluginActorBase
 {
     protected override string PluginId => "bambu";
     public static Akka.Actor.Props Props() => Akka.Actor.Props.Create(() => new BambuBridgeActor());
 
-    private readonly Dictionary<string, BambuConfig> _manifest = new();  // serial -> config
     private readonly Dictionary<string, IActorRef> _children = new();    // serial -> child
     private readonly Dictionary<IActorRef, string> _childSerials = new();
     private readonly Dictionary<string, (BambuConfig Cfg, Guid DeviceId)> _pending = new();
+
+    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(15);
+
+    private sealed record ProbeResult(
+        string Host, string AccessCode, string? Serial, string? Model, string? ReportJson, string? Error);
 
     public BambuBridgeActor()
     {
@@ -31,6 +39,34 @@ public sealed class BambuBridgeActor : PluginActorBase
             else Sender.Tell(new SnapshotResult(null));
         });
 
+        // Add-by-IP discovery: probe the printer off the actor thread, deliver the result as a message.
+        Receive<DiscoverBambuDevice>(msg =>
+        {
+            Log.Info("Probing Bambu printer at {Host}", msg.Host);
+            ProbeAsync(msg.Host, msg.AccessCode).PipeTo(Self,
+                failure: ex => new ProbeResult(msg.Host, msg.AccessCode, null, null, null, ex.Message));
+        });
+
+        Receive<ProbeResult>(r =>
+        {
+            if (r.Serial is null || r.ReportJson is null)
+            {
+                Log.Warning("Bambu probe of {Host} failed: {Error}", r.Host, r.Error ?? "no report");
+                return;
+            }
+
+            var deviceId = GetDeviceId(r.Serial) ?? Guid.NewGuid();
+            Discover(deviceId, r.Serial, BambuStateMapper.BuildCapabilities(r.ReportJson), new Dictionary<string, string>
+            {
+                ["serial"] = r.Serial,
+                ["host"] = r.Host,
+                ["accessCode"] = r.AccessCode,
+                ["model"] = r.Model ?? "",
+                ["name"] = string.IsNullOrEmpty(r.Model) ? r.Serial : $"{r.Model} ({r.Serial})",
+            });
+            Log.Info("Discovered Bambu printer {Serial} at {Host}", r.Serial, r.Host);
+        });
+
         Receive<Terminated>(t =>
         {
             if (!_childSerials.TryGetValue(t.ActorRef, out var serial)) return;
@@ -40,51 +76,32 @@ public sealed class BambuBridgeActor : PluginActorBase
         });
     }
 
+    // ── PluginActorBase overrides ───────────────────────────────────────────
+
     protected override void OnPluginRegistered(bool enabled, Dictionary<string, string> settings,
         List<RegisterDeviceForPolling> registrations)
     {
-        RefreshManifest(settings);
-        foreach (var reg in registrations) SpawnOrRestart(reg.NativeId, reg.DeviceId);
-        if (enabled) DiscoverAll();
+        // Children are spawned by OnDeviceRegistered, which the base invokes for each registration.
         PublishStatus("running", _children.Count);
     }
 
     protected override void OnConfigChanged(bool enabled, Dictionary<string, string> settings)
     {
-        if (!enabled) { PublishStatus("stopped", 0); return; }
-        RefreshManifest(settings);
-        DiscoverAll();
-        PublishStatus("running", _children.Count);
+        // A Bambu "config" is per-device (via discovery), not a plugin-wide broker setting, so there
+        // is nothing to re-read here — just report status. Enable/disable is a no-op for now.
+        PublishStatus(enabled ? "running" : "stopped", _children.Count);
     }
 
     protected override void OnDeviceRegistered(Guid deviceId, string nativeId, RegisterDeviceForPolling registration)
     {
-        if (_manifest.Count == 0) return;
-        SpawnOrRestart(nativeId, deviceId);
+        SpawnOrRestart(nativeId, deviceId, ConfigFromRegistration(registration));
         PublishStatus("running", _children.Count);
     }
 
-    private void RefreshManifest(Dictionary<string, string> settings)
-    {
-        _manifest.Clear();
-        foreach (var c in ParseManifest(settings)) _manifest[c.Serial] = c;
-    }
+    // ── Spawn / restart ─────────────────────────────────────────────────────
 
-    private void DiscoverAll()
+    private void SpawnOrRestart(string serial, Guid deviceId, BambuConfig cfg)
     {
-        foreach (var (serial, cfg) in _manifest)
-        {
-            var deviceId = GetDeviceId(serial) ?? Guid.NewGuid();
-            Discover(deviceId, serial, DefaultCapabilities(), new Dictionary<string, string>
-            {
-                ["serial"] = serial, ["model"] = cfg.Model, ["name"] = cfg.Name, ["host"] = cfg.Host,
-            });
-        }
-    }
-
-    private void SpawnOrRestart(string serial, Guid deviceId)
-    {
-        if (!_manifest.TryGetValue(serial, out var cfg)) return;
         if (_pending.ContainsKey(serial)) { _pending[serial] = (cfg, deviceId); return; }
         if (_children.TryGetValue(serial, out var existing))
         {
@@ -104,27 +121,56 @@ public sealed class BambuBridgeActor : PluginActorBase
         _childSerials[child] = serial;
     }
 
-    public static List<BambuConfig> ParseManifest(IReadOnlyDictionary<string, string> settings)
+    private static BambuConfig ConfigFromRegistration(RegisterDeviceForPolling reg)
     {
-        if (!settings.TryGetValue("account.manifest", out var json) || string.IsNullOrWhiteSpace(json))
-            return new();
-        using var doc = JsonDocument.Parse(json);
-        var list = new List<BambuConfig>();
-        foreach (var e in doc.RootElement.EnumerateArray())
-            list.Add(new BambuConfig(
-                e.GetProperty("host").GetString()!,
-                e.GetProperty("serial").GetString()!,
-                e.GetProperty("accessCode").GetString()!,
-                e.TryGetProperty("model", out var m) ? m.GetString() ?? "" : "",
-                e.TryGetProperty("name", out var n) ? n.GetString() ?? "" : ""));
-        return list;
+        var s = reg.Settings ?? new Dictionary<string, string>();
+        return new BambuConfig(
+            s.GetValueOrDefault("host", reg.Host),
+            reg.NativeId, // serial
+            s.GetValueOrDefault("accessCode", ""),
+            s.GetValueOrDefault("model", ""),
+            s.GetValueOrDefault("name", reg.NativeId));
     }
 
-    // Capabilities before the first report: fixed commands + the common sensors present on all models.
-    private static List<CapabilityDescriptor> DefaultCapabilities() =>
-        BambuStateMapper.BuildCapabilities("""
-        { "print": { "gcode_state":"IDLE","mc_percent":0,"mc_remaining_time":0,"layer_num":0,"total_layer_num":0,
-          "nozzle_temper":0,"bed_temper":0,"cooling_fan_speed":"0","spd_lvl":2,"subtask_name":"","wifi_signal":"",
-          "nozzle_diameter":"0.4","hms":[],"lights_report":[{"node":"chamber_light","mode":"off"}] } }
-        """);
+    // ── Probe (static: no actor state) ──────────────────────────────────────
+
+    // Connects to the printer's local MQTT, subscribes to the wildcard report topic, and returns the
+    // serial (from the topic "device/{serial}/report") plus the first report payload — without needing
+    // to know the serial in advance. Bambu printers publish reports periodically in LAN mode.
+    private static async Task<ProbeResult> ProbeAsync(string host, string accessCode)
+    {
+        var factory = new MqttClientFactory();
+        using var client = factory.CreateMqttClient();
+        var tcs = new TaskCompletionSource<(string Serial, string Report)>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        client.ApplicationMessageReceivedAsync += e =>
+        {
+            var parts = e.ApplicationMessage.Topic.Split('/');
+            if (parts.Length >= 3 && parts[0] == "device" && parts[2] == "report" && parts[1].Length > 0)
+                tcs.TrySetResult((parts[1], e.ApplicationMessage.ConvertPayloadToString() ?? "{}"));
+            return Task.CompletedTask;
+        };
+
+        try
+        {
+            var connect = await client.ConnectAsync(BambuMqttOptions.Build(host, 8883, accessCode));
+            if (connect.ResultCode != MqttClientConnectResultCode.Success)
+                return new ProbeResult(host, accessCode, null, null, null, $"connect failed: {connect.ResultCode}");
+
+            await client.SubscribeAsync(new MqttTopicFilterBuilder()
+                .WithTopic("device/+/report").WithAtMostOnceQoS().Build());
+
+            var done = await Task.WhenAny(tcs.Task, Task.Delay(ProbeTimeout));
+            if (done != tcs.Task)
+                return new ProbeResult(host, accessCode, null, null, null,
+                    "no report received (is the printer in LAN Mode and the access code correct?)");
+
+            var (serial, report) = await tcs.Task;
+            return new ProbeResult(host, accessCode, serial, null, report, null);
+        }
+        finally
+        {
+            try { await client.DisconnectAsync(); } catch { /* best effort */ }
+        }
+    }
 }

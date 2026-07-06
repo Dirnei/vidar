@@ -79,7 +79,7 @@ public sealed class DiscoveredDevicesController : ControllerBase
         var reg = new RegisterDeviceForPolling(
             device.Id, device.CommunicationType, device.NativeId,
             discovered.CommunicationType == "shelly" ? host : friendlyName,
-            generation, device.Capabilities);
+            generation, device.Capabilities, device.Settings);
 
         pluginRegistry.Tell(new RouteToPlugin(discovered.CommunicationType, reg));
 

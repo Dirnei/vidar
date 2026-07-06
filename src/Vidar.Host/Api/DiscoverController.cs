@@ -1,7 +1,11 @@
 using System.Text.Json;
+using Akka.Actor;
+using Akka.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Vidar.Core.Capabilities;
+using Vidar.Core.Messages;
 using Vidar.Core.Model;
+using Vidar.Core.Plugins;
 using Vidar.Host.Persistence;
 
 namespace Vidar.Host.Api;
@@ -13,18 +17,41 @@ public sealed class DiscoverController : ControllerBase
     private readonly IDiscoveredDeviceRepository _discoveredRepo;
     private readonly IDeviceRepository _deviceRepo;
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IRequiredActor<PluginRegistry> _pluginRegistryProvider;
     private readonly ILogger<DiscoverController> _logger;
 
     public DiscoverController(
         IDiscoveredDeviceRepository discoveredRepo,
         IDeviceRepository deviceRepo,
         IHttpClientFactory httpClientFactory,
+        IRequiredActor<PluginRegistry> pluginRegistryProvider,
         ILogger<DiscoverController> logger)
     {
         _discoveredRepo = discoveredRepo;
         _deviceRepo = deviceRepo;
         _httpClientFactory = httpClientFactory;
+        _pluginRegistryProvider = pluginRegistryProvider;
         _logger = logger;
+    }
+
+    // Bambu printers are their own local MQTT broker. Unlike Shelly's synchronous HTTP probe, we
+    // hand the probe to the Bambu worker (it owns the MQTT/TLS stack): it connects, reads the serial
+    // off the "device/+/report" stream, and publishes a discovered device that lands in the Setup
+    // list asynchronously. The host holds no Bambu-specific probing logic.
+    [HttpPost("bambu")]
+    public async Task<IActionResult> DiscoverBambu([FromBody] DiscoverBambuRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Host))
+            return BadRequest(new { error = "Host is required" });
+        if (string.IsNullOrWhiteSpace(request.AccessCode))
+            return BadRequest(new { error = "Access code is required" });
+
+        var host = request.Host.Trim();
+        var pluginRegistry = await _pluginRegistryProvider.GetAsync();
+        pluginRegistry.Tell(new RouteToPlugin("bambu", new DiscoverBambuDevice(host, request.AccessCode.Trim())));
+
+        _logger.LogInformation("Requested Bambu probe of {Host}", host);
+        return Ok(new { status = "probing", host, message = $"Connecting to the printer at {host}; it will appear in the discovered list once it responds. Ensure LAN Mode is enabled." });
     }
 
     [HttpPost("shelly")]
@@ -263,3 +290,4 @@ public sealed class DiscoverController : ControllerBase
 }
 
 public sealed record DiscoverShellyRequest(string Host);
+public sealed record DiscoverBambuRequest(string Host, string AccessCode);

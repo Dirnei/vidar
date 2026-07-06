@@ -155,7 +155,8 @@ public sealed class DevicesController : ControllerBase
                 device.NativeId,
                 newHost,
                 generation,
-                device.Capabilities);
+                device.Capabilities,
+                device.Settings);
             var pluginRegistry = await _pluginRegistryProvider.GetAsync();
             pluginRegistry.Tell(new RouteToPlugin(device.CommunicationType, msg));
             _logger.LogInformation("Republished RegisterDeviceForPolling for device {DeviceId} with new host {Host}", id, newHost);
