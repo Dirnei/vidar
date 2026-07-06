@@ -193,6 +193,46 @@ class AccountBridge:
             log(f"[{serial}] send failed: {e}")
 
 
+class BridgeManager:
+    """Owns the target MQTT client and the current AccountBridge, and lets BOTH the Mongo
+    poll loop (cold start) and the onboarding HTTP handler (live re-onboard) start or replace
+    the bridge — so re-onboarding with a new token/region takes effect without a container
+    restart. All bridge swaps are serialized by a lock."""
+
+    def __init__(self, target):
+        self.target = target
+        self._lock = threading.Lock()
+        self.account = None  # the live AccountBridge, once one is running
+
+    def ensure_started(self, token, region):
+        """Cold-start path: start the bridge only if none is running yet. Returns True if it
+        started one, False if a bridge was already running."""
+        with self._lock:
+            if self.account is not None:
+                return False
+            self.account = AccountBridge(token, region, self.target)
+            self.account.start()
+        return True
+
+    def replace(self, token, region):
+        """Live re-onboard path: start a fresh bridge and stop the previous one. Called after a
+        successful /auth/login so new credentials take effect immediately."""
+        with self._lock:
+            old = self.account
+            self.account = AccountBridge(token, region, self.target)
+            self.account.start()
+        if old is not None:
+            old.stop()
+        log("account bridge (re)started from onboarding")
+
+    def forward_command(self, serial, payload):
+        acct = self.account
+        if acct is not None:
+            acct.forward_command(serial, payload)
+        else:
+            log(f"[{serial}] command dropped (no active account bridge)")
+
+
 # ── Onboarding (cloud auth via dreocloud REST helpers) ─────────────────────────
 # Runs in-process as an HTTP server the Vidar host calls at http://dreo2mqtt:<port>.
 
@@ -211,7 +251,7 @@ def _auth_status_code(exc):
     return 502
 
 
-def start_onboarding_server():
+def start_onboarding_server(manager=None):
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
     class OnboardHandler(BaseHTTPRequestHandler):
@@ -254,6 +294,14 @@ def start_onboarding_server():
                     token, region = login(req["email"], req["password"])
                     devices = fetch_devices(token, region)
                     self._send(200, {"userDataJson": token, "region": region, "devices": devices})
+                    # Push: (re)start the live bridge immediately so re-onboarding takes effect
+                    # without a container restart. A failure here must NOT fail the login response
+                    # — the host still persists to Mongo and a restart (cold-start path) recovers.
+                    if manager is not None:
+                        try:
+                            manager.replace(token, region)
+                        except Exception as e:  # noqa: BLE001
+                            log(f"bridge (re)start after login failed: {e}")
                 else:
                     self._send(404, {"error": "not found"})
             except Exception as e:  # noqa: BLE001
@@ -274,17 +322,18 @@ def start_onboarding_server():
 def main():
     import paho.mqtt.client as mqtt
 
-    if os.environ.get("DREO_ONBOARD_HTTP") == "1":
-        # Started FIRST and unconditionally: onboarding must work even before any Mongo
-        # manifest exists, so this never sys.exit()s on a missing manifest (unlike the
-        # roborock2mqtt crash-loop-before-onboarding bug this fixes).
-        start_onboarding_server()
-
-    account = None  # AccountBridge, once a manifest shows up
-
     target = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="dreo2mqtt")
     if MQTT_USERNAME:
         target.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
+
+    manager = BridgeManager(target)
+
+    if os.environ.get("DREO_ONBOARD_HTTP") == "1":
+        # Started early and unconditionally: onboarding must work even before any Mongo manifest
+        # exists, so this never sys.exit()s on a missing manifest (unlike the roborock2mqtt
+        # crash-loop-before-onboarding bug this fixes). Passing `manager` lets a successful
+        # /auth/login (re)start the live bridge immediately — no container restart to re-onboard.
+        start_onboarding_server(manager)
 
     def on_connect(cl, u, flags, rc, props=None):
         log(f"target broker connected ({rc})")
@@ -292,8 +341,8 @@ def main():
 
     def on_message(cl, u, msg):
         parts = msg.topic.split("/")
-        if len(parts) >= 3 and parts[-1] == "set" and account is not None:
-            account.forward_command(parts[-2], msg.payload.decode(errors="replace"))
+        if len(parts) >= 3 and parts[-1] == "set":
+            manager.forward_command(parts[-2], msg.payload.decode(errors="replace"))
 
     target.on_connect = on_connect
     target.on_message = on_message
@@ -308,17 +357,17 @@ def main():
             time.sleep(5)
     target.loop_start()
 
-    # Poll Mongo for the onboarded manifest and start the account bridge once available. This
-    # survives the pre-onboarding state (no exit), so onboarding HTTP can populate Mongo first.
+    # Cold-start path: if the container comes up with an already-onboarded manifest in Mongo,
+    # start the bridge from it. Live re-onboarding is pushed by the onboarding handler
+    # (manager.replace), so this loop only needs to cover the "no bridge running yet" case.
     logged_waiting = False
     while True:
         token, manifest, persisted_region = load_manifest_from_mongo()
-        if token and manifest and account is None:
+        if token and manifest and manager.account is None:
             region = (persisted_region or "").strip() or DEFAULT_REGION
             serials = [m["serial"] for m in manifest if m.get("serial")]
-            account = AccountBridge(token, region, target)
-            account.start()
-            log(f"started account bridge for {len(serials)} device(s)")
+            if manager.ensure_started(token, region):
+                log(f"started account bridge for {len(serials)} device(s)")
             logged_waiting = False
         elif not (token and manifest) and not logged_waiting:
             log("no Dreo manifest in Mongo yet; waiting for onboarding")
