@@ -19,19 +19,6 @@ public sealed class ApplicationsController : ControllerBase
     private readonly IRequiredActor<PluginRegistry> _pluginRegistryProvider;
     private readonly ILogger<ApplicationsController> _logger;
 
-    private static readonly Dictionary<string, (string Name, string Type)> KnownApplications = new()
-    {
-        ["shelly"] = ("Shelly", "provider"),
-        ["zigbee2mqtt"] = ("Zigbee2MQTT", "provider"),
-        ["unifi"] = ("UniFi Network", "provider"),
-        ["homeconnect"] = ("Home Connect", "provider"),
-        ["e3dc"] = ("E3/DC S10", "provider"),
-        ["dyson"] = ("Dyson", "provider"),
-        ["roborock"] = ("Roborock", "provider"),
-        ["bambu"] = ("Bambu Lab", "provider"),
-        ["ecowitt"] = ("Ecowitt Weather", "provider"),
-    };
-
     public ApplicationsController(
         IApplicationConfigRepository repo,
         IRequiredActor<ApplicationStatusActor> statusActorProvider,
@@ -44,33 +31,36 @@ public sealed class ApplicationsController : ControllerBase
         _logger = logger;
     }
 
+    // Applications are discovered dynamically. The host holds NO hardcoded list of plugins:
+    // an application exists if a plugin has announced itself on the `application-status`
+    // pubsub (tracked by ApplicationStatusActor) or if it has a persisted config. Adding a
+    // new integration therefore requires no change here — the plugin announces itself, the
+    // host merely relays runtime state. Presentation (display name, icon, description, config
+    // fields) lives in the frontend, which needs per-plugin config forms regardless.
+
     [HttpGet]
     public async Task<IActionResult> GetAll()
     {
         var configs = await _repo.GetAllAsync();
         var configMap = configs.ToDictionary(c => c.Id);
 
-        var statusActor = await _statusActorProvider.GetAsync();
-        var statusResponse = await statusActor.Ask<ApplicationStatusActor.AllStatusesResponse>(
-            new ApplicationStatusActor.GetAllStatuses(), TimeSpan.FromSeconds(3));
-        var statuses = statusResponse.Statuses;
+        // Per-device transport statuses are published as "plugin/serial" on the same topic;
+        // application ids are bare slugs. Keep only application-level announcements.
+        var statuses = (await GetStatusesAsync())
+            .Where(kv => !kv.Key.Contains('/'))
+            .ToDictionary(kv => kv.Key, kv => kv.Value);
 
-        var results = new List<ApplicationResponse>();
-        foreach (var (id, known) in KnownApplications)
-        {
-            configMap.TryGetValue(id, out var config);
-            statuses.TryGetValue(id, out var status);
+        var ids = configMap.Keys.Union(statuses.Keys);
 
-            results.Add(new ApplicationResponse(
-                Id: id,
-                Name: config?.Name ?? known.Name,
-                Type: known.Type,
-                Enabled: config?.Enabled ?? false,
-                Status: status?.Status ?? "unconfigured",
-                DeviceCount: status?.DeviceCount ?? 0,
-                Settings: config?.Settings ?? new Dictionary<string, string>(),
-                ErrorMessage: status?.ErrorMessage));
-        }
+        var results = ids
+            .Select(id =>
+            {
+                configMap.TryGetValue(id, out var config);
+                statuses.TryGetValue(id, out var status);
+                return BuildResponse(id, config, status);
+            })
+            .OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
 
         return Ok(results);
     }
@@ -78,38 +68,29 @@ public sealed class ApplicationsController : ControllerBase
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(string id)
     {
-        if (!KnownApplications.TryGetValue(id, out var known))
-            return NotFound();
-
         var config = await _repo.GetByIdAsync(id);
 
         var statusActor = await _statusActorProvider.GetAsync();
         var status = await statusActor.Ask<ApplicationStatusUpdate?>(
             new ApplicationStatusActor.GetStatus(id), TimeSpan.FromSeconds(3));
 
-        return Ok(new ApplicationResponse(
-            Id: id,
-            Name: config?.Name ?? known.Name,
-            Type: known.Type,
-            Enabled: config?.Enabled ?? false,
-            Status: status?.Status ?? "unconfigured",
-            DeviceCount: status?.DeviceCount ?? 0,
-            Settings: config?.Settings ?? new Dictionary<string, string>(),
-            ErrorMessage: status?.ErrorMessage));
+        // Unknown to both the registry and the config store ⇒ this application does not exist.
+        if (config is null && status is null)
+            return NotFound();
+
+        return Ok(BuildResponse(id, config, status));
     }
 
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(string id, [FromBody] UpdateApplicationRequest request)
     {
-        if (!KnownApplications.TryGetValue(id, out var known))
-            return NotFound();
-
         var existing = await _repo.GetByIdAsync(id);
         var config = existing ?? new ApplicationConfig
         {
             Id = id,
-            Name = known.Name,
-            ApplicationType = known.Type == "provider" ? ApplicationType.Provider : ApplicationType.Consumer,
+            // Display name is a frontend concern; persist the id as a stable fallback.
+            Name = id,
+            ApplicationType = ApplicationType.Provider,
         };
 
         config.Enabled = request.Enabled;
@@ -124,6 +105,30 @@ public sealed class ApplicationsController : ControllerBase
         _logger.LogInformation("Updated application {Id}, enabled={Enabled}", id, config.Enabled);
         return NoContent();
     }
+
+    private async Task<Dictionary<string, ApplicationStatusUpdate>> GetStatusesAsync()
+    {
+        var statusActor = await _statusActorProvider.GetAsync();
+        var response = await statusActor.Ask<ApplicationStatusActor.AllStatusesResponse>(
+            new ApplicationStatusActor.GetAllStatuses(), TimeSpan.FromSeconds(3));
+        return response.Statuses;
+    }
+
+    private static ApplicationResponse BuildResponse(
+        string id, ApplicationConfig? config, ApplicationStatusUpdate? status) =>
+        new(
+            Id: id,
+            Name: config?.Name ?? id,
+            // The plugin's live announcement is authoritative for its kind; fall back to a
+            // persisted config, then to provider. The host never classifies plugins itself.
+            Type: (status?.Type ?? config?.ApplicationType ?? ApplicationType.Provider) == ApplicationType.Consumer
+                ? "consumer"
+                : "provider",
+            Enabled: config?.Enabled ?? false,
+            Status: status?.Status ?? "unconfigured",
+            DeviceCount: status?.DeviceCount ?? 0,
+            Settings: config?.Settings ?? new Dictionary<string, string>(),
+            ErrorMessage: status?.ErrorMessage);
 }
 
 public sealed class UpdateApplicationRequest

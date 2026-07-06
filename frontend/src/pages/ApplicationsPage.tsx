@@ -17,6 +17,7 @@ interface FieldDef {
 
 interface AppDef {
   id: string;
+  name: string;
   icon: string;
   description: string;
   fields: FieldDef[];
@@ -25,12 +26,14 @@ interface AppDef {
 const APP_DEFS: AppDef[] = [
   {
     id: 'shelly',
+    name: 'Shelly',
     icon: '\u{1F50C}',
     description: 'HTTP-polled Shelly smart home devices. Discovery is manual via IP on the Setup page.',
     fields: [],
   },
   {
     id: 'zigbee2mqtt',
+    name: 'Zigbee2MQTT',
     icon: '\u{1F4E1}',
     description: 'Zigbee devices via Zigbee2MQTT bridge and MQTT broker.',
     fields: [
@@ -43,6 +46,7 @@ const APP_DEFS: AppDef[] = [
   },
   {
     id: 'unifi',
+    name: 'UniFi Network',
     icon: '⬡',
     description: 'Ubiquiti UniFi network devices and clients.',
     fields: [
@@ -54,6 +58,7 @@ const APP_DEFS: AppDef[] = [
   },
   {
     id: 'homeconnect',
+    name: 'Home Connect',
     icon: '🏠',
     description: 'Bosch/Siemens home appliances via Home Connect cloud API.',
     fields: [
@@ -67,6 +72,7 @@ const APP_DEFS: AppDef[] = [
   },
   {
     id: 'e3dc',
+    name: 'E3/DC S10',
     icon: '⚡',
     description: 'E3/DC S10 home energy storage system via RSCP protocol.',
     fields: [
@@ -80,24 +86,28 @@ const APP_DEFS: AppDef[] = [
   },
   {
     id: 'dyson',
+    name: 'Dyson',
     icon: '\u{1F300}',
     description: 'Dyson Connected devices via Dyson cloud account. Use the Connect wizard to authenticate and add your fans and purifiers.',
     fields: [],
   },
   {
     id: 'roborock',
+    name: 'Roborock',
     icon: '\u{1F9F9}',
     description: 'Roborock vacuums via your Roborock account. Use the Connect wizard to sign in; control runs locally with the cloud used once to pair.',
     fields: [],
   },
   {
     id: 'bambu',
+    name: 'Bambu Lab',
     icon: '\u{1F5A8}\u{FE0F}',
     description: 'Bambu Lab 3D printers over local MQTT (LAN Only Mode). Add each printer with the IP, serial and access code from its network screen — no cloud account needed.',
     fields: [],
   },
   {
     id: 'ecowitt',
+    name: 'Ecowitt Weather',
     icon: '\u{1F326}\u{FE0F}',
     description: 'Ecowitt weather station via the gateway’s native MQTT publications on EMQX. Point the gateway at EMQX with a matching topic, then set the connection here.',
     fields: [
@@ -462,7 +472,7 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
       {/* Header */}
       <div style={cardHeaderStyle}>
         <span style={{ fontSize: 22, lineHeight: 1 }}>{icon}</span>
-        <div style={cardTitleStyle}>{app.name}</div>
+        <div style={cardTitleStyle}>{def?.name ?? app.name}</div>
         <span style={typeBadgeStyle}>{app.type}</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
           <span style={statusDotStyle(sColor)} />

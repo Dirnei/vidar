@@ -5,6 +5,7 @@ using Akka.Event;
 using Akka.Hosting;
 using Vidar.Core.Capabilities;
 using Vidar.Core.Messages;
+using Vidar.Core.Model;
 using Vidar.Core.Sharding;
 
 namespace Vidar.Core.Plugins;
@@ -22,6 +23,11 @@ public abstract class PluginActorBase : ReceiveActor, IWithTimers
     private Dictionary<string, string> _settings = new();
 
     protected abstract string PluginId { get; }
+
+    // A plugin declares its own kind. Providers expose devices; consumers act on them.
+    // Consumer plugins override this; the host reads it off the status announcement and
+    // never classifies plugins itself.
+    protected virtual ApplicationType AppType => ApplicationType.Provider;
 
     protected PluginActorBase()
     {
@@ -92,7 +98,7 @@ public abstract class PluginActorBase : ReceiveActor, IWithTimers
     protected void PublishStatus(string status, int deviceCount, string? error = null)
     {
         Mediator.Tell(new Publish("application-status",
-            new ApplicationStatusUpdate(PluginId, status, deviceCount, error)));
+            new ApplicationStatusUpdate(PluginId, status, deviceCount, error, AppType)));
     }
 
     protected Guid? GetDeviceId(string nativeId) =>
