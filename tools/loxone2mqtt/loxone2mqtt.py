@@ -9,6 +9,7 @@ published to <base>/<serial>/<uuid>/set, and re-publishes the structure on chang
 
 Everything is configured by environment variables (12-factor); nothing is hard-coded.
 """
+import colorsys
 import json
 import os
 import threading
@@ -35,6 +36,41 @@ def log(*a):
 _PHASE_A_TYPES = {"Switch", "Pushbutton", "Dimmer", "LightControllerV2",
                   "PresenceDetector", "SmokeAlarm", "Touch"}
 
+# Phase B: ColorPickerV2 (split into ColorPickerRGBW/ColorPickerTunableWhite/pre-split Dimmers by
+# classify_colorpicker below) and IRoomControllerV2 (normalized to RoomControllerV2).
+_SUPPORTED_TYPES = _PHASE_A_TYPES | {"ColorPickerV2", "IRoomControllerV2"}
+
+
+def hex_to_hsv(hex_str: str):
+    """"#RRGGBB" -> (h, s, v) with h in 0..360, s/v in 0..100 (standard HSV, colorsys-backed)."""
+    s = hex_str.lstrip("#")
+    r, g, b = (int(s[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+    h, sat, val = colorsys.rgb_to_hsv(r, g, b)
+    return h * 360.0, sat * 100.0, val * 100.0
+
+
+def hsv_to_hex(h, s, v):
+    """(h in 0..360, s/v in 0..100) -> "#RRGGBB"."""
+    r, g, b = colorsys.hsv_to_rgb((h % 360) / 360.0, s / 100.0, v / 100.0)
+    return "#{:02X}{:02X}{:02X}".format(round(r * 255), round(g * 255), round(b * 255))
+
+
+def classify_colorpicker(control: dict) -> str:
+    """Decide a ColorPickerV2's mode from LoxAPP3 details: "ColorPickerRGBW" |
+    "ColorPickerTunableWhite" | "single" (single-channel, pre-split into Dimmers by the caller).
+
+    LIVE-CAPTURE: the exact detail key Loxone uses to mark a ColorPickerV2's capability is
+    confirmed at E2E (Task 13-equivalent for this sidecar) -- this is the single correction point
+    for that discovery. Best-effort heuristic reading `details.pickerType`/`details.colorMode`;
+    defaults to ColorPickerRGBW (the most common case) when ambiguous."""
+    details = control.get("details", {}) or {}
+    picker = str(details.get("pickerType", details.get("colorMode", ""))).lower()
+    if "temp" in picker or "white" in picker or "tunable" in picker or "lumitech" in picker:
+        return "ColorPickerTunableWhite"
+    if "single" in picker or "channel" in picker:
+        return "single"
+    return "ColorPickerRGBW"
+
 
 def build_structure(loxapp3: dict, serial: str) -> dict:
     rooms = [{"uuid": uid, "name": (r or {}).get("name", uid)}
@@ -42,8 +78,21 @@ def build_structure(loxapp3: dict, serial: str) -> dict:
     controls = []
     for uid, c in (loxapp3.get("controls") or {}).items():
         ctype = c.get("type")
-        if ctype not in _PHASE_A_TYPES:
+        if ctype not in _SUPPORTED_TYPES:
             continue  # present-fields: skip unsupported types
+        if ctype == "IRoomControllerV2":
+            ctype = "RoomControllerV2"
+        elif ctype == "ColorPickerV2":
+            mode = classify_colorpicker(c)
+            if mode == "single":
+                # Single-channel picker: pre-split into 4 independent Dimmer controls so the
+                # worker needs no split logic of its own (uuid "<uuid>/r|g|b|w").
+                for ch in ("r", "g", "b", "w"):
+                    controls.append({"uuid": f"{uid}/{ch}",
+                                     "name": f"{c.get('name', uid)} {ch.upper()}",
+                                     "type": "Dimmer", "room": c.get("room")})
+                continue
+            ctype = mode
         entry = {"uuid": uid, "name": c.get("name", uid), "type": ctype, "room": c.get("room")}
         moods = (((c.get("details") or {}).get("moodList")) or [])
         if moods:
@@ -76,6 +125,14 @@ def flatten_control_state(control_type: str, states: dict) -> dict:
         return _pick(states, {"active": "active", "battery": "battery", "tamper": "tamper"})
     if control_type == "Touch":
         return _pick(states, {"action": "action"})
+    if control_type == "ColorPickerRGBW":
+        return _pick(states, {"active": "active", "position": "position",
+                              "color": "color", "white": "white"})
+    if control_type == "ColorPickerTunableWhite":
+        return _pick(states, {"active": "active", "position": "position", "colortemp": "colortemp"})
+    if control_type == "RoomControllerV2":
+        return _pick(states, {"tempActual": "tempActual", "tempTarget": "tempTarget",
+                              "mode": "mode", "valve": "valve"})
     return {}
 
 

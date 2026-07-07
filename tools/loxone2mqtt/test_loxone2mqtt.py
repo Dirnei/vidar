@@ -211,3 +211,84 @@ def test_bridge_manager_replace_one_starts_bridge_when_none_running(monkeypatch)
     mgr.replace_one({"serial": "A", "host": "10.0.0.9", "user": "u", "password": "p"})
     assert mgr.bridges["A"].started is True
     assert mgr.bridges["A"].stopped is False
+
+
+# ── ColorPickerV2 mode detection, color math, climate, single-channel split (Task 4) ─
+
+def test_hex_to_hsv_and_back_roundtrips_primary():
+    assert lx.hsv_to_hex(*lx.hex_to_hsv("#FF0000")) == "#FF0000"
+    assert lx.hsv_to_hex(*lx.hex_to_hsv("#00FF00")) == "#00FF00"
+    assert lx.hsv_to_hex(*lx.hex_to_hsv("#0000FF")) == "#0000FF"
+
+
+def test_hex_to_hsv_red():
+    h, s, v = lx.hex_to_hsv("#FF0000")
+    assert round(h) == 0 and round(s) == 100 and round(v) == 100
+
+
+def test_build_structure_classifies_rgbw_colorpicker():
+    loxapp3 = {"msInfo": {"serialNr": "S1"}, "rooms": {},
+               "controls": {"u1": {"name": "Strip", "type": "ColorPickerV2", "room": "r1",
+                                   "details": {"pickerType": "Rgbw"}}}}
+    s = lx.build_structure(loxapp3, "S1")
+    c = next(c for c in s["controls"] if c["uuid"] == "u1")
+    assert c["type"] == "ColorPickerRGBW"
+
+
+def test_build_structure_maps_room_controller():
+    loxapp3 = {"msInfo": {"serialNr": "S1"}, "rooms": {},
+               "controls": {"u2": {"name": "Climate", "type": "IRoomControllerV2", "room": "r1"}}}
+    s = lx.build_structure(loxapp3, "S1")
+    assert any(c["type"] == "RoomControllerV2" for c in s["controls"])
+
+
+def test_flatten_room_controller_state():
+    out = lx.flatten_control_state("RoomControllerV2",
+        {"tempActual": 21.5, "tempTarget": 22, "mode": 1, "valve": 40})
+    assert out == {"tempActual": 21.5, "tempTarget": 22, "mode": 1, "valve": 40}
+
+
+def test_classify_colorpicker_tunable_white_from_details():
+    assert lx.classify_colorpicker({"details": {"pickerType": "Lumitech"}}) == "ColorPickerTunableWhite"
+    assert lx.classify_colorpicker({"details": {"colorMode": "tunableWhite"}}) == "ColorPickerTunableWhite"
+
+
+def test_classify_colorpicker_single_channel_from_details():
+    assert lx.classify_colorpicker({"details": {"pickerType": "singleChannel"}}) == "single"
+
+
+def test_classify_colorpicker_defaults_to_rgbw_when_ambiguous():
+    assert lx.classify_colorpicker({}) == "ColorPickerRGBW"
+    assert lx.classify_colorpicker({"details": {}}) == "ColorPickerRGBW"
+
+
+def test_build_structure_classifies_tunable_white_colorpicker():
+    loxapp3 = {"msInfo": {"serialNr": "S1"}, "rooms": {},
+               "controls": {"u1": {"name": "Panel", "type": "ColorPickerV2", "room": "r1",
+                                   "details": {"pickerType": "Lumitech"}}}}
+    s = lx.build_structure(loxapp3, "S1")
+    c = next(c for c in s["controls"] if c["uuid"] == "u1")
+    assert c["type"] == "ColorPickerTunableWhite"
+
+
+def test_build_structure_presplits_single_channel_colorpicker_into_dimmers():
+    loxapp3 = {"msInfo": {"serialNr": "S1"}, "rooms": {},
+               "controls": {"u1": {"name": "Strip", "type": "ColorPickerV2", "room": "r1",
+                                   "details": {"pickerType": "singleChannel"}}}}
+    s = lx.build_structure(loxapp3, "S1")
+    uuids = {c["uuid"] for c in s["controls"]}
+    assert uuids == {"u1/r", "u1/g", "u1/b", "u1/w"}
+    assert all(c["type"] == "Dimmer" for c in s["controls"])
+    assert "u1" not in uuids
+
+
+def test_flatten_colorpicker_rgbw_state():
+    out = lx.flatten_control_state("ColorPickerRGBW",
+        {"active": 1, "position": 80, "color": "#FF8800", "white": 30})
+    assert out == {"active": 1, "position": 80, "color": "#FF8800", "white": 30}
+
+
+def test_flatten_colorpicker_tunable_white_state():
+    out = lx.flatten_control_state("ColorPickerTunableWhite",
+        {"active": 1, "position": 60, "colortemp": 4000})
+    assert out == {"active": 1, "position": 60, "colortemp": 4000}
