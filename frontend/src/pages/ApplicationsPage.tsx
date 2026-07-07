@@ -4,7 +4,7 @@ import type { Application, WebhookRoute } from '../types';
 import { DysonOnboardingWizard } from './DysonOnboardingPage';
 import { RoborockOnboardingWizard } from './RoborockOnboardingPage';
 import { DreoOnboardingWizard } from './DreoOnboardingPage';
-import { LoxoneOnboardingWizard } from './LoxoneOnboardingPage';
+import { LoxoneOnboardingWizard, LoxoneRoomMappingSection } from './LoxoneOnboardingPage';
 
 // ---- Types ----
 
@@ -603,6 +603,9 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
           </span>
         </div>
       )}
+
+      {/* Loxone room mapping — renders itself only once at least one Loxone room has been discovered */}
+      {app.id === 'loxone' && <LoxoneRoomMappingSection />}
 
       {/* Error banner */}
       {app.errorMessage && (

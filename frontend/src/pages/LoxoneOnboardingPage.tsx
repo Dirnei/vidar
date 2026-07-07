@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { loxoneAddMiniserver, loxoneGetAccount, loxoneRemoveMiniserver } from '../api/client';
-import type { LoxoneMiniserverSummary, LoxoneProbeResult } from '../types';
+import { loxoneAddMiniserver, loxoneGetAccount, loxoneRemoveMiniserver, loxoneGetRooms, loxoneSetRoomMapping, getRooms } from '../api/client';
+import type { LoxoneMiniserverSummary, LoxoneProbeResult, LoxoneRoomMapping, Room } from '../types';
 
 // Mirrors DreoOnboardingPage's visual language (shared global.css tokens, field
 // styles, btn-primary/secondary) for a consistent onboarding experience. Unlike Dreo's
@@ -44,6 +44,20 @@ function handleBlur(e: React.FocusEvent<HTMLInputElement>) {
   e.currentTarget.style.borderColor = 'var(--border-default)';
   e.currentTarget.style.boxShadow = 'none';
 }
+
+// Smaller variant of inputStyle for the inline room-mapping controls (select + rename input),
+// which sit inside an already-boxed row rather than a full form field.
+const miniControlStyle: React.CSSProperties = {
+  background: 'var(--bg-surface)',
+  border: '1px solid var(--border-default)',
+  borderRadius: 'var(--radius-sm)',
+  padding: '6px 10px',
+  color: 'var(--text-primary)',
+  fontFamily: 'var(--font-body)',
+  fontSize: 12,
+  outline: 'none',
+  flexShrink: 0,
+};
 
 // ---- Error banner + message mapping ----
 
@@ -388,6 +402,184 @@ export function LoxoneOnboardingWizard({ onClose, onSuccess }: LoxoneOnboardingW
             <MiniserverForm onAdded={handleAdded} />
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ---- Room mapping ----
+//
+// Lets the user tie each Loxone room (keyed on its uuid, so renames don't break the
+// mapping) onto a Vidar room: pick an existing one, create a new one from the Loxone
+// name, or clear the mapping. Lives on the Applications page (in the Loxone card),
+// not in the onboarding wizard, since it applies to rooms discovered after Miniservers
+// are already added and devices are being onboarded.
+
+const CREATE_NEW_VALUE = '__create__';
+
+function RoomMappingRow({ mapping, vidarRooms, onChanged }: {
+  mapping: LoxoneRoomMapping;
+  vidarRooms: Room[];
+  onChanged: () => void;
+}) {
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState(mapping.roomName);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function apply(body: { vidarRoomId?: string | null; createRoomName?: string | null }) {
+    setSaving(true);
+    setError(null);
+    try {
+      await loxoneSetRoomMapping({
+        serial: mapping.serial,
+        roomUuid: mapping.roomUuid,
+        roomName: mapping.roomName,
+        ...body,
+      });
+      setCreating(false);
+      onChanged();
+    } catch (err) {
+      setError(friendlyError(err, 'Failed to update room mapping'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleSelectChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    const value = e.target.value;
+    if (value === CREATE_NEW_VALUE) {
+      setNewName(mapping.roomName);
+      setCreating(true);
+      return;
+    }
+    if (value === '') {
+      void apply({ vidarRoomId: null, createRoomName: null });
+      return;
+    }
+    void apply({ vidarRoomId: value });
+  }
+
+  function handleCreateSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newName.trim()) return;
+    void apply({ createRoomName: newName.trim() });
+  }
+
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 10,
+      background: 'var(--bg-hover)', border: '1px solid var(--border-default)',
+      borderRadius: 'var(--radius-sm)', padding: '8px 12px',
+    }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 500 }}>{mapping.roomName}</div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          {mapping.vidarRoomName ? `→ ${mapping.vidarRoomName}` : 'Not mapped'}
+        </div>
+      </div>
+
+      {creating ? (
+        <form onSubmit={handleCreateSubmit} style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }}>
+          <input
+            type="text"
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            style={{ ...miniControlStyle, width: 150 }}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
+            autoFocus
+            disabled={saving}
+          />
+          <button
+            type="submit"
+            className="btn-primary"
+            style={{ padding: '5px 10px', fontSize: 12, opacity: saving || !newName.trim() ? 0.5 : 1 }}
+            disabled={saving || !newName.trim()}
+          >
+            Create
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            style={{ padding: '5px 10px', fontSize: 12 }}
+            onClick={() => setCreating(false)}
+            disabled={saving}
+          >
+            Cancel
+          </button>
+        </form>
+      ) : (
+        <select
+          value={mapping.vidarRoomId ?? ''}
+          onChange={handleSelectChange}
+          disabled={saving}
+          style={{ ...miniControlStyle, appearance: 'none' as const, width: 180 }}
+        >
+          <option value="">— Unmapped —</option>
+          {vidarRooms.map(r => (
+            <option key={r.id} value={r.id}>{r.name}</option>
+          ))}
+          <option value={CREATE_NEW_VALUE}>+ Create new room…</option>
+        </select>
+      )}
+
+      {error && <ErrorBanner message={error} />}
+    </div>
+  );
+}
+
+export function LoxoneRoomMappingSection() {
+  const [mappings, setMappings] = useState<LoxoneRoomMapping[]>([]);
+  const [vidarRooms, setVidarRooms] = useState<Room[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  async function load() {
+    try {
+      const [m, r] = await Promise.all([loxoneGetRooms(), getRooms()]);
+      setMappings(m);
+      setVidarRooms(r);
+    } catch {
+      setMappings([]);
+      setVidarRooms([]);
+    } finally {
+      setLoaded(true);
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  // Only a first-class feature once rooms have actually been discovered.
+  if (!loaded || mappings.length === 0) return null;
+
+  const bySerial = new Map<string, LoxoneRoomMapping[]>();
+  for (const m of mappings) {
+    const list = bySerial.get(m.serial);
+    if (list) list.push(m);
+    else bySerial.set(m.serial, [m]);
+  }
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={fieldLabelStyle}>Rooms</div>
+      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+        Map each discovered Loxone room to a Vidar room — devices in that room follow automatically.
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {[...bySerial.entries()].map(([serial, rooms]) => (
+          <div key={serial}>
+            {bySerial.size > 1 && (
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>{serial}</div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {rooms.map(m => (
+                <RoomMappingRow key={`${m.serial}-${m.roomUuid}`} mapping={m} vidarRooms={vidarRooms} onChanged={load} />
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

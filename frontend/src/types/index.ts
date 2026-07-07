@@ -240,3 +240,11 @@ export interface LoxoneAccount {
   connected: boolean;
   miniservers: LoxoneMiniserverSummary[];
 }
+
+export interface LoxoneRoomMapping {
+  serial: string;
+  roomUuid: string;
+  roomName: string;
+  vidarRoomId?: string | null;
+  vidarRoomName?: string | null;
+}

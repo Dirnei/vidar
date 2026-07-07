@@ -1,4 +1,4 @@
-import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry, Application, WebhookRoute, WebhookEventPage, ThresholdRule, ThresholdEventPage, DysonDevice, RoborockDevice, DreoDevice, LoxoneProbeResult, LoxoneAccount } from '../types';
+import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry, Application, WebhookRoute, WebhookEventPage, ThresholdRule, ThresholdEventPage, DysonDevice, RoborockDevice, DreoDevice, LoxoneProbeResult, LoxoneAccount, LoxoneRoomMapping } from '../types';
 
 const BASE = '/api';
 
@@ -257,5 +257,19 @@ export function loxoneGetAccount(): Promise<LoxoneAccount> {
 
 export function loxoneRemoveMiniserver(serial: string): Promise<void> {
   return request(`/loxone/miniservers/${encodeURIComponent(serial)}`, { method: 'DELETE' });
+}
+
+export function loxoneGetRooms(): Promise<LoxoneRoomMapping[]> {
+  return request('/loxone/rooms');
+}
+
+export function loxoneSetRoomMapping(body: {
+  serial: string;
+  roomUuid: string;
+  roomName: string;
+  vidarRoomId?: string | null;
+  createRoomName?: string | null;
+}): Promise<void> {
+  return request('/loxone/rooms/mapping', { method: 'PUT', body: JSON.stringify(body) });
 }
 
