@@ -11,6 +11,7 @@ using Vidar.Core.Webhooks;
 using Vidar.Host.Actors;
 using Vidar.Host.Dreo;
 using Vidar.Host.Dyson;
+using Vidar.Host.Loxone;
 using Vidar.Host.Persistence;
 using Vidar.Host.Roborock;
 using Vidar.Host.Webhooks;
@@ -48,6 +49,9 @@ builder.Services.AddHttpClient<IRoborockAuth, SidecarRoborockAuth>(c =>
 var dreo2mqttUrl = Environment.GetEnvironmentVariable("DREO2MQTT_URL") ?? "http://dreo2mqtt:8896";
 builder.Services.AddHttpClient<IDreoAuth, SidecarDreoAuth>(c =>
     c.BaseAddress = new Uri(dreo2mqttUrl));
+var loxone2mqttUrl = Environment.GetEnvironmentVariable("LOXONE2MQTT_URL") ?? "http://loxone2mqtt:8897";
+builder.Services.AddHttpClient<ILoxoneSidecar, LoxoneSidecar>(c =>
+    c.BaseAddress = new Uri(loxone2mqttUrl));
 builder.Services.AddHttpClient("shelly", client =>
 {
     client.Timeout = TimeSpan.FromSeconds(5);
