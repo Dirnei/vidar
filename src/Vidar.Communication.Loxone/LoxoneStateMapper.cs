@@ -45,6 +45,21 @@ public static class LoxoneStateMapper
                 case "Touch":
                     AddText(result, p, "action", "action");
                     break;
+                case "ColorPickerRGBW":
+                    AddLight(result, p);
+                    AddText(result, p, "color", "light_color");
+                    AddNumber(result, p, "white", "light_white");
+                    break;
+                case "ColorPickerTunableWhite":
+                    AddLight(result, p);
+                    AddNumber(result, p, "colortemp", "light_color_temp");
+                    break;
+                case "RoomControllerV2":
+                    AddNumber(result, p, "tempActual", "temperature");
+                    AddNumber(result, p, "tempTarget", "target_temp");
+                    AddNumber(result, p, "mode", "climate_mode");
+                    AddNumber(result, p, "valve", "valve");
+                    break;
             }
         }
         return result;
