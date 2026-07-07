@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getApplications, getWebhookRoutes, saveApplication, dysonGetAccount, roborockGetAccount, dreoGetAccount, loxoneGetAccount } from '../api/client';
+import { getApplications, getWebhookRoutes, saveApplication, dysonGetAccount, roborockGetAccount, dreoGetAccount, loxoneGetAccount, oauthAuthorize } from '../api/client';
 import type { Application, WebhookRoute } from '../types';
 import { DysonOnboardingWizard } from './DysonOnboardingPage';
 import { RoborockOnboardingWizard } from './RoborockOnboardingPage';
@@ -119,6 +119,20 @@ const APP_DEFS: AppDef[] = [
     icon: '\u{1F7E9}',
     description: 'Loxone Miniserver — relays, dimmers, light scenes, presence, smoke, Touch. Use the Add Miniserver wizard; you can add more than one.',
     fields: [],
+  },
+  {
+    id: 'spotify',
+    name: 'Spotify',
+    icon: '\u{1F3B5}',
+    description: 'Control your Loxone Audio Server via Spotify. Register a Spotify Developer app, enter its credentials, then Authorize. Requires Spotify Premium.',
+    fields: [
+      { key: 'clientId', label: 'Client ID', placeholder: 'Spotify app client ID', type: 'text' },
+      { key: 'clientSecret', label: 'Client Secret', placeholder: 'Spotify app client secret', type: 'password' },
+      { key: 'oauthTokenEndpoint', label: 'Token Endpoint', placeholder: 'https://accounts.spotify.com/api/token', defaultValue: 'https://accounts.spotify.com/api/token', type: 'text' },
+      { key: 'oauthAuthorizeEndpoint', label: 'Authorize Endpoint', placeholder: 'https://accounts.spotify.com/authorize', defaultValue: 'https://accounts.spotify.com/authorize', type: 'text' },
+      { key: 'oauthScopes', label: 'Scopes', placeholder: 'user-read-playback-state user-modify-playback-state user-read-currently-playing', defaultValue: 'user-read-playback-state user-modify-playback-state user-read-currently-playing', type: 'text' },
+      { key: 'hostBaseUrl', label: 'Vidar Host URL', placeholder: 'http://vidar-host:8080', defaultValue: 'http://vidar-host:8080', type: 'text' },
+    ],
   },
   {
     id: 'ecowitt',
@@ -773,6 +787,23 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
             style={{ marginLeft: 'auto' }}
           >
             Add Miniserver
+          </button>
+        )}
+        {app.id === 'spotify' && (
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={async () => {
+              try {
+                const { authorizeUrl } = await oauthAuthorize('spotify');
+                window.open(authorizeUrl, '_blank', 'noopener');
+              } catch (e) {
+                setSaveError(e instanceof Error ? e.message : 'Authorize failed');
+              }
+            }}
+            style={{ marginLeft: 'auto' }}
+          >
+            Authorize
           </button>
         )}
       </div>

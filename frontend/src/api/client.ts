@@ -273,3 +273,9 @@ export function loxoneSetRoomMapping(body: {
   return request('/loxone/rooms/mapping', { method: 'PUT', body: JSON.stringify(body) });
 }
 
+// --- OAuth (Spotify, etc.) ---
+
+export function oauthAuthorize(integrationId: string): Promise<{ authorizeUrl: string }> {
+  return request(`/oauth/${integrationId}/authorize`);
+}
+

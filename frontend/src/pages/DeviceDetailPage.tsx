@@ -14,6 +14,7 @@ import { useExpertMode } from '../components/ExpertMode';
 import { VacuumCard } from '../components/VacuumCard';
 import { BambuPrinterCard } from '../components/BambuPrinterCard';
 import { ClimateCard } from '../components/ClimateCard';
+import { SpotifyPlayerCard } from '../components/SpotifyPlayerCard';
 
 export function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -321,7 +322,11 @@ export function DeviceDetailPage() {
           display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(220px, 100%), 1fr))',
           gap: 14, marginBottom: 28,
         }}>
-          {device.communicationType === 'bambu' ? (
+          {device.communicationType === 'spotify' ? (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <SpotifyPlayerCard device={device} state={state} cmd={cmd} />
+            </div>
+          ) : device.communicationType === 'bambu' ? (
             <div style={{ gridColumn: '1 / -1' }}>
               <BambuPrinterCard device={device} state={state} cmd={cmd} />
             </div>
