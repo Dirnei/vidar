@@ -255,12 +255,149 @@ class BridgeManager:
             bridge.stop()
         log(f"bridges (re)started for {len(self.bridges)} Miniserver(s)")
 
+    def replace_one(self, ms):
+        """Live re-onboard path for a SINGLE Miniserver (used by the onboarding HTTP handler,
+        Task 9): stop and replace just that serial's bridge, leaving every other running
+        Miniserver bridge untouched. Deliberately narrower than `replace()`/dreo2mqtt's
+        single-account `BridgeManager.replace` -- a Vidar install can bridge several Miniservers
+        at once, and a POST /auth/login validating one of them must not tear down the others."""
+        serial = ms["serial"]
+        bridge = MiniserverBridge(serial, ms["host"], ms.get("user", ""),
+                                  ms.get("password", ""), self.target)
+        with self._lock:
+            old = self.bridges.get(serial)
+            self.bridges[serial] = bridge
+            bridge.start()
+        if old is not None:
+            old.stop()
+        log(f"[{serial}] bridge (re)started from onboarding")
+
     def forward_command(self, serial, uuid, command):
         bridge = self.bridges.get(serial)
         if bridge is not None:
             bridge.forward_command(uuid, command)
         else:
             log(f"[{serial}] command for {uuid} dropped (no active bridge)")
+
+
+# ── Onboarding (validate a Miniserver + live-(re)start its bridge) ─────────────
+# Runs in-process as an HTTP server the Vidar host calls at http://loxone2mqtt:<port>, gated by
+# LOXONE_ONBOARD_HTTP=1. Mirrors dreo2mqtt's onboarding server, adapted from "one cloud account"
+# to "one Miniserver per POST" (see BridgeManager.replace_one above for why that's scoped
+# per-serial rather than reusing the full-fleet `replace`).
+
+ONBOARD_PORT = int(os.environ.get("LOXONE_ONBOARD_PORT", "8897"))
+
+
+def probe_miniserver(host, user, password) -> dict:
+    """Connect to a Miniserver, fetch its structure, and return the summary the host shows during
+    onboarding: {"serial", "controlCount", "roomCount"}. Raises on connection/handshake failure
+    (mapped to an HTTP status by `_auth_status_code`); the client is always closed, whether the
+    probe succeeds or fails, so a failed probe never leaks the connection's background threads."""
+    from loxone_client import LoxoneClient
+
+    client = LoxoneClient(host, user, password)
+    try:
+        client.connect()
+        loxapp3 = client.get_structure()
+        serial = (loxapp3.get("msInfo") or {}).get("serialNr", "")
+        structure = build_structure(loxapp3, serial)
+        return {"serial": serial, "controlCount": len(structure["controls"]),
+                "roomCount": len(structure["rooms"])}
+    finally:
+        client.close()
+
+
+def _auth_status_code(exc):
+    """Map a Miniserver probe failure to an HTTP status the host understands, mirroring
+    dreo2mqtt._auth_status_code. pyloxone-api's HTTP calls (the LoxAPP3.json fetch and the
+    public-key/token exchange during the handshake) run over httpx; an httpx.HTTPStatusError with
+    a 401/403 response means the Miniserver rejected the credentials outright -> 401.
+
+    Everything else is treated as an upstream connectivity problem (502), NOT a credentials
+    problem -- including the plain `ConnectionError` that `LoxoneClient.connect()` itself raises
+    when the RSA/AES handshake fails for ANY reason. That conflation is a genuine library
+    limitation, not a guess papered over: pyloxone-api's `async_init()` returns a bare bool with
+    no separate signal for "bad password" vs. "handshake failed some other way", so narrowing a
+    bare ConnectionError to 401 would be inventing a distinction the library doesn't expose.
+    Confirming (or replacing) this mapping against a real Miniserver's actual rejection response
+    is Task 13's E2E boundary, not this one's."""
+    try:
+        import httpx
+    except ImportError:
+        return 502
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+        if exc.response.status_code in (401, 403):
+            return 401
+    return 502
+
+
+def start_onboarding_server(manager=None):
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    class OnboardHandler(BaseHTTPRequestHandler):
+        def _send(self, code, obj):
+            body = json.dumps(obj).encode()
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _read_body(self):
+            te = (self.headers.get("Transfer-Encoding") or "").lower()
+            if "chunked" in te:
+                chunks = []
+                while True:
+                    line = self.rfile.readline().strip()
+                    if not line:
+                        continue
+                    size = int(line.split(b";")[0], 16)
+                    if size == 0:
+                        self.rfile.readline()  # trailing CRLF
+                        break
+                    chunks.append(self.rfile.read(size))
+                    self.rfile.readline()  # CRLF after each chunk
+                return b"".join(chunks)
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            return self.rfile.read(length) if length else b""
+
+        def do_POST(self):
+            raw = self._read_body() or b"{}"
+            try:
+                req = json.loads(raw or b"{}")
+            except Exception:  # noqa: BLE001
+                self._send(400, {"error": "invalid json"})
+                return
+            path = self.path.rstrip("/")
+            try:
+                if path == "/auth/login":
+                    host, user, password = req["host"], req["user"], req["password"]
+                    summary = probe_miniserver(host, user, password)
+                    self._send(200, summary)
+                    # Push: (re)start THIS Miniserver's bridge immediately so re-onboarding takes
+                    # effect without a container restart. A failure here must NOT fail the login
+                    # response -- the host still persists to Mongo and a restart (cold-start
+                    # path) recovers.
+                    if manager is not None:
+                        try:
+                            manager.replace_one({"serial": summary["serial"], "host": host,
+                                                 "user": user, "password": password})
+                        except Exception as e:  # noqa: BLE001
+                            log(f"bridge (re)start after login failed: {e}")
+                else:
+                    self._send(404, {"error": "not found"})
+            except Exception as e:  # noqa: BLE001
+                code = _auth_status_code(e)
+                log(f"onboard {path} -> {code}: {e}")
+                self._send(code, {"error": str(e)})
+
+        def log_message(self, *a):  # silence default request logging
+            pass
+
+    srv = ThreadingHTTPServer(("0.0.0.0", ONBOARD_PORT), OnboardHandler)
+    threading.Thread(target=srv.serve_forever, name="onboard-http", daemon=True).start()
+    log(f"onboarding HTTP server listening on :{ONBOARD_PORT}")
 
 
 # ── Mongo manifest (cold start) ─────────────────────────────────────────────────
@@ -299,6 +436,13 @@ def main():
         target.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
 
     manager = BridgeManager(target)
+
+    if os.environ.get("LOXONE_ONBOARD_HTTP") == "1":
+        # Started early and unconditionally: onboarding must work even before any Mongo manifest
+        # exists, mirroring dreo2mqtt's crash-loop-before-onboarding fix. Passing `manager` lets a
+        # successful /auth/login (re)start that Miniserver's bridge immediately -- no container
+        # restart needed to re-onboard.
+        start_onboarding_server(manager)
 
     def on_connect(cl, u, flags, rc, props=None):
         log(f"target broker connected ({rc})")

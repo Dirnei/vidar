@@ -1,3 +1,8 @@
+import sys
+import types
+
+import pytest
+
 import loxone2mqtt as lx
 
 
@@ -70,3 +75,139 @@ def test_flatten_lightcontroller_active_mood_and_active_together():
     out = lx.flatten_control_state("LightControllerV2", {"activeMoods": [778], "active": 1})
     assert out["activeMood"] == 778
     assert out["active"] == 1
+
+
+# ── Onboarding: probe_miniserver / _auth_status_code (Task 9) ───────────────────
+# LoxoneClient is imported lazily inside probe_miniserver (`from loxone_client import
+# LoxoneClient`), so a fake `loxone_client` module is installed into sys.modules for the
+# duration of each test -- no real WS/pyloxone-api is touched.
+
+class _FakeLoxoneClient:
+    """Stand-in for loxone_client.LoxoneClient. Class-level knobs (reset per test) configure
+    connect() to raise, and what get_structure() returns."""
+    connect_error = None
+    structure = {
+        "msInfo": {"serialNr": "504F94A0"},
+        "rooms": {"r1": {"name": "Kitchen"}},
+        "controls": {"u1": {"name": "Relay", "type": "Switch", "room": "r1"}},
+    }
+    last_instance = None
+
+    def __init__(self, host, user, password):
+        self.host, self.user, self.password = host, user, password
+        self.closed = False
+        _FakeLoxoneClient.last_instance = self
+
+    def connect(self):
+        if _FakeLoxoneClient.connect_error is not None:
+            raise _FakeLoxoneClient.connect_error
+
+    def get_structure(self):
+        return _FakeLoxoneClient.structure
+
+    def close(self):
+        self.closed = True
+
+
+def _install_fake_loxone_client(monkeypatch, connect_error=None, structure=None):
+    _FakeLoxoneClient.connect_error = connect_error
+    _FakeLoxoneClient.structure = structure if structure is not None else {
+        "msInfo": {"serialNr": "504F94A0"},
+        "rooms": {"r1": {"name": "Kitchen"}},
+        "controls": {"u1": {"name": "Relay", "type": "Switch", "room": "r1"}},
+    }
+    fake_module = types.ModuleType("loxone_client")
+    fake_module.LoxoneClient = _FakeLoxoneClient
+    monkeypatch.setitem(sys.modules, "loxone_client", fake_module)
+
+
+def test_probe_miniserver_returns_summary(monkeypatch):
+    _install_fake_loxone_client(monkeypatch)
+    summary = lx.probe_miniserver("10.0.0.5", "admin", "secret")
+    assert summary == {"serial": "504F94A0", "controlCount": 1, "roomCount": 1}
+    assert _FakeLoxoneClient.last_instance.closed is True  # always closed, even on success
+
+
+def test_probe_miniserver_closes_client_even_on_connect_failure(monkeypatch):
+    _install_fake_loxone_client(monkeypatch, connect_error=ConnectionError("handshake failed"))
+    with pytest.raises(ConnectionError):
+        lx.probe_miniserver("10.0.0.5", "admin", "wrong")
+    assert _FakeLoxoneClient.last_instance.closed is True  # never leak the client on failure
+
+
+def test_auth_status_code_maps_generic_connect_failure_to_502():
+    # LoxoneClient.connect() raises a bare ConnectionError for ANY handshake failure (bad
+    # credentials or otherwise) -- pyloxone-api gives no separate signal, so this can't safely be
+    # narrowed to 401 without a real Miniserver (Task 13); treated as an upstream problem.
+    assert lx._auth_status_code(ConnectionError("Loxone handshake failed for 10.0.0.5")) == 502
+    assert lx._auth_status_code(OSError("host unreachable")) == 502
+    assert lx._auth_status_code(TimeoutError()) == 502
+
+
+def test_auth_status_code_maps_http_401_403_to_401(monkeypatch):
+    fake_httpx = types.ModuleType("httpx")
+
+    class _Resp:
+        def __init__(self, status_code):
+            self.status_code = status_code
+
+    class HTTPStatusError(Exception):
+        def __init__(self, response):
+            self.response = response
+
+    fake_httpx.HTTPStatusError = HTTPStatusError
+    monkeypatch.setitem(sys.modules, "httpx", fake_httpx)
+
+    assert lx._auth_status_code(HTTPStatusError(_Resp(401))) == 401
+    assert lx._auth_status_code(HTTPStatusError(_Resp(403))) == 401
+    assert lx._auth_status_code(HTTPStatusError(_Resp(500))) == 502
+
+
+# ── BridgeManager.replace_one (Task 9: scoped live re-onboard) ──────────────────
+
+class _FakeMiniserverBridge:
+    """Stand-in for MiniserverBridge that records lifecycle calls without threads/WS."""
+    instances = []
+
+    def __init__(self, serial, host, user, password, target):
+        self.serial, self.host, self.user, self.password = serial, host, user, password
+        self.started = False
+        self.stopped = False
+        _FakeMiniserverBridge.instances.append(self)
+
+    def start(self):
+        self.started = True
+
+    def stop(self):
+        self.stopped = True
+
+
+def _manager_with_fake_bridge(monkeypatch):
+    _FakeMiniserverBridge.instances = []
+    monkeypatch.setattr(lx, "MiniserverBridge", _FakeMiniserverBridge)
+    return lx.BridgeManager(target=object())
+
+
+def test_bridge_manager_replace_one_leaves_other_bridges_running(monkeypatch):
+    mgr = _manager_with_fake_bridge(monkeypatch)
+    mgr.ensure_started([
+        {"serial": "A", "host": "10.0.0.1", "user": "u", "password": "p"},
+        {"serial": "B", "host": "10.0.0.2", "user": "u", "password": "p"},
+    ])
+    mgr.replace_one({"serial": "A", "host": "10.0.0.9", "user": "u2", "password": "p2"})
+
+    assert mgr.bridges["B"].stopped is False  # untouched by the single-serial replace
+
+    a_instances = [b for b in _FakeMiniserverBridge.instances if b.serial == "A"]
+    assert len(a_instances) == 2
+    assert a_instances[0].stopped is True                 # old A bridge torn down
+    assert a_instances[1].stopped is False                # new A bridge live
+    assert a_instances[1].host == "10.0.0.9"
+    assert mgr.bridges["A"] is a_instances[1]
+
+
+def test_bridge_manager_replace_one_starts_bridge_when_none_running(monkeypatch):
+    mgr = _manager_with_fake_bridge(monkeypatch)
+    mgr.replace_one({"serial": "A", "host": "10.0.0.9", "user": "u", "password": "p"})
+    assert mgr.bridges["A"].started is True
+    assert mgr.bridges["A"].stopped is False
