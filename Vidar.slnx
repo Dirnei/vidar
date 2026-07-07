@@ -20,6 +20,7 @@
     <Project Path="tests/Vidar.Communication.Bambu.Tests/Vidar.Communication.Bambu.Tests.csproj" />
     <Project Path="tests/Vidar.Communication.Dreo.Tests/Vidar.Communication.Dreo.Tests.csproj" />
     <Project Path="tests/Vidar.Communication.Loxone.Tests/Vidar.Communication.Loxone.Tests.csproj" />
+    <Project Path="tests/Vidar.Communication.Spotify.Tests/Vidar.Communication.Spotify.Tests.csproj" />
     <Project Path="tests/Vidar.Communication.E3dc.Tests/Vidar.Communication.E3dc.Tests.csproj" />
     <Project Path="tests/Vidar.Communication.Ecowitt.Tests/Vidar.Communication.Ecowitt.Tests.csproj" />
     <Project Path="tests/Vidar.Communication.HomeConnect.Tests/Vidar.Communication.HomeConnect.Tests.csproj" />
