@@ -255,7 +255,7 @@ services:
       - DREO_ONBOARD_HTTP=1
     restart: unless-stopped
 
-  loxone-worker:
+  vidar-comm-loxone:
     build:
       context: .
       dockerfile: src/Vidar.Communication.Loxone/Dockerfile
@@ -271,7 +271,7 @@ services:
     # bridges them onto the local broker. This worker consumes that broker.
     environment:
       - VIDAR_CLUSTER_SEED=lighthouse:4053
-      - VIDAR_HOSTNAME=loxone-worker
+      - VIDAR_HOSTNAME=vidar-comm-loxone
       - VIDAR_AKKA_PORT=4064
       - VIDAR_MQTT_HOST=emqx
       - VIDAR_MQTT_PORT=1883
