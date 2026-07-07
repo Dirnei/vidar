@@ -224,3 +224,19 @@ export interface DreoDevice {
   model: string;
   name: string;
 }
+
+export interface LoxoneProbeResult {
+  serial: string;
+  controlCount: number;
+  roomCount: number;
+}
+
+export interface LoxoneMiniserverSummary {
+  serial: string;
+  host: string;
+}
+
+export interface LoxoneAccount {
+  connected: boolean;
+  miniservers: LoxoneMiniserverSummary[];
+}

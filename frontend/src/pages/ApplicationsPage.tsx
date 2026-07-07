@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { getApplications, getWebhookRoutes, saveApplication, dysonGetAccount, roborockGetAccount, dreoGetAccount } from '../api/client';
+import { getApplications, getWebhookRoutes, saveApplication, dysonGetAccount, roborockGetAccount, dreoGetAccount, loxoneGetAccount } from '../api/client';
 import type { Application, WebhookRoute } from '../types';
 import { DysonOnboardingWizard } from './DysonOnboardingPage';
 import { RoborockOnboardingWizard } from './RoborockOnboardingPage';
 import { DreoOnboardingWizard } from './DreoOnboardingPage';
+import { LoxoneOnboardingWizard } from './LoxoneOnboardingPage';
 
 // ---- Types ----
 
@@ -110,6 +111,13 @@ const APP_DEFS: AppDef[] = [
     name: 'Dreo',
     icon: '\u{1F4A8}',
     description: 'Dreo smart ceiling fans via your Dreo account. Use the Connect wizard to sign in.',
+    fields: [],
+  },
+  {
+    id: 'loxone',
+    name: 'Loxone',
+    icon: '\u{1F7E9}',
+    description: 'Loxone Miniserver — relays, dimmers, light scenes, presence, smoke, Touch. Use the Add Miniserver wizard; you can add more than one.',
     fields: [],
   },
   {
@@ -418,6 +426,8 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
   const [roborockAccount, setRoborockAccount] = useState<{ connected: boolean; email?: string; deviceCount?: number } | null>(null);
   const [showDreoWizard, setShowDreoWizard] = useState(false);
   const [dreoAccount, setDreoAccount] = useState<{ connected: boolean; email?: string; deviceCount?: number } | null>(null);
+  const [showLoxoneWizard, setShowLoxoneWizard] = useState(false);
+  const [loxoneAccount, setLoxoneAccount] = useState<{ connected: boolean; miniservers: { serial: string; host: string }[] } | null>(null);
 
   // Fetch Dyson account info once (and when wizard completes)
   useEffect(() => {
@@ -436,6 +446,12 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
     if (app.id !== 'dreo') return;
     dreoGetAccount().then(setDreoAccount).catch(() => setDreoAccount(null));
   }, [app.id, showDreoWizard]);
+
+  // Fetch Loxone Miniserver list once (and when wizard completes)
+  useEffect(() => {
+    if (app.id !== 'loxone') return;
+    loxoneGetAccount().then(setLoxoneAccount).catch(() => setLoxoneAccount(null));
+  }, [app.id, showLoxoneWizard]);
 
   // Sync when app data reloads
   useEffect(() => {
@@ -559,6 +575,30 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
             Account not connected.{' '}
             <button type="button" style={dysonLinkStyle} onClick={() => setShowDreoWizard(true)}>
               Connect now
+            </button>
+          </span>
+        </div>
+      )}
+
+      {/* Loxone Miniserver status */}
+      {app.id === 'loxone' && loxoneAccount?.connected && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-green)', flexShrink: 0, display: 'inline-block' }} />
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+            {loxoneAccount.miniservers.length} Miniserver{loxoneAccount.miniservers.length !== 1 ? 's' : ''} added
+            {loxoneAccount.miniservers.length > 0 && ` (${loxoneAccount.miniservers.map(m => m.host).join(', ')})`} ·{' '}
+            <button type="button" style={dysonLinkStyle} onClick={() => setShowLoxoneWizard(true)}>
+              Manage
+            </button>
+          </span>
+        </div>
+      )}
+      {app.id === 'loxone' && loxoneAccount && !loxoneAccount.connected && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+            No Miniserver added yet.{' '}
+            <button type="button" style={dysonLinkStyle} onClick={() => setShowLoxoneWizard(true)}>
+              Add one now
             </button>
           </span>
         </div>
@@ -722,6 +762,16 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
             Connect account
           </button>
         )}
+        {app.id === 'loxone' && (
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setShowLoxoneWizard(true)}
+            style={{ marginLeft: 'auto' }}
+          >
+            Add Miniserver
+          </button>
+        )}
       </div>
 
       {/* Dyson onboarding wizard */}
@@ -749,6 +799,15 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
       {showDreoWizard && (
         <DreoOnboardingWizard
           onClose={() => setShowDreoWizard(false)}
+          onSuccess={onSaved}
+        />
+      )}
+
+      {/* Loxone onboarding wizard. Repeatable — onSuccess refreshes the list but the
+          wizard stays mounted so the user can add multiple Miniservers before closing. */}
+      {showLoxoneWizard && (
+        <LoxoneOnboardingWizard
+          onClose={() => setShowLoxoneWizard(false)}
           onSuccess={onSaved}
         />
       )}

@@ -1,4 +1,4 @@
-import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry, Application, WebhookRoute, WebhookEventPage, ThresholdRule, ThresholdEventPage, DysonDevice, RoborockDevice, DreoDevice } from '../types';
+import type { Room, Device, DiscoveredDevice, DeviceGroup, CommandPayload, ConfigurePayload, StateHistoryEntry, CommandHistoryEntry, Application, WebhookRoute, WebhookEventPage, ThresholdRule, ThresholdEventPage, DysonDevice, RoborockDevice, DreoDevice, LoxoneProbeResult, LoxoneAccount } from '../types';
 
 const BASE = '/api';
 
@@ -243,5 +243,19 @@ export function dreoLogin(email: string, password: string): Promise<DreoDevice[]
 
 export function dreoGetAccount(): Promise<{ connected: boolean; email?: string; deviceCount?: number }> {
   return request('/dreo/account');
+}
+
+// --- Loxone ---
+
+export function loxoneAddMiniserver(host: string, user: string, password: string): Promise<LoxoneProbeResult> {
+  return request('/loxone/miniservers', { method: 'POST', body: JSON.stringify({ host, user, password }) });
+}
+
+export function loxoneGetAccount(): Promise<LoxoneAccount> {
+  return request('/loxone/account');
+}
+
+export function loxoneRemoveMiniserver(serial: string): Promise<void> {
+  return request(`/loxone/miniservers/${encodeURIComponent(serial)}`, { method: 'DELETE' });
 }
 
