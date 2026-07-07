@@ -725,6 +725,34 @@ function renderCapabilityCard(
         </div>
       );
     }
+    // Enumerated choice -> labeled dropdown (e.g. a ceiling fan's mode: Straight/Natural/Sleep/Reverse).
+    if (cap.options && cap.options.length > 0) {
+      const current = typeof raw === 'number' ? raw : undefined;
+      const selected = cap.options.find(o => o.value === current);
+      return (
+        <div key={cap.key} style={capCardStyle}>
+          <Indicator color={accent} />
+          <div style={capLabelStyle}>{cap.label}</div>
+          <div style={capValueStyle(accent)}>{selected ? selected.label : (current ?? '—')}</div>
+          <select
+            value={current === undefined ? '' : String(current)}
+            onChange={e => cmd(cap.key, Number(e.target.value))}
+            style={{
+              marginTop: 10, width: '100%', padding: '8px 10px',
+              background: 'var(--bg-hover)', color: 'var(--text-primary)',
+              border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
+              fontFamily: 'var(--font-body)', fontSize: 14, cursor: 'pointer',
+            }}
+          >
+            {current === undefined && <option value="" disabled>—</option>}
+            {cap.options.map(o => (
+              <option key={o.value} value={String(o.value)}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+      );
+    }
+
     // Ranged numeric control -> slider. Commandable strings (e.g. cleanSegments room lists) have
     // no generic input yet, so they fall through to the read-only default below.
     if (cap.unit !== 'Text' && cap.unit !== 'Url') {

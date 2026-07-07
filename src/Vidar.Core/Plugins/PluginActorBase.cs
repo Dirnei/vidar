@@ -22,6 +22,13 @@ public abstract class PluginActorBase : ReceiveActor, IWithTimers
     private bool _enabled;
     private Dictionary<string, string> _settings = new();
 
+    // Last status published; re-announced on a heartbeat (see PublishStatus).
+    private string _lastStatus = "starting";
+    private int _lastDeviceCount;
+    private string? _lastError;
+
+    private sealed class RepublishStatus { public static readonly RepublishStatus Instance = new(); }
+
     protected abstract string PluginId { get; }
 
     // A plugin declares its own kind. Providers expose devices; consumers act on them.
@@ -69,6 +76,10 @@ public abstract class PluginActorBase : ReceiveActor, IWithTimers
             _configuredDevices[msg.NativeId] = msg.DeviceId;
             OnDeviceRegistered(msg.DeviceId, msg.NativeId, msg);
         });
+
+        // Heartbeat: re-announce the last status so presence survives the application-status
+        // pubsub subscription race on a freshly-started node and host/status-actor restarts.
+        Receive<RepublishStatus>(_ => DoPublishStatus());
     }
 
     protected override void PreStart()
@@ -97,8 +108,24 @@ public abstract class PluginActorBase : ReceiveActor, IWithTimers
 
     protected void PublishStatus(string status, int deviceCount, string? error = null)
     {
+        _lastStatus = status;
+        _lastDeviceCount = deviceCount;
+        _lastError = error;
+        DoPublishStatus();
+
+        // The application-status pubsub is fire-and-forget: a fresh node's publish can arrive
+        // before the host's subscription has gossiped to this node's mediator (silently lost as
+        // dead letters), and the host holds status only in memory. Re-announce on a heartbeat so
+        // the application reliably appears (and reappears after a host/status-actor restart).
+        // Idempotent — the host just overwrites the latest status per application id.
+        Timers.StartPeriodicTimer("status-heartbeat", RepublishStatus.Instance,
+            TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(15));
+    }
+
+    private void DoPublishStatus()
+    {
         Mediator.Tell(new Publish("application-status",
-            new ApplicationStatusUpdate(PluginId, status, deviceCount, error, AppType)));
+            new ApplicationStatusUpdate(PluginId, _lastStatus, _lastDeviceCount, _lastError, AppType)));
     }
 
     protected Guid? GetDeviceId(string nativeId) =>

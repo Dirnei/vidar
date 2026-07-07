@@ -19,6 +19,11 @@ export type UnitType =
   | 'Text' | 'Url'
   | 'Action';
 
+export interface CapabilityOption {
+  value: number;
+  label: string;
+}
+
 export interface CapabilityDescriptor {
   key: string;
   label: string;
@@ -26,6 +31,8 @@ export interface CapabilityDescriptor {
   commandable: boolean;
   min?: number;
   max?: number;
+  // When present, the capability is an enumerated choice rendered as a labeled dropdown.
+  options?: CapabilityOption[];
 }
 
 export interface Device {

@@ -57,7 +57,8 @@ public sealed class DiscoveryManagerActor : ReceiveActor
     private static string CapabilitiesSignature(IEnumerable<Vidar.Core.Capabilities.CapabilityDescriptor> caps) =>
         string.Join(";", caps
             .OrderBy(c => c.Key, StringComparer.Ordinal)
-            .Select(c => $"{c.Key}|{c.Label}|{c.Unit}|{c.Commandable}|{c.Min}|{c.Max}"));
+            .Select(c => $"{c.Key}|{c.Label}|{c.Unit}|{c.Commandable}|{c.Min}|{c.Max}|" +
+                (c.Options is null ? "" : string.Join(",", c.Options.Select(o => $"{o.Value}:{o.Label}")))));
 
     protected override void PreStart()
     {
