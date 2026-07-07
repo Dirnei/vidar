@@ -94,7 +94,7 @@ public sealed class ApplicationsController : ControllerBase
         };
 
         config.Enabled = request.Enabled;
-        config.Settings = request.Settings ?? new Dictionary<string, string>();
+        config.Settings = SettingsSecrets.PreserveRedacted(request.Settings ?? new Dictionary<string, string>(), existing?.Settings);
 
         await _repo.UpsertAsync(config);
 
@@ -127,7 +127,7 @@ public sealed class ApplicationsController : ControllerBase
             Enabled: config?.Enabled ?? false,
             Status: status?.Status ?? "unconfigured",
             DeviceCount: status?.DeviceCount ?? 0,
-            Settings: config?.Settings ?? new Dictionary<string, string>(),
+            Settings: SettingsSecrets.Redact(config?.Settings ?? new Dictionary<string, string>()),
             ErrorMessage: status?.ErrorMessage);
 }
 
