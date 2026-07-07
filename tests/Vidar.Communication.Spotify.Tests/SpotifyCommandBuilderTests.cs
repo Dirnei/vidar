@@ -48,6 +48,13 @@ public class SpotifyCommandBuilderTests
     }
 
     [Fact]
+    public void Volume_AcceptsLongValue()
+    {
+        // The host boxes integer command values as long — this is the real runtime type.
+        Assert.Equal("55", SpotifyCommandBuilder.Build("volume", 55L)!.Query["volume_percent"]);
+    }
+
+    [Fact]
     public void Volume_ClampsTo0_100()
     {
         Assert.Equal("100", SpotifyCommandBuilder.Build("volume", 150d)!.Query["volume_percent"]);

@@ -49,6 +49,7 @@ public static class SpotifyCommandBuilder
         bool b => b,
         string s when bool.TryParse(s, out var b) => b,
         double d => d != 0,
+        long l => l != 0,
         _ => false,
     };
 
@@ -56,6 +57,7 @@ public static class SpotifyCommandBuilder
     {
         double d => (int)Math.Round(d),
         int i => i,
+        long l => (int)l,
         string s when double.TryParse(s, out var d) => (int)Math.Round(d),
         _ => 0,
     };

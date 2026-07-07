@@ -102,7 +102,7 @@ public sealed class SpotifyBridgeActor : PluginActorBase
         var hostBaseUrl = settings.GetValueOrDefault("hostBaseUrl", "http://vidar-host:8080");
         var redirectUri = $"{hostBaseUrl.TrimEnd('/')}/api/oauth/spotify/callback";
 
-        _http ??= new HttpClient();
+        _http ??= new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
         var store = new SpotifyTokenStore(_tokenFilePath);
         _oauth = new SpotifyOAuth(_http, store, clientId, clientSecret, redirectUri, tokenEndpoint);
 
