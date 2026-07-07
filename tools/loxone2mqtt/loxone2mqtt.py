@@ -108,6 +108,10 @@ class MiniserverBridge:
         self.target = target
         self.client = None
         self._stop = threading.Event()
+        # Guards handoff of `self.client` between _run (owns the connect/reconnect loop) and
+        # stop()/forward_command (may be called from other threads) so exactly one caller closes
+        # any given LoxoneClient instance, never zero and never twice.
+        self._client_lock = threading.Lock()
         # uuid -> control type, learned from the last structure fetch. Needed to flatten each
         # state callback (flatten_control_state is keyed by control type).
         self._control_types = {}
@@ -118,9 +122,17 @@ class MiniserverBridge:
 
     def stop(self):
         self._stop.set()
-        if self.client:
+        self._close_client()
+
+    def _close_client(self):
+        """Detach and close the current client, if any. Safe to call from multiple threads and
+        multiple times: `self.client` is swapped out under a lock so only the caller that wins
+        the swap actually invokes `.close()` on a given instance."""
+        with self._client_lock:
+            client, self.client = self.client, None
+        if client is not None:
             try:
-                self.client.close()
+                client.close()
             except Exception:  # noqa: BLE001
                 pass
 
@@ -143,6 +155,12 @@ class MiniserverBridge:
                 self.client.run_forever()
             except Exception as e:  # noqa: BLE001
                 log(f"[{self.serial}] connection error: {e}; retry in {backoff}s")
+            finally:
+                # Whether connect() failed outright or run_forever() returned because the
+                # connection dropped, the client's event-loop thread + structure-poll thread are
+                # still alive until .close() runs. Close it here, before looping back to create
+                # the next LoxoneClient, so a dropped connection never leaks those threads.
+                self._close_client()
             if self._stop.is_set():
                 break
             self._stop.wait(backoff)
@@ -179,11 +197,15 @@ class MiniserverBridge:
     def forward_command(self, uuid, command):
         with self._types_lock:
             known = uuid in self._control_types
-        if not self.client or not known:
+        client = self.client
+        if not known:
             log(f"[{self.serial}] command for unknown control {uuid} dropped")
             return
+        if not client or not client.is_connected:
+            log(f"[{self.serial}] command for {uuid} dropped (client not connected)")
+            return
         try:
-            self.client.send_command(uuid, command_url(uuid, command))
+            client.send_command(uuid, command_url(uuid, command))
             log(f"[{self.serial}] sent {uuid} -> {command}")
         except Exception as e:  # noqa: BLE001
             log(f"[{self.serial}] command failed: {e}")

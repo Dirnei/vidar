@@ -57,6 +57,10 @@ class LoxoneClient:
         self._loop = None
         self._loop_thread = None
         self._start_future = None
+        # True once async_init() (the RSA/AES handshake + token auth) has succeeded, until
+        # close() runs. Lets MiniserverBridge.forward_command check liveness without reaching
+        # into pyloxone-api internals.
+        self._connected = False
 
         self._state_cb = None
         self._structure_cb = None
@@ -89,6 +93,7 @@ class LoxoneClient:
         ok = self._call(self._api.async_init())
         if not ok:
             raise ConnectionError(f"Loxone handshake failed for {self._host}")
+        self._connected = True
 
         self._rebuild_state_index()
         self._structure_last_modified = (self._api.json or {}).get("lastModified")
@@ -113,6 +118,7 @@ class LoxoneClient:
                 pass
 
     def close(self):
+        self._connected = False
         self._structure_poll_stop.set()
         if self._api is not None:
             try:
@@ -121,6 +127,11 @@ class LoxoneClient:
                 pass
         if self._loop is not None:
             self._loop.call_soon_threadsafe(self._loop.stop)
+
+    @property
+    def is_connected(self) -> bool:
+        """True once connect() has completed the handshake successfully, until close() runs."""
+        return self._connected
 
     def _call(self, coro, timeout=30):
         """Run `coro` on this client's event loop and block the calling thread for the result."""

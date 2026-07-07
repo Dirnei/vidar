@@ -36,3 +36,37 @@ def test_flatten_lightcontroller_active_mood():
 def test_command_url():
     assert lx.command_url("0f12", "on") == "jdev/sps/io/0f12/on"
     assert lx.command_url("0f12", "changeTo/778") == "jdev/sps/io/0f12/changeTo/778"
+
+
+def test_build_structure_skips_unsupported_control_type():
+    loxapp3 = {
+        "msInfo": {"serialNr": "504F94A0"},
+        "rooms": {"r1": {"name": "OG Kitchen"}},
+        "controls": {
+            "u1": {"name": "Kitchen Relay", "type": "Switch", "room": "r1"},
+            "u2": {"name": "Kitchen Blinds", "type": "Jalousie", "room": "r1"},
+        },
+    }
+    s = lx.build_structure(loxapp3, "504F94A0")
+    assert {c["uuid"] for c in s["controls"]} == {"u1"}
+    assert "u2" not in {c["uuid"] for c in s["controls"]}
+
+
+def test_flatten_presence_detector_state():
+    out = lx.flatten_control_state("PresenceDetector", {"active": 1, "brightness": 250})
+    assert out == {"active": 1, "brightness": 250}
+
+
+def test_flatten_smoke_alarm_state():
+    out = lx.flatten_control_state("SmokeAlarm", {"active": 0, "battery": 95, "tamper": 0})
+    assert out == {"active": 0, "battery": 95, "tamper": 0}
+
+
+def test_flatten_touch_state():
+    assert lx.flatten_control_state("Touch", {"action": 1}) == {"action": 1}
+
+
+def test_flatten_lightcontroller_active_mood_and_active_together():
+    out = lx.flatten_control_state("LightControllerV2", {"activeMoods": [778], "active": 1})
+    assert out["activeMood"] == 778
+    assert out["active"] == 1
