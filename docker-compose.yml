@@ -27,6 +27,7 @@ services:
       - VIDAR_MONGO_CONNECTION=mongodb://mongodb:27017
       - VIDAR_MONGO_DATABASE=vidar
       - DREO2MQTT_URL=http://dreo2mqtt:8896
+      - LOXONE2MQTT_URL=http://loxone2mqtt:8897
 
   vidar-comm-shelly:
     build:
@@ -252,6 +253,48 @@ services:
       - MONGO_URI=mongodb://mongodb:27017
       - MONGO_DB=vidar
       - DREO_ONBOARD_HTTP=1
+    restart: unless-stopped
+
+  loxone-worker:
+    build:
+      context: .
+      dockerfile: src/Vidar.Communication.Loxone/Dockerfile
+    depends_on:
+      lighthouse:
+        condition: service_started
+      emqx:
+        condition: service_started
+      vidar-host:
+        condition: service_healthy
+    restart: unless-stopped
+    # Loxone Miniservers are reached over a local WebSocket; the standalone loxone2mqtt sidecar
+    # bridges them onto the local broker. This worker consumes that broker.
+    environment:
+      - VIDAR_CLUSTER_SEED=lighthouse:4053
+      - VIDAR_HOSTNAME=loxone-worker
+      - VIDAR_AKKA_PORT=4064
+      - VIDAR_MQTT_HOST=emqx
+      - VIDAR_MQTT_PORT=1883
+      - VIDAR_LOXONE_BASE_TOPIC=loxone2mqtt
+
+  loxone2mqtt:
+    build:
+      context: ./tools/loxone2mqtt
+    depends_on:
+      - emqx
+      - mongodb
+    # Standalone Loxone Miniserver (local WebSocket) -> MQTT bridge, like dreo2mqtt. Reads the
+    # Miniserver credentials + structure from Mongo (populated by Vidar onboarding) and republishes
+    # each control's state to loxone2mqtt/<serial>/<uuid>. LOXONE_ONBOARD_HTTP=1 also serves the
+    # onboarding endpoint the host calls at http://loxone2mqtt:8897 (see LOXONE2MQTT_URL).
+    environment:
+      - MQTT_HOST=emqx
+      - MQTT_PORT=1883
+      - MQTT_BASE_TOPIC=loxone2mqtt
+      - MONGO_URI=mongodb://mongodb:27017
+      - MONGO_DB=vidar
+      - LOXONE_ONBOARD_HTTP=1
+      - LOXONE_ONBOARD_PORT=8897
     restart: unless-stopped
 
   mongodb:
