@@ -10,17 +10,30 @@ public static class DreoCommandBuilder
     {
         object? param = capabilityKey switch
         {
-            "power" => new Dictionary<string, object> { ["poweron"] = ToBool(value) },
+            // Control keys mirror the live device's state fields (see DreoStateMapper).
             "fan" => new Dictionary<string, object> { ["fanon"] = ToBool(value) },
             "fan_speed" => new Dictionary<string, object> { ["windlevel"] = ToInt(value) },
-            "mode" => new Dictionary<string, object> { ["windtype"] = ToStr(value) },
-            "light" => new Dictionary<string, object> { ["lighton"] = ToBool(value) },
-            "light_brightness" => new Dictionary<string, object> { ["brightness"] = ToInt(value) },
+            "mode" => new Dictionary<string, object> { ["mode"] = ToInt(value) },
+            // Composite light card sends a bool for on/off and a number for brightness.
+            "light" => BuildLight(value),
             "light_color_temp" => new Dictionary<string, object> { ["colortemp"] = ToInt(value) },
-            // direction: add here once the real key is known (E2E task).
             _ => null,
         };
         return param is null ? null : JsonSerializer.Serialize(param);
+    }
+
+    private static object? BuildLight(object value)
+    {
+        if (value is bool b) return new Dictionary<string, object> { ["lighton"] = b };
+        if (value is string s)
+        {
+            if (bool.TryParse(s, out var sb)) return new Dictionary<string, object> { ["lighton"] = sb };
+            if (double.TryParse(s, out var sd))
+                return new Dictionary<string, object> { ["brightness"] = Math.Clamp((int)Math.Round(sd), 1, 100) };
+            return null;
+        }
+        // numeric -> brightness (Dreo brightness range is 1..100)
+        return new Dictionary<string, object> { ["brightness"] = Math.Clamp(ToInt(value), 1, 100) };
     }
 
     private static bool ToBool(object v) => v switch
@@ -38,6 +51,4 @@ public static class DreoCommandBuilder
         string s when int.TryParse(s, out var n) => n,
         _ => 0,
     };
-
-    private static string ToStr(object v) => v?.ToString() ?? "";
 }

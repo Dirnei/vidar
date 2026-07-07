@@ -4,9 +4,9 @@ using Xunit;
 
 namespace Vidar.Communication.Dreo.Tests;
 
-// Validates DreoStateMapper against a captured payload. The fixture is currently
-// SYNTHETIC (based on PyDreo field keys) and is replaced with a real device capture
-// during live E2E — at which point `direction` (and the true `mode` key) are added.
+// Validates DreoStateMapper against a REAL flattened device/state capture from a live
+// DR-HCF001S (data.mixed unwrapped by the sidecar). Meta fields (muteon, wifi_rssi) must be
+// ignored by present-fields-only mapping.
 public class DreoStateMapperFixtureTests
 {
     [Fact]
@@ -17,12 +17,14 @@ public class DreoStateMapperFixtureTests
 
         var u = DreoStateMapper.MapState(json).ToDictionary(x => x.CapabilityKey, x => x.Value);
 
-        Assert.Equal(true, u["power"]);
-        Assert.Equal(true, u["fan"]);
-        Assert.Equal(4d, u["fan_speed"]);
-        Assert.Equal("natural", u["mode"]);
-        Assert.Equal(true, u["light"]);
-        Assert.Equal(60d, u["light_brightness"]);
-        Assert.Equal(35d, u["light_color_temp"]);
+        Assert.Equal(true, u["fan"]);              // fanon
+        Assert.Equal(3d, u["fan_speed"]);          // windlevel
+        Assert.Equal(2d, u["mode"]);               // mode (int)
+        var light = Assert.IsType<Dictionary<string, object>>(u["light"]);  // composite
+        Assert.Equal(false, light["on"]);          // lighton
+        Assert.Equal(1d, light["brightness"]);     // brightness
+        Assert.Equal(16d, u["light_color_temp"]);  // colortemp
+        Assert.False(u.ContainsKey("power"));      // mcuon read-only, not mapped
+        Assert.False(u.ContainsKey("muteon"));     // meta field ignored
     }
 }

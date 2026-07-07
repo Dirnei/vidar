@@ -21,17 +21,30 @@ public static class DreoStateMapper
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object) return result;
 
-            AddBool(result, root, "poweron", "power");
+            // Field keys confirmed against a live DR-HCF001S device/state (data.mixed).
+            // No `power`: mcuon is read-only and rejected as a command. mode is the int `mode`
+            // (values 1 Straight / 2 Natural / 3 Sleep / 4 Reverse). No direction field.
             AddBool(result, root, "fanon", "fan");
             AddNumber(result, root, "windlevel", "fan_speed");
-            AddText(result, root, "windtype", "mode");
-            AddBool(result, root, "lighton", "light");
-            AddNumber(result, root, "brightness", "light_brightness");
+            AddNumber(result, root, "mode", "mode");
+            AddLight(result, root);   // composite {on, brightness} for the unified light card
             AddNumber(result, root, "colortemp", "light_color_temp");
-            // direction: field key unknown until live capture — add an AddText/AddBool
-            // line here for it in the E2E task once the real payload is observed.
         }
         return result;
+    }
+
+    // The frontend `light` card is composite: it reads state.light as {on, brightness}. The
+    // sidecar always republishes the FULL state, so lighton and brightness arrive together.
+    private static void AddLight(List<(string, object)> r, JsonElement p)
+    {
+        if (!p.TryGetProperty("lighton", out var onEl)) return;
+        if (onEl.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return;
+
+        var light = new Dictionary<string, object> { ["on"] = onEl.ValueKind == JsonValueKind.True };
+        if (p.TryGetProperty("brightness", out var brEl) && brEl.ValueKind == JsonValueKind.Number
+            && brEl.TryGetDouble(out var brightness))
+            light["brightness"] = brightness;
+        r.Add(("light", light));
     }
 
     private static void AddBool(List<(string, object)> r, JsonElement p, string field, string key)

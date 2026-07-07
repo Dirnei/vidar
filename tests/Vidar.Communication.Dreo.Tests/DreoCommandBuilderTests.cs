@@ -10,13 +10,6 @@ public class DreoCommandBuilderTests
         JsonDocument.Parse(DreoCommandBuilder.Build(key, value)!).RootElement;
 
     [Fact]
-    public void Build_Power_EmitsPoweronBool()
-    {
-        Assert.True(Params("power", true).GetProperty("poweron").GetBoolean());
-        Assert.False(Params("power", false).GetProperty("poweron").GetBoolean());
-    }
-
-    [Fact]
     public void Build_Fan_EmitsFanonBool()
     {
         Assert.True(Params("fan", true).GetProperty("fanon").GetBoolean());
@@ -29,21 +22,23 @@ public class DreoCommandBuilderTests
     }
 
     [Fact]
-    public void Build_Mode_EmitsWindtypeString()
+    public void Build_Mode_EmitsModeInt()
     {
-        Assert.Equal("sleep", Params("mode", "sleep").GetProperty("windtype").GetString());
+        Assert.Equal(2, Params("mode", 2d).GetProperty("mode").GetInt32());
     }
 
     [Fact]
-    public void Build_Light_EmitsLightonBool()
+    public void Build_Light_Toggle_EmitsLightonBool()
     {
         Assert.True(Params("light", true).GetProperty("lighton").GetBoolean());
+        Assert.False(Params("light", false).GetProperty("lighton").GetBoolean());
     }
 
     [Fact]
-    public void Build_Brightness_EmitsBrightnessInt()
+    public void Build_Light_Number_EmitsBrightnessInt()
     {
-        Assert.Equal(75, Params("light_brightness", 75d).GetProperty("brightness").GetInt32());
+        // The composite light card sends a number for the brightness slider.
+        Assert.Equal(75, Params("light", 75d).GetProperty("brightness").GetInt32());
     }
 
     [Fact]

@@ -1,9 +1,11 @@
 {
-  "poweron": true,
+  "mcuon": true,
   "fanon": true,
-  "windlevel": 4,
-  "windtype": "natural",
-  "lighton": true,
-  "brightness": 60,
-  "colortemp": 35
+  "windlevel": 3,
+  "mode": 2,
+  "lighton": false,
+  "brightness": 1,
+  "colortemp": 16,
+  "muteon": true,
+  "wifi_rssi": -71
 }

@@ -89,23 +89,26 @@ def load_manifest_from_mongo():
     return token, devices, region
 
 
-def login(email, password, region=None):
-    """POST /api/oauth/login against `region` (default DEFAULT_REGION); if the response
-    names a different region, re-login against it once (mirrors dreocloud's REST shape).
-    Returns (token, region)."""
+def _oauth_login(email, password, region):
     import requests
 
-    region = region or DEFAULT_REGION
     resp = requests.post(f"{dreocloud.api_base(region)}/api/oauth/login",
-                          json={"email": email, "password": password}, timeout=20)
+                         params={"timestamp": dreocloud.api_timestamp()},
+                         json=dreocloud.login_body(email, password),
+                         headers=dreocloud.app_headers(), timeout=20)
     resp.raise_for_status()
-    token, resp_region = dreocloud.parse_login(resp.json())
+    return resp.json()
+
+
+def login(email, password, region=None):
+    """POST /api/oauth/login against `region` (default DEFAULT_REGION) with the Dreo app
+    headers/credentials + MD5 password (see dreocloud); if the response names a different
+    region, re-login against it once. Returns (token, region)."""
+    region = region or DEFAULT_REGION
+    token, resp_region = dreocloud.parse_login(_oauth_login(email, password, region))
     if resp_region and resp_region != region:
         region = resp_region
-        resp = requests.post(f"{dreocloud.api_base(region)}/api/oauth/login",
-                              json={"email": email, "password": password}, timeout=20)
-        resp.raise_for_status()
-        token, _ = dreocloud.parse_login(resp.json())
+        token, _ = dreocloud.parse_login(_oauth_login(email, password, region))
     return token, region
 
 
@@ -113,9 +116,22 @@ def fetch_devices(token, region):
     import requests
 
     resp = requests.get(f"{dreocloud.api_base(region)}/api/v2/user-device/device/list",
-                         headers={"Authorization": f"Bearer {token}"}, timeout=20)
+                        params={"timestamp": dreocloud.api_timestamp()},
+                        headers=dreocloud.app_headers(token), timeout=20)
     resp.raise_for_status()
     return dreocloud.parse_devices(resp.json())
+
+
+def fetch_state(token, region, serial):
+    """GET the current device state and flatten data.mixed into {field: value}. The realtime WS
+    only pushes CHANGES, so this snapshot is what populates the twin on (re)connect."""
+    import requests
+
+    resp = requests.get(f"{dreocloud.api_base(region)}/api/user-device/device/state",
+                        params={"deviceSn": serial, "timestamp": dreocloud.api_timestamp()},
+                        headers=dreocloud.app_headers(token), timeout=20)
+    resp.raise_for_status()
+    return dreocloud.flatten_state(resp.json())
 
 
 # ── Realtime bridge (single WebSocket per account) ─────────────────────────────
@@ -130,6 +146,12 @@ class AccountBridge:
         self.target = target
         self.ws = None
         self._stop = threading.Event()
+        # Full flat state per serial. The WS pushes only CHANGED fields, so we merge them into
+        # the last snapshot and always publish the COMPLETE state (retained) — otherwise each
+        # single-field publish would overwrite the retained topic and consumers would lose the
+        # rest of the state on reconnect.
+        self._states = {}
+        self._states_lock = threading.Lock()
 
     def start(self):
         threading.Thread(target=self._run, name="dreo-ws", daemon=True).start()
@@ -151,6 +173,7 @@ class AccountBridge:
                 url = dreocloud.ws_url(self.region, self.token)
                 self.ws = websocket.WebSocketApp(
                     url,
+                    on_open=self._on_open,
                     on_message=self._on_message,
                     on_error=lambda ws, err: log(f"WS error: {err}"),
                 )
@@ -164,7 +187,48 @@ class AccountBridge:
             self._stop.wait(backoff)
             backoff = min(backoff * 2, 120)
 
+    def _on_open(self, ws):
+        log("Dreo realtime WS connected")
+        # Dreo keepalive is APPLICATION-level: send the text frame "2" every 15s or the server
+        # drops the socket (~60s). This is NOT a protocol ping frame. One ping thread per
+        # connection; it exits when the socket closes (send raises) or on shutdown.
+        def ping_loop():
+            while not self._stop.is_set():
+                try:
+                    ws.send("2")
+                except Exception:  # noqa: BLE001
+                    return
+                if self._stop.wait(15):
+                    return
+        threading.Thread(target=ping_loop, name="dreo-ws-ping", daemon=True).start()
+        # The WS only pushes changes, so publish a REST state snapshot per device on (re)connect.
+        threading.Thread(target=self._publish_initial_state, name="dreo-init-state",
+                         daemon=True).start()
+
+    def _publish_initial_state(self):
+        try:
+            for dev in fetch_devices(self.token, self.region):
+                serial = dev["serial"]
+                flat = fetch_state(self.token, self.region, serial)
+                if flat:
+                    self._merge_and_publish(serial, flat)
+        except Exception as e:  # noqa: BLE001
+            log(f"initial-state fetch failed: {e}")
+
+    def _merge_and_publish(self, serial, fields):
+        """Merge changed fields into the device's full state and publish the COMPLETE snapshot
+        (retained), so the retained topic always holds the whole state."""
+        with self._states_lock:
+            state = self._states.setdefault(serial, {})
+            state.update(fields)
+            snapshot = dict(state)
+        self.target.publish(f"{BASE_TOPIC}/{serial}", json.dumps(snapshot), qos=0, retain=True)
+        log(f"published {BASE_TOPIC}/{serial} ({len(snapshot)} fields): {json.dumps(fields)[:200]}")
+
     def _on_message(self, ws, message):
+        # Ignore the keepalive echo (server may reply to our "2" ping with a short token).
+        if isinstance(message, str) and message.strip() in ("2", "3", ""):
+            return
         try:
             msg = json.loads(message)
         except Exception as e:  # noqa: BLE001
@@ -173,8 +237,13 @@ class AccountBridge:
         result = extract_reported(msg)
         if result is None:
             return
-        serial, state = result
-        self.target.publish(f"{BASE_TOPIC}/{serial}", json.dumps(state), qos=0, retain=True)
+        serial, reported = result
+        # control-reply frames echo command errors ({error_msg, error_code}); those are not
+        # device state — never merge them into the snapshot.
+        if "error_code" in reported or "error_msg" in reported:
+            log(f"[{serial}] control error: {reported}")
+            return
+        self._merge_and_publish(serial, reported)
 
     def forward_command(self, serial, payload):
         try:

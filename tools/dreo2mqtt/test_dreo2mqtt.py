@@ -35,6 +35,48 @@ def test_control_envelope():
                    "params": {"poweron": True}, "timestamp": 1234}
 
 
+def test_login_body_hashes_password_and_carries_client_creds():
+    import hashlib
+    body = dreocloud.login_body("me@example.com", "s3cret")
+    assert body["email"] == "me@example.com"
+    assert body["password"] == hashlib.md5(b"s3cret").hexdigest()  # not plaintext
+    assert body["password"] != "s3cret"
+    assert body["client_id"] == dreocloud.CLIENT_ID
+    assert body["client_secret"] == dreocloud.CLIENT_SECRET
+    assert body["grant_type"] == "email-password"
+    assert body["himei"] == dreocloud.HIMEI
+
+
+def test_app_headers_include_app_ua_and_optional_bearer():
+    h = dreocloud.app_headers()
+    assert h["ua"] == "dreo/2.8.2"
+    assert h["user-agent"] == "okhttp/4.9.1"
+    assert "authorization" not in h  # no token -> no auth header
+    assert dreocloud.app_headers("TOK")["authorization"] == "Bearer TOK"
+
+
+def test_api_timestamp_is_numeric_ms_string():
+    ts = dreocloud.api_timestamp()
+    assert ts.isdigit() and len(ts) >= 13
+
+
+def test_flatten_state_unwraps_data_mixed():
+    # Real Dreo device/state shape: data.mixed[field] = {"state": value, "timestamp": ...}
+    resp = {"code": 0, "data": {"mixed": {
+        "fanon": {"state": True, "timestamp": 1},
+        "windlevel": {"state": 3, "timestamp": 1},
+        "lighton": {"state": False, "timestamp": 1},
+        "mode": {"state": 2, "timestamp": 1},
+    }}}
+    flat = dreocloud.flatten_state(resp)
+    assert flat == {"fanon": True, "windlevel": 3, "lighton": False, "mode": 2}
+
+
+def test_flatten_state_empty_or_missing_mixed():
+    assert dreocloud.flatten_state({}) == {}
+    assert dreocloud.flatten_state({"data": {}}) == {}
+
+
 import dreo2mqtt
 
 
@@ -113,3 +155,26 @@ def test_bridge_manager_forward_command_noop_without_bridge(monkeypatch):
     mgr = _manager_with_fake_bridge(monkeypatch)
     # No bridge started yet: must not raise, just drop the command.
     mgr.forward_command("SN1", '{"poweron": true}')
+
+
+class _RecordingTarget:
+    def __init__(self):
+        self.published = []
+
+    def publish(self, topic, payload, qos=0, retain=False):
+        import json
+        self.published.append((topic, json.loads(payload), retain))
+
+
+def test_account_bridge_merges_changes_into_full_state():
+    # The WS pushes only changed fields; the bridge must publish the COMPLETE merged state
+    # (retained) each time, not just the delta.
+    target = _RecordingTarget()
+    bridge = dreo2mqtt.AccountBridge("tok", "us", target)
+    bridge._merge_and_publish("SN1", {"fanon": True, "windlevel": 3})
+    bridge._merge_and_publish("SN1", {"lighton": True})  # only one field changes
+
+    topic, payload, retain = target.published[-1]
+    assert topic == "dreo2mqtt/SN1"
+    assert retain is True
+    assert payload == {"fanon": True, "windlevel": 3, "lighton": True}

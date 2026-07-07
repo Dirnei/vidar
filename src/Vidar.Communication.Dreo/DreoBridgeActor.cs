@@ -230,6 +230,7 @@ public sealed class DreoBridgeActor : PluginActorBase
                 Commandable = c.Commandable,
                 Min = c.Min,
                 Max = c.Max,
+                Options = c.Options,
             })
             .ToList();
 }
