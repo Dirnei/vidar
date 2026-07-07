@@ -17,7 +17,7 @@ public sealed class OAuthController : ControllerBase
     private readonly IApplicationConfigRepository _repo;
     private readonly IRequiredActor<WebhookRegistry> _registryProvider;
 
-    private static readonly HashSet<string> KnownIntegrations = ["homeconnect"];
+    private static readonly HashSet<string> KnownIntegrations = ["homeconnect", "spotify"];
 
     // Stores CSRF state per integration so the callback can verify it.
     internal static readonly ConcurrentDictionary<string, string> PendingStates = new();
