@@ -4,6 +4,10 @@ namespace Vidar.Communication.Bambu;
 
 public static class BambuSnapshot
 {
+    // A capture either yields a JPEG or a short human-readable reason it failed (from ffmpeg's
+    // stderr), so the worker can log WHY a snapshot didn't come through instead of failing silently.
+    public sealed record CaptureResult(byte[]? Jpeg, string? Error);
+
     public static string RtspUrl(string host, string accessCode) =>
         $"rtsps://bblp:{accessCode}@{host}:322/streaming/live/1";
 
@@ -21,7 +25,7 @@ public static class BambuSnapshot
         "pipe:1",
     ];
 
-    public static async Task<byte[]?> CaptureAsync(string host, string accessCode, TimeSpan timeout, CancellationToken ct)
+    public static async Task<CaptureResult> CaptureAsync(string host, string accessCode, TimeSpan timeout, CancellationToken ct)
     {
         using var proc = new Process
         {
@@ -40,14 +44,37 @@ public static class BambuSnapshot
         {
             proc.Start();
             using var ms = new MemoryStream();
-            await proc.StandardOutput.BaseStream.CopyToAsync(ms, cts.Token);
+            // Drain both streams concurrently to avoid a pipe-buffer deadlock.
+            var stdoutTask = proc.StandardOutput.BaseStream.CopyToAsync(ms, cts.Token);
+            var stderrTask = proc.StandardError.ReadToEndAsync(cts.Token);
+            await Task.WhenAll(stdoutTask, stderrTask);
             await proc.WaitForExitAsync(cts.Token);
-            return proc.ExitCode == 0 && ms.Length > 0 ? ms.ToArray() : null;
+
+            if (proc.ExitCode == 0 && ms.Length > 0)
+                return new CaptureResult(ms.ToArray(), null);
+
+            return new CaptureResult(null, Summarize(await stderrTask, proc.ExitCode));
         }
-        catch
+        catch (OperationCanceledException)
         {
             try { if (!proc.HasExited) proc.Kill(true); } catch { }
-            return null;
+            return new CaptureResult(null, $"timed out after {timeout.TotalSeconds:0}s (no frame from the printer)");
         }
+        catch (Exception ex)
+        {
+            try { if (!proc.HasExited) proc.Kill(true); } catch { }
+            return new CaptureResult(null, ex.Message);
+        }
+    }
+
+    // Reduce ffmpeg's stderr to its last meaningful line (e.g. "Connection refused") for a clean log.
+    private static string Summarize(string stderr, int exitCode)
+    {
+        var last = stderr
+            .Split('\n')
+            .Select(l => l.Trim())
+            .LastOrDefault(l => l.Length > 0);
+        var msg = string.IsNullOrEmpty(last) ? $"ffmpeg exited with code {exitCode}" : last;
+        return msg.Length > 240 ? msg[..240] : msg;
     }
 }

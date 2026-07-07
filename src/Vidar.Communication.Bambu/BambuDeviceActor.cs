@@ -42,8 +42,8 @@ public sealed class BambuDeviceActor : ReceiveActor, IWithTimers
     private sealed class Connect { public static readonly Connect Instance = new(); }
     private sealed class Reconnect { public static readonly Reconnect Instance = new(); }
     private sealed record AutoSnapshot;
-    private sealed record SnapshotCaptured(byte[]? Jpeg);
-    private sealed record SnapshotForRequest(byte[]? Jpeg, IActorRef ReplyTo);
+    private sealed record SnapshotCaptured(byte[]? Jpeg, string? Error);
+    private sealed record SnapshotForRequest(byte[]? Jpeg, string? Error, IActorRef ReplyTo);
     private sealed record StateObserved(string State);
 
     public static Props Props(BambuConfig cfg, Guid deviceId) =>
@@ -97,13 +97,15 @@ public sealed class BambuDeviceActor : ReceiveActor, IWithTimers
             // normal message, so DeviceCommand/reconnect/etc. keep flowing in the meantime).
             var replyTo = Sender;
             BambuSnapshot.CaptureAsync(_cfg.Host, _cfg.AccessCode, SnapshotTimeout, CancellationToken.None)
-                .PipeTo(Self, success: jpeg => new SnapshotForRequest(jpeg, replyTo),
-                              failure: _ => new SnapshotForRequest(null, replyTo));
+                .PipeTo(Self, success: r => new SnapshotForRequest(r.Jpeg, r.Error, replyTo),
+                              failure: ex => new SnapshotForRequest(null, ex.Message, replyTo));
         });
 
         Receive<SnapshotForRequest>(m =>
         {
             if (m.Jpeg != null) _latestJpeg = m.Jpeg;
+            else if (m.Error != null)
+                _log.Warning("Bambu {Serial} snapshot failed: {Error}", _cfg.Serial, m.Error);
             m.ReplyTo.Tell(new SnapshotResult(m.Jpeg));
         });
 
@@ -112,14 +114,18 @@ public sealed class BambuDeviceActor : ReceiveActor, IWithTimers
             if (_captureInFlight) return;
             _captureInFlight = true;
             BambuSnapshot.CaptureAsync(_cfg.Host, _cfg.AccessCode, SnapshotTimeout, CancellationToken.None)
-                .PipeTo(Self, success: jpeg => new SnapshotCaptured(jpeg),
-                              failure: _ => new SnapshotCaptured(null));
+                .PipeTo(Self, success: r => new SnapshotCaptured(r.Jpeg, r.Error),
+                              failure: ex => new SnapshotCaptured(null, ex.Message));
         });
 
         Receive<SnapshotCaptured>(m =>
         {
             _captureInFlight = false;
             if (m.Jpeg != null) _latestJpeg = m.Jpeg;
+            // Auto-captures fire on every terminal transition; a failure here (e.g. Liveview off)
+            // is expected noise, so log at Debug rather than spamming Warning.
+            else if (m.Error != null)
+                _log.Debug("Bambu {Serial} auto-snapshot skipped: {Error}", _cfg.Serial, m.Error);
         });
 
         // Folded in here (rather than added post-construction) because Akka.NET Receive<T>
