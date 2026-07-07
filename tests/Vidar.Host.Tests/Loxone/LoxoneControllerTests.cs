@@ -32,7 +32,16 @@ public class LoxoneControllerTests
         var pluginRegistryProvider = Substitute.For<IRequiredActor<PluginRegistry>>();
         var actorRef = Substitute.For<IActorRef>();
         pluginRegistryProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(actorRef));
-        return (new LoxoneController(sidecar, repo, pluginRegistryProvider), repo, sidecar, actorRef);
+        var roomMappings = Substitute.For<IRoomMappingRepository>();
+        var discoveredRepo = Substitute.For<IDiscoveredDeviceRepository>();
+        var deviceRepo = Substitute.For<IDeviceRepository>();
+        var roomRepo = Substitute.For<IRoomRepository>();
+        roomMappings.GetAllAsync().Returns(Task.FromResult(new List<RoomMapping>()));
+        discoveredRepo.GetAllAsync().Returns(Task.FromResult(new List<DiscoveredDevice>()));
+        deviceRepo.GetAllAsync().Returns(Task.FromResult(new List<DeviceConfiguration>()));
+        roomRepo.GetAllAsync().Returns(Task.FromResult(new List<RoomConfiguration>()));
+        return (new LoxoneController(sidecar, repo, pluginRegistryProvider, roomMappings, discoveredRepo, deviceRepo, roomRepo),
+            repo, sidecar, actorRef);
     }
 
     private static List<JsonElement> ReadMiniservers(ApplicationConfig? cfg)
