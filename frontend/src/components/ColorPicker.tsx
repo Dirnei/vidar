@@ -92,19 +92,30 @@ interface ColorTempProps {
   value: number;
   min?: number;
   max?: number;
+  // 'mireds' (default): Dreo-style scale where low values are cool and high values are warm,
+  // displayed converted to Kelvin. 'kelvin': the raw value already is Kelvin (e.g. Loxone
+  // tunable-white, 2700-6500K) where low values are warm and high values are cool — the inverse.
+  mode?: 'mireds' | 'kelvin';
   onCommit: (value: number) => void;
 }
 
-export function ColorTempSlider({ value, min = 153, max = 500, onCommit }: ColorTempProps) {
+export function ColorTempSlider({ value, min = 153, max = 500, mode = 'mireds', onCommit }: ColorTempProps) {
+  const isKelvin = mode === 'kelvin';
+  const kelvinLabel = isKelvin ? Math.round(value) : Math.round(1000000 / value);
+  const leftLabel = isKelvin ? 'Warm' : 'Cool';
+  const rightLabel = isKelvin ? 'Cool' : 'Warm';
+  const gradient = isKelvin
+    ? 'linear-gradient(to right, #ffaa44 0%, #fff5e0 50%, #cce0ff 100%)'
+    : 'linear-gradient(to right, #cce0ff 0%, #fff5e0 50%, #ffaa44 100%)';
   return (
     <div>
       <div style={{
         fontSize: 11, color: 'var(--text-muted)', marginBottom: 6,
         display: 'flex', justifyContent: 'space-between',
       }}>
-        <span>Cool</span>
-        <span>{Math.round(1000000 / value)}K</span>
-        <span>Warm</span>
+        <span>{leftLabel}</span>
+        <span>{kelvinLabel}K</span>
+        <span>{rightLabel}</span>
       </div>
       <input
         type="range"
@@ -116,7 +127,7 @@ export function ColorTempSlider({ value, min = 153, max = 500, onCommit }: Color
           height: 8,
           borderRadius: 4,
           appearance: 'none' as const,
-          background: `linear-gradient(to right, #cce0ff ${0}%, #fff5e0 ${50}%, #ffaa44 ${100}%)`,
+          background: gradient,
           cursor: 'pointer',
         }}
         onChange={e => onCommit(Number(e.target.value))}

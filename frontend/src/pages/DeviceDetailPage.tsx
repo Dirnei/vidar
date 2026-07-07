@@ -676,7 +676,9 @@ function isBooleanUnit(unit: UnitType): boolean {
 }
 
 // Capabilities with a bespoke rich card below; everything else commandable uses the generic control.
-const RICH_CONTROL_KEYS = new Set(['switch', 'dimmer', 'light', 'cover']);
+// light_color / light_white / light_color_temp are Loxone RGBW/tunable-white siblings of the
+// composite `light` capability — they render folded into the light card, not as separate cards.
+const RICH_CONTROL_KEYS = new Set(['switch', 'dimmer', 'light', 'light_color', 'light_white', 'light_color_temp', 'cover']);
 
 function renderCapabilityCard(
   cap: CapabilityDescriptor,
@@ -811,8 +813,24 @@ function renderCapabilityCard(
       const colorS = typeof lightState?.color_s === 'number' ? (lightState.color_s as number) : 0;
       const hasColor = lightState?.color_x !== undefined || lightState?.color_h !== undefined;
       const colorMode = lightState?.color_mode as string | undefined;
+
+      // Loxone RGBW/tunable-white lights expose flat sibling capabilities alongside the
+      // composite `light` {on, brightness} — distinct from Dreo's nested color/color_temp
+      // fields above, which live inside the `light` state object itself.
+      const colorCap = device.capabilities.find(c => c.key === 'light_color');
+      const whiteCap = device.capabilities.find(c => c.key === 'light_white');
+      const colorTempCap = device.capabilities.find(c => c.key === 'light_color_temp');
+      const hexColor = typeof state['light_color'] === 'string' ? (state['light_color'] as string) : undefined;
+      const isValidHex = !!hexColor && /^#[0-9a-fA-F]{6}$/.test(hexColor);
+      const whiteLevel = typeof state['light_white'] === 'number' ? (state['light_white'] as number) : 0;
+      const kelvinMin = colorTempCap?.min ?? 2700;
+      const kelvinMax = colorTempCap?.max ?? 6500;
+      const kelvin = typeof state['light_color_temp'] === 'number' ? (state['light_color_temp'] as number) : kelvinMin;
+
+      const hasExtras = hasColor || hasColorTemp || !!colorCap || !!whiteCap || !!colorTempCap;
+
       return (
-        <div key={cap.key} style={{ ...capCardStyle, gridColumn: (hasColor || hasColorTemp) ? 'span 2' : undefined }}>
+        <div key={cap.key} style={{ ...capCardStyle, gridColumn: hasExtras ? 'span 2' : undefined }}>
           <Indicator color={accent} />
           <div style={capLabelStyle}><CapabilityIcon capability="light" size={13} />Light</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 6 }}>
@@ -847,10 +865,47 @@ function renderCapabilityCard(
                 />
               </div>
             )}
+            {colorCap && (
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 8 }}>Color</div>
+                <input
+                  type="color"
+                  value={isValidHex ? hexColor : '#ffffff'}
+                  onChange={e => cmd('light_color', e.target.value)}
+                  style={{
+                    width: 56, height: 32, padding: 0, border: '1px solid var(--border-default)',
+                    borderRadius: 'var(--radius-sm)', background: 'none', cursor: 'pointer',
+                  }}
+                />
+              </div>
+            )}
+            {colorTempCap && (
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 8 }}>Color Temperature</div>
+                <ColorTempSlider
+                  value={kelvin}
+                  min={kelvinMin}
+                  max={kelvinMax}
+                  mode="kelvin"
+                  onCommit={v => cmd('light_color_temp', v)}
+                />
+              </div>
+            )}
+            {whiteCap && (
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <div style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 8 }}>White · {Math.round(whiteLevel)}%</div>
+                <SliderControl value={whiteLevel} min={0} max={100} className="slider-dimmer" accentColor="var(--accent-primary)" onCommit={v => cmd('light_white', v)} />
+              </div>
+            )}
           </div>
         </div>
       );
     }
+    case 'light_color':
+    case 'light_white':
+    case 'light_color_temp':
+      // Rendered folded into the composite `light` card above — no separate card.
+      return null;
     case 'cover': {
       const pos = typeof state['cover'] === 'number' ? (state['cover'] as number) : 0;
       return (
