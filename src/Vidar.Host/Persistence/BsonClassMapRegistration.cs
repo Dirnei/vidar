@@ -98,6 +98,13 @@ public static class BsonClassMapRegistration
                 cm.SetIgnoreExtraElements(true);
             });
 
+            BsonClassMap.RegisterClassMap<RoomMapping>(cm =>
+            {
+                cm.AutoMap();
+                cm.MapIdProperty(m => m.Id);
+                cm.SetIgnoreExtraElements(true);
+            });
+
             _registered = true;
         }
     }

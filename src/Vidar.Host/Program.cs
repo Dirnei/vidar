@@ -41,6 +41,7 @@ builder.Services.AddSingleton<IWebhookPayloadRepository>(new MongoWebhookPayload
 builder.Services.AddSingleton<IWebhookEventRepository>(new MongoWebhookEventRepository(database));
 builder.Services.AddSingleton<IThresholdRuleRepository>(new MongoThresholdRuleRepository(database));
 builder.Services.AddSingleton<IThresholdEventLogRepository>(new MongoThresholdEventLogRepository(database));
+builder.Services.AddSingleton<IRoomMappingRepository>(new MongoRoomMappingRepository(database));
 builder.Services.AddHttpClient<DysonCloudClient>(c =>
     c.BaseAddress = new Uri("https://appapi.cp.dyson.com"));
 var roborock2mqttUrl = Environment.GetEnvironmentVariable("ROBOROCK2MQTT_URL") ?? "http://roborock2mqtt:8895";
