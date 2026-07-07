@@ -9,9 +9,11 @@ import { StatusDot } from '../components/StatusDot';
 import { SliderControl } from '../components/SliderControl';
 import { CapabilityIcon, primaryCapabilityIcon } from '../components/CapabilityIcon';
 import { ColorWheel, ColorTempSlider } from '../components/ColorPicker';
+import { EnumPicker } from '../components/EnumPicker';
 import { useExpertMode } from '../components/ExpertMode';
 import { VacuumCard } from '../components/VacuumCard';
 import { BambuPrinterCard } from '../components/BambuPrinterCard';
+import { ClimateCard } from '../components/ClimateCard';
 
 export function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -330,6 +332,15 @@ export function DeviceDetailPage() {
               </div>
               {device.capabilities
                 .filter(c => !c.key.startsWith('vacuum.'))
+                .map(cap => renderCapabilityCard(cap, state, cmd, device, updateSent, setUpdateSent))}
+            </>
+          ) : device.capabilities.some(c => c.key === 'target_temp') ? (
+            <>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <ClimateCard device={device} state={state} cmd={cmd} />
+              </div>
+              {device.capabilities
+                .filter(c => !CLIMATE_KEYS.has(c.key))
                 .map(cap => renderCapabilityCard(cap, state, cmd, device, updateSent, setUpdateSent))}
             </>
           ) : (
@@ -680,6 +691,10 @@ function isBooleanUnit(unit: UnitType): boolean {
 // composite `light` capability — they render folded into the light card, not as separate cards.
 const RICH_CONTROL_KEYS = new Set(['switch', 'dimmer', 'light', 'light_color', 'light_white', 'light_color_temp', 'cover']);
 
+// Loxone room-controller (climate) capabilities rendered together inside ClimateCard — folded
+// out of the generic per-capability grid the same way vacuum.* is folded out of VacuumCard.
+const CLIMATE_KEYS = new Set(['temperature', 'target_temp', 'climate_mode', 'valve']);
+
 function renderCapabilityCard(
   cap: CapabilityDescriptor,
   state: Record<string, unknown>,
@@ -730,27 +745,11 @@ function renderCapabilityCard(
     // Enumerated choice -> labeled dropdown (e.g. a ceiling fan's mode: Straight/Natural/Sleep/Reverse).
     if (cap.options && cap.options.length > 0) {
       const current = typeof raw === 'number' ? raw : undefined;
-      const selected = cap.options.find(o => o.value === current);
       return (
         <div key={cap.key} style={capCardStyle}>
           <Indicator color={accent} />
           <div style={capLabelStyle}>{cap.label}</div>
-          <div style={capValueStyle(accent)}>{selected ? selected.label : (current ?? '—')}</div>
-          <select
-            value={current === undefined ? '' : String(current)}
-            onChange={e => cmd(cap.key, Number(e.target.value))}
-            style={{
-              marginTop: 10, width: '100%', padding: '8px 10px',
-              background: 'var(--bg-hover)', color: 'var(--text-primary)',
-              border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
-              fontFamily: 'var(--font-body)', fontSize: 14, cursor: 'pointer',
-            }}
-          >
-            {current === undefined && <option value="" disabled>—</option>}
-            {cap.options.map(o => (
-              <option key={o.value} value={String(o.value)}>{o.label}</option>
-            ))}
-          </select>
+          <EnumPicker options={cap.options} value={current} accent={accent} onChange={v => cmd(cap.key, v)} />
         </div>
       );
     }
