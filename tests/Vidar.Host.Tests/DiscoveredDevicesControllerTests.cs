@@ -115,7 +115,8 @@ internal static class DiscoveredControllerTestFactory
         var actorRef = Substitute.For<IActorRef>();
         pluginRegistryProvider.GetAsync(Arg.Any<CancellationToken>()).Returns(Task.FromResult(actorRef));
 
-        var controller = new DiscoveredDevicesController(discoveredRepo, deviceRepo, pluginRegistryProvider);
+        var mappingRepo = new Vidar.Host.Tests.Persistence.InMemoryRoomMappingRepository();
+        var controller = new DiscoveredDevicesController(discoveredRepo, deviceRepo, pluginRegistryProvider, mappingRepo);
 
         return (controller, deviceRepo, discoveredId);
     }

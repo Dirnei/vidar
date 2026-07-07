@@ -16,12 +16,14 @@ public sealed class DiscoveredDevicesController : ControllerBase
     private readonly IDiscoveredDeviceRepository _discoveredRepo;
     private readonly IDeviceRepository _deviceRepo;
     private readonly IRequiredActor<PluginRegistry> _pluginRegistryProvider;
+    private readonly IRoomMappingRepository _roomMappings;
 
-    public DiscoveredDevicesController(IDiscoveredDeviceRepository discoveredRepo, IDeviceRepository deviceRepo, IRequiredActor<PluginRegistry> pluginRegistryProvider)
+    public DiscoveredDevicesController(IDiscoveredDeviceRepository discoveredRepo, IDeviceRepository deviceRepo, IRequiredActor<PluginRegistry> pluginRegistryProvider, IRoomMappingRepository roomMappings)
     {
         _discoveredRepo = discoveredRepo;
         _deviceRepo = deviceRepo;
         _pluginRegistryProvider = pluginRegistryProvider;
+        _roomMappings = roomMappings;
     }
 
     [HttpGet]
@@ -55,11 +57,25 @@ public sealed class DiscoveredDevicesController : ControllerBase
             foreach (var kv in request.Settings)
                 settings[kv.Key] = kv.Value;
 
+        // Auto-apply a room mapping when the caller didn't pick a room explicitly and the device
+        // carries external-room metadata (e.g. a Loxone control's room). Explicit RoomId always wins.
+        var roomId = request.RoomId;
+        if (roomId == Guid.Empty)
+        {
+            var serial = settings.GetValueOrDefault("serial", "");
+            var externalRoomId = settings.GetValueOrDefault("loxoneRoomUuid", "");
+            if (serial.Length > 0 && externalRoomId.Length > 0)
+            {
+                var mapping = await _roomMappings.GetByExternalAsync(discovered.CommunicationType, serial, externalRoomId);
+                if (mapping?.VidarRoomId is Guid mapped) roomId = mapped;
+            }
+        }
+
         var device = new DeviceConfiguration
         {
             Id = Guid.NewGuid(),
             Name = request.Name,
-            RoomId = request.RoomId,
+            RoomId = roomId,
             CommunicationType = discovered.CommunicationType,
             NativeId = discovered.NativeId,
             Capabilities = discovered.Capabilities,
