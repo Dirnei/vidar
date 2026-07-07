@@ -14,6 +14,13 @@ public static class LoxoneCommandBuilder
         // sidecar's command_url passes it straight through (the slash disambiguates it from a bare
         // brightness percent).
         "mode" => $"changeTo/{ToInt(value)}",
+        // RGBW/tunable-white channels + climate. The sidecar converts these normalized verbs to
+        // the real Loxone commands (hsv(...)/temp(...)/setpoint). target_temp keeps a decimal.
+        "light_color" => $"color/{ToHex(value)}",
+        "light_white" => $"white/{Math.Clamp(ToInt(value), 0, 100).ToString(CultureInfo.InvariantCulture)}",
+        "light_color_temp" => $"temp/{ToInt(value).ToString(CultureInfo.InvariantCulture)}",
+        "target_temp" => $"settemp/{ToDouble(value).ToString(CultureInfo.InvariantCulture)}",
+        "climate_mode" => $"climatemode/{ToInt(value)}",
         _ => null,
     };
 
@@ -40,4 +47,21 @@ public static class LoxoneCommandBuilder
         string s when double.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var d) => (int)Math.Round(d),
         _ => 0,
     };
+
+    private static double ToDouble(object v) => v switch
+    {
+        double d => d,
+        int i => i,
+        string s when double.TryParse(s, NumberStyles.Any, CultureInfo.InvariantCulture, out var d) => d,
+        _ => 0,
+    };
+
+    // Color arrives as a hex string ("#RRGGBB"); pass it through normalized (uppercase, leading #).
+    private static string ToHex(object v)
+    {
+        var s = v as string ?? "";
+        s = s.Trim();
+        if (!s.StartsWith('#')) s = "#" + s;
+        return s.ToUpperInvariant();
+    }
 }
