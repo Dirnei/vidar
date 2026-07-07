@@ -45,6 +45,7 @@ public sealed class LoxoneMiniserverActor : ReceiveActor, IWithTimers
 
     private sealed record MqttMessage(string Topic, string Payload);
     private sealed class Connect { public static readonly Connect Instance = new(); }
+    private sealed class ScheduleReconnect { public static readonly ScheduleReconnect Instance = new(); }
 
     public static Props Props(LoxoneMiniserver ms, string brokerHost, int brokerPort, string baseTopic) =>
         Akka.Actor.Props.Create(() => new LoxoneMiniserverActor(ms, brokerHost, brokerPort, baseTopic));
@@ -64,6 +65,9 @@ public sealed class LoxoneMiniserverActor : ReceiveActor, IWithTimers
         _bridge = Context.Parent;
 
         ReceiveAsync<Connect>(_ => ConnectAsync());
+
+        Receive<ScheduleReconnect>(_ =>
+            Timers.StartSingleTimer("reconnect", Connect.Instance, ReconnectDelay));
 
         // Parsed inbound MQTT messages are handled on the actor thread (mutating _controls must be
         // single-threaded). Receive handlers MUST be registered during construction, so it lives
@@ -132,7 +136,7 @@ public sealed class LoxoneMiniserverActor : ReceiveActor, IWithTimers
             var self = Self;
             _mqttClient.DisconnectedAsync += _ =>
             {
-                Timers.StartSingleTimer("reconnect", Connect.Instance, ReconnectDelay);
+                self.Tell(ScheduleReconnect.Instance);
                 return Task.CompletedTask;
             };
 
