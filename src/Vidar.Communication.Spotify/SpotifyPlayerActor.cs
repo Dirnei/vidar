@@ -24,7 +24,7 @@ public sealed class SpotifyPlayerActor : ReceiveActor, IWithTimers
     private readonly IActorRef _shardProxy;
     private readonly Guid _deviceId;
     private readonly SpotifyOAuth _oauth;
-    private readonly HttpClient _http = new();
+    private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
 
     private sealed class PollPlayer { public static readonly PollPlayer Instance = new(); }
     private sealed class PollDevices { public static readonly PollDevices Instance = new(); }

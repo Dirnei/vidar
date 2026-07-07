@@ -26,6 +26,7 @@ public sealed class SpotifyBridgeActor : PluginActorBase
     private IActorRef? _player;
 
     private sealed record TokensReady();
+    private sealed record AwaitingAuth();
     private sealed record ExchangeFailed(string Error);
 
     public static Props Props(string tokenFilePath) =>
@@ -44,6 +45,7 @@ public sealed class SpotifyBridgeActor : PluginActorBase
 
         Receive<OAuthCallbackReceived>(OnOAuthCallback);
         Receive<TokensReady>(_ => { PublishStatus("running", ConfiguredDeviceCount); DiscoverPlayer(); });
+        Receive<AwaitingAuth>(_ => PublishStatus("awaiting_auth", 0));
         Receive<ExchangeFailed>(m =>
         {
             Log.Error("Spotify token exchange failed: {Error}", m.Error);
@@ -72,7 +74,11 @@ public sealed class SpotifyBridgeActor : PluginActorBase
     protected override void OnConfigChanged(bool enabled, Dictionary<string, string> settings)
     {
         if (enabled) StartOAuth(settings);
-        else PublishStatus("stopped", 0);
+        else
+        {
+            if (_player is not null) { Context.Stop(_player); _player = null; }
+            PublishStatus("stopped", 0);
+        }
     }
 
     protected override void OnDeviceRegistered(Guid deviceId, string nativeId, RegisterDeviceForPolling registration)
@@ -106,9 +112,21 @@ public sealed class SpotifyBridgeActor : PluginActorBase
 
     private async Task TryExistingTokenAsync()
     {
-        var token = await _oauth!.GetAccessTokenAsync(CancellationToken.None);
-        if (token is not null) Self.Tell(new TokensReady());
-        else { Log.Info("No Spotify token yet — awaiting OAuth via /api/oauth/spotify/authorize"); PublishStatus("awaiting_auth", 0); }
+        try
+        {
+            var token = await _oauth!.GetAccessTokenAsync(CancellationToken.None);
+            if (token is not null) Self.Tell(new TokensReady());
+            else
+            {
+                Log.Info("No Spotify token yet — awaiting OAuth via /api/oauth/spotify/authorize");
+                Self.Tell(new AwaitingAuth());
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Spotify existing-token check failed");
+            Self.Tell(new ExchangeFailed(ex.Message));
+        }
     }
 
     private void OnOAuthCallback(OAuthCallbackReceived msg)
@@ -144,7 +162,7 @@ public sealed class SpotifyBridgeActor : PluginActorBase
     {
         if (_oauth is null) return;
         if (_player is not null) { Context.Stop(_player); _player = null; }
-        _player = Context.ActorOf(SpotifyPlayerActor.Props(deviceId, _oauth), "spotify-player");
+        _player = Context.ActorOf(SpotifyPlayerActor.Props(deviceId, _oauth), $"spotify-player-{Guid.NewGuid():N}");
         Log.Info("Spawned SpotifyPlayerActor for {DeviceId}", deviceId);
         PublishStatus("running", 1);
     }
