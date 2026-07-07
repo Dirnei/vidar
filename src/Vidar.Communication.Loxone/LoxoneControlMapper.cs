@@ -3,7 +3,7 @@ using Vidar.Core.Capabilities;
 namespace Vidar.Communication.Loxone;
 
 // Maps a Loxone control to Vidar capabilities. Present-fields: unsupported types return [] and
-// the caller skips them. Phase A types only — RGBW/tunable-white/climate are Phase B.
+// the caller skips them.
 public static class LoxoneControlMapper
 {
     public static List<CapabilityDescriptor> Map(LoxoneControl c) => c.Type switch
@@ -45,6 +45,36 @@ public static class LoxoneControlMapper
         "Touch" =>
         [
             new CapabilityDescriptor { Key = "action", Label = "Action", Unit = UnitType.Text },
+        ],
+
+        // RGBW dimmer (sidecar-normalized from ColorPickerV2 in RGBW mode): composite light +
+        // an RGB color (hex) + a separate white channel.
+        "ColorPickerRGBW" =>
+        [
+            new CapabilityDescriptor { Key = "light", Label = "Light", Unit = UnitType.OnOff, Commandable = true },
+            new CapabilityDescriptor { Key = "light_color", Label = "Color", Unit = UnitType.Text, Commandable = true },
+            new CapabilityDescriptor { Key = "light_white", Label = "White", Unit = UnitType.Percent, Commandable = true, Min = 0, Max = 100 },
+        ],
+
+        // Tunable-white dimmer (sidecar-normalized): composite light + color temperature (Kelvin).
+        "ColorPickerTunableWhite" =>
+        [
+            new CapabilityDescriptor { Key = "light", Label = "Light", Unit = UnitType.OnOff, Commandable = true },
+            new CapabilityDescriptor { Key = "light_color_temp", Label = "Color Temperature", Unit = UnitType.Number, Commandable = true, Min = 2700, Max = 6500 },
+        ],
+
+        // Intelligent Room Controller + valve actuators ("Stellmotoren"). climate_mode is a
+        // distinct key (NOT `mode`) so its command doesn't collide with LightControllerV2 moods.
+        "RoomControllerV2" =>
+        [
+            new CapabilityDescriptor { Key = "temperature", Label = "Temperature", Unit = UnitType.Celsius },
+            new CapabilityDescriptor { Key = "target_temp", Label = "Target", Unit = UnitType.Celsius, Commandable = true, Min = 5, Max = 30 },
+            new CapabilityDescriptor
+            {
+                Key = "climate_mode", Label = "Mode", Unit = UnitType.Number, Commandable = true,
+                Options = [new CapabilityOption(0, "Automatic"), new CapabilityOption(1, "Comfort"), new CapabilityOption(2, "Economy"), new CapabilityOption(3, "Off")],
+            },
+            new CapabilityDescriptor { Key = "valve", Label = "Valve", Unit = UnitType.Percent, Min = 0, Max = 100 },
         ],
 
         _ => [],

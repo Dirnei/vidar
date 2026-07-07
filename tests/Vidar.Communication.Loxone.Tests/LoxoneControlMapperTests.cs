@@ -67,4 +67,36 @@ public class LoxoneControlMapperTests
     {
         Assert.Empty(LoxoneControlMapper.Map(new LoxoneControl("u7", "Blind", "Jalousie", "r1", [])));
     }
+
+    [Fact]
+    public void ColorPickerRGBW_maps_light_color_white()
+    {
+        var caps = LoxoneControlMapper.Map(new LoxoneControl("u10", "RGBW Strip", "ColorPickerRGBW", "r1", []));
+        Assert.Contains(caps, c => c.Key == "light" && c.Unit == UnitType.OnOff && c.Commandable);
+        Assert.Contains(caps, c => c.Key == "light_color" && c.Unit == UnitType.Text && c.Commandable);
+        Assert.Contains(caps, c => c.Key == "light_white" && c.Unit == UnitType.Percent && c.Commandable);
+    }
+
+    [Fact]
+    public void ColorPickerTunableWhite_maps_light_and_color_temp()
+    {
+        var caps = LoxoneControlMapper.Map(new LoxoneControl("u11", "Tunable", "ColorPickerTunableWhite", "r1", []));
+        Assert.Contains(caps, c => c.Key == "light" && c.Commandable);
+        var ct = Assert.Single(caps, c => c.Key == "light_color_temp");
+        Assert.Equal(UnitType.Number, ct.Unit);
+        Assert.True(ct.Commandable);
+    }
+
+    [Fact]
+    public void RoomControllerV2_maps_climate_capabilities()
+    {
+        var caps = LoxoneControlMapper.Map(new LoxoneControl("u12", "Living Climate", "RoomControllerV2", "r2", []));
+        Assert.Contains(caps, c => c.Key == "temperature" && c.Unit == UnitType.Celsius && !c.Commandable);
+        Assert.Contains(caps, c => c.Key == "target_temp" && c.Unit == UnitType.Celsius && c.Commandable);
+        var mode = Assert.Single(caps, c => c.Key == "climate_mode");
+        Assert.True(mode.Commandable);
+        Assert.NotNull(mode.Options);
+        Assert.Contains(mode.Options!, o => o.Label == "Comfort");
+        Assert.Contains(caps, c => c.Key == "valve" && c.Unit == UnitType.Percent && !c.Commandable);
+    }
 }
