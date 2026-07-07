@@ -236,6 +236,23 @@ services:
       - VIDAR_MQTT_PORT=1883
       - VIDAR_DREO_BASE_TOPIC=dreo2mqtt
 
+  vidar-comm-spotify:
+    build:
+      context: .
+      dockerfile: src/Vidar.Communication.Spotify/Dockerfile
+    depends_on:
+      - lighthouse
+    env_file:
+      - .env
+    restart: unless-stopped
+    environment:
+      - VIDAR_CLUSTER_SEED=lighthouse:4053
+      - VIDAR_HOSTNAME=vidar-comm-spotify
+      - VIDAR_AKKA_PORT=4065
+      - VIDAR_SPOTIFY_TOKEN_PATH=/data/spotify-token.json
+    volumes:
+      - vidar-spotify-data:/data
+
   dreo2mqtt:
     build:
       context: ./tools/dreo2mqtt
@@ -315,3 +332,4 @@ services:
 volumes:
   vidar-mongo-data:
   vidar-emqx-data:
+  vidar-spotify-data:

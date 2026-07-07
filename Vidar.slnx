@@ -8,6 +8,7 @@
     <Project Path="src/Vidar.Communication.Bambu/Vidar.Communication.Bambu.csproj" />
     <Project Path="src/Vidar.Communication.Dreo/Vidar.Communication.Dreo.csproj" />
     <Project Path="src/Vidar.Communication.Loxone/Vidar.Communication.Loxone.csproj" />
+    <Project Path="src/Vidar.Communication.Spotify/Vidar.Communication.Spotify.csproj" />
     <Project Path="src/Vidar.Communication.E3dc/Vidar.Communication.E3dc.csproj" />
     <Project Path="src/Vidar.Communication.Ecowitt/Vidar.Communication.Ecowitt.csproj" />
     <Project Path="src/Vidar.Communication.Zigbee2Mqtt/Vidar.Communication.Zigbee2Mqtt.csproj" />

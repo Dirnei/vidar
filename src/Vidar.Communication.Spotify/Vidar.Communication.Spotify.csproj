@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <ItemGroup>
+    <PackageReference Include="Akka.Cluster.Hosting" Version="1.5.68" />
+    <PackageReference Include="Akka.Cluster.Tools" Version="1.5.68" />
+    <PackageReference Include="Akka.Hosting" Version="1.5.68" />
+    <PackageReference Include="Akka.Remote.Hosting" Version="1.5.68" />
+    <PackageReference Include="Akka.Streams" Version="1.5.68" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vidar.Core\Vidar.Core.csproj" />
+  </ItemGroup>
+
+</Project>
