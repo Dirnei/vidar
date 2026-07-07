@@ -1,0 +1,3 @@
+pyloxone-api
+paho-mqtt>=2.0
+pymongo>=4.0
