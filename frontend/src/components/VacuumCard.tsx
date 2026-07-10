@@ -48,6 +48,25 @@ const dividerStyle: React.CSSProperties = {
   height: 1, background: 'var(--border-subtle)', margin: '16px 0',
 };
 
+// A colored alert pill for a water-tank condition that needs attention.
+function waterPill(label: string, color: string) {
+  return (
+    <span
+      key={label}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        padding: '5px 11px', borderRadius: 999, fontSize: 12, fontWeight: 600,
+        color,
+        background: `color-mix(in srgb, ${color} 14%, transparent)`,
+        border: `1px solid color-mix(in srgb, ${color} 35%, transparent)`,
+      }}
+    >
+      <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0 }} />
+      {label}
+    </span>
+  );
+}
+
 function actionButton(label: string, onClick: () => void, primary = false) {
   return (
     <button
@@ -69,6 +88,8 @@ export function VacuumCard({ device, state, cmd }: Props) {
   const battery = state['vacuum.battery'];
   const rooms = (state['vacuum.rooms'] as NamedItem[] | undefined) ?? [];
   const scenes = (state['vacuum.scenes'] as NamedItem[] | undefined) ?? [];
+  const wasteWaterFull = state['vacuum.wasteWaterFull'] === true;
+  const freshWaterLow = state['vacuum.freshWaterLow'] === true;
 
   const fanCap = device.capabilities.find(c => c.key === 'vacuum.fanPower');
   const fanMin = fanCap?.min ?? 101;
@@ -118,6 +139,14 @@ export function VacuumCard({ device, state, cmd }: Props) {
           {typeof battery === 'number' ? `${battery}%` : '—'}
         </span>
       </div>
+
+      {/* Water-tank alerts — only shown when a tank needs attention */}
+      {(wasteWaterFull || freshWaterLow) && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+          {wasteWaterFull && waterPill('Waste water full', 'var(--accent-red)')}
+          {freshWaterLow && waterPill('Fresh water low', 'var(--accent-yellow)')}
+        </div>
+      )}
 
       <div style={dividerStyle} />
 

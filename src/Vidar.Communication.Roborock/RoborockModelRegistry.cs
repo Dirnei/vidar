@@ -17,6 +17,8 @@ public static class RoborockModelRegistry
     {
         Read("vacuum.state", "State", UnitType.Text),
         Read("vacuum.battery", "Battery", UnitType.Percent, 0, 100),
+        Read("vacuum.wasteWaterFull", "Waste water full", UnitType.YesNo),
+        Read("vacuum.freshWaterLow", "Fresh water low", UnitType.YesNo),
         Cmd("vacuum.fanPower", "Suction", UnitType.Number, 101, 106),
         Cmd("vacuum.start", "Start", UnitType.Action),
         Cmd("vacuum.stop", "Stop", UnitType.Action),

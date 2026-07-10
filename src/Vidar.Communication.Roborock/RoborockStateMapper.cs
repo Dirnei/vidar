@@ -20,6 +20,21 @@ public static class RoborockStateMapper
         if (root.TryGetProperty("fanPower", out var fp) && fp.ValueKind == JsonValueKind.Number)
             result.Add(("vacuum.fanPower", fp.GetInt32()));
 
+        // Water-tank alerts. The dock reports both tanks via dockErrorStatus (the
+        // RoborockDockErrorCode enum serialized to its int value): 39 = waste water tank
+        // full, 38 = clean water tank empty. waterShortageStatus (1 = shortage) is the
+        // robot's own low-water flag, used when it runs without a fill dock.
+        int? dockError = root.TryGetProperty("dockErrorStatus", out var de) && de.ValueKind == JsonValueKind.Number
+            ? de.GetInt32() : null;
+        int? waterShortage = root.TryGetProperty("waterShortageStatus", out var ws) && ws.ValueKind == JsonValueKind.Number
+            ? ws.GetInt32() : null;
+
+        if (dockError is not null)
+            result.Add(("vacuum.wasteWaterFull", dockError == 39));
+
+        if (dockError is not null || waterShortage is not null)
+            result.Add(("vacuum.freshWaterLow", dockError == 38 || waterShortage == 1));
+
         AddList(result, root, "_rooms", "vacuum.rooms");
         AddList(result, root, "_scenes", "vacuum.scenes");
 

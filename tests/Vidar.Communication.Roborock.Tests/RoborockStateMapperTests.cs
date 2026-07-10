@@ -28,6 +28,47 @@ public class RoborockStateMapperTests
     }
 
     [Fact]
+    public void MapsWasteWaterFullAndFreshWaterLowFromDockError()
+    {
+        // dockErrorStatus 39 = waste water tank full.
+        var full = RoborockStateMapper.MapState("{\"state\":8,\"dockErrorStatus\":39}")
+            .ToDictionary(u => u.CapabilityKey, u => u.Value);
+        Assert.True((bool)full["vacuum.wasteWaterFull"]);
+        Assert.False((bool)full["vacuum.freshWaterLow"]);
+
+        // dockErrorStatus 38 = clean water tank empty -> fresh water low.
+        var empty = RoborockStateMapper.MapState("{\"state\":8,\"dockErrorStatus\":38}")
+            .ToDictionary(u => u.CapabilityKey, u => u.Value);
+        Assert.False((bool)empty["vacuum.wasteWaterFull"]);
+        Assert.True((bool)empty["vacuum.freshWaterLow"]);
+
+        // Healthy dock reports both as false.
+        var ok = RoborockStateMapper.MapState("{\"state\":8,\"dockErrorStatus\":0}")
+            .ToDictionary(u => u.CapabilityKey, u => u.Value);
+        Assert.False((bool)ok["vacuum.wasteWaterFull"]);
+        Assert.False((bool)ok["vacuum.freshWaterLow"]);
+    }
+
+    [Fact]
+    public void MapsFreshWaterLowFromWaterShortage()
+    {
+        var updates = RoborockStateMapper.MapState("{\"state\":8,\"waterShortageStatus\":1}")
+            .ToDictionary(u => u.CapabilityKey, u => u.Value);
+        Assert.True((bool)updates["vacuum.freshWaterLow"]);
+        // No dock status present -> no waste-water reading.
+        Assert.DoesNotContain("vacuum.wasteWaterFull", updates.Keys);
+    }
+
+    [Fact]
+    public void OmitsWaterSensorsWhenAbsent()
+    {
+        var updates = RoborockStateMapper.MapState("{\"state\":8,\"battery\":50}")
+            .Select(u => u.CapabilityKey).ToHashSet();
+        Assert.DoesNotContain("vacuum.wasteWaterFull", updates);
+        Assert.DoesNotContain("vacuum.freshWaterLow", updates);
+    }
+
+    [Fact]
     public void IgnoresControlFields()
     {
         var updates = RoborockStateMapper.MapState("{\"_transport\":\"local\",\"_rooms\":[]}");
