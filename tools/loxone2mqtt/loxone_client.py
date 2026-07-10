@@ -96,12 +96,20 @@ class LoxoneClient:
         from pyloxone_api import LoxAPI
 
         self._loop = asyncio.new_event_loop()
-        self._loop_thread = threading.Thread(target=self._loop.run_forever,
+        self._loop_thread = threading.Thread(target=self._run_loop,
                                               name="loxone-client-loop", daemon=True)
         self._loop_thread.start()
 
-        self._api = LoxAPI(host=self._host, port=self._port, user=self._user,
-                           password=self._password, use_tls=self._use_tls)
+        # pyloxone-api 0.2.4's LoxAPI.__init__ builds an asyncio.Lock(), which on Python 3.9 binds
+        # to asyncio.get_event_loop() at construction time. Constructing LoxAPI on the calling
+        # thread (an HTTP handler thread with no event loop) therefore raises "There is no current
+        # event loop in thread ..."; constructing it *on* this client's loop binds that Lock to the
+        # right loop. So build LoxAPI inside a coroutine scheduled onto self._loop, not inline.
+        async def _make_api():
+            return LoxAPI(host=self._host, port=self._port, user=self._user,
+                          password=self._password, use_tls=self._use_tls)
+
+        self._api = self._call(_make_api())
         self._api.message_call_back = self._on_message
 
         self._call(self._api.getJson())
@@ -120,6 +128,14 @@ class LoxoneClient:
 
         threading.Thread(target=self._poll_structure, name="loxone-structure-poll",
                          daemon=True).start()
+
+    def _run_loop(self):
+        # Bind this thread's "current event loop" so any pyloxone-api / websockets 9.1 code path
+        # that calls asyncio.get_event_loop() while running on this loop resolves to it. Python 3.9
+        # only auto-creates a loop on the main thread, so without this a get_event_loop() on this
+        # background thread would raise "There is no current event loop in thread ...".
+        asyncio.set_event_loop(self._loop)
+        self._loop.run_forever()
 
     def run_forever(self):
         """Block the calling thread until this connection ends (api.start() returns or raises -
@@ -159,12 +175,25 @@ class LoxoneClient:
         return self._api.json or {}
 
     def _rebuild_state_index(self):
+        index = {}
         for uuid_, control in (self._api.json or {}).get("controls", {}).items():
             ctype = self._normalize_control_type(control)
-            for name, state_uuid in (control.get("states") or {}).items():
-                if not isinstance(state_uuid, str):
-                    continue  # some states map to a list of uuids; not expected for Phase A types
-                self._state_index[state_uuid] = (uuid_, ctype, name)
+            _index_states(index, uuid_, ctype, control.get("states"))
+            # A LightControllerV2 has no on/off or brightness state of its own; its brightness lives
+            # on a `masterValue` Dimmer subcontrol (details.masterValue), and each remaining circuit
+            # is another Dimmer subcontrol. Fold the masterValue's states onto the PARENT uuid (so
+            # the parent gets a `position`), and expose the circuit dimmers as their own
+            # "<uuid>/<sub>" Dimmer controls -- matching build_structure()'s split.
+            if control.get("type") == "LightControllerV2":
+                master_ref = (control.get("details") or {}).get("masterValue")
+                for sub_uuid, sub in (control.get("subControls") or {}).items():
+                    if sub.get("type") != "Dimmer":
+                        continue
+                    if sub_uuid == master_ref:
+                        _index_states(index, uuid_, "LightControllerV2", sub.get("states"))
+                    else:
+                        _index_states(index, sub_uuid, "Dimmer", sub.get("states"))
+        self._state_index = index
 
     @staticmethod
     def _normalize_control_type(control: dict) -> str:
@@ -298,6 +327,14 @@ class LoxoneClient:
             # E2E-confirmed: IRoomControllerV2 operating-mode command.
             return f"mode/{mode}"
         return verb  # on/off/bare brightness/changeTo/<id>: Phase A pass-through, unchanged
+
+
+def _index_states(index: dict, control_uuid: str, ctype: str, states) -> None:
+    """Register every {state_name: state_uuid} of a control (or folded subcontrol) into the state
+    index as state_uuid -> (control_uuid, ctype, state_name)."""
+    for name, state_uuid in (states or {}).items():
+        if isinstance(state_uuid, str):  # some states map to a list of uuids; skip those
+            index[state_uuid] = (control_uuid, ctype, name)
 
 
 def _parse_colorpicker_value(raw) -> dict:

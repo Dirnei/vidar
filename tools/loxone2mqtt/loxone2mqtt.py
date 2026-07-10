@@ -99,6 +99,15 @@ def build_structure(loxapp3: dict, serial: str) -> dict:
             entry["moods"] = [{"id": m.get("id"), "name": m.get("name", str(m.get("id")))}
                               for m in moods if "id" in m]
         controls.append(entry)
+        # A LightControllerV2 is a dimmable light (brightness = its masterValue subcontrol, folded
+        # onto this same uuid by loxone_client) plus a scene picker. Each remaining Dimmer
+        # subcontrol is an independent circuit -> expose it as its own "<uuid>/<sub>" Dimmer device.
+        if ctype == "LightControllerV2":
+            master_ref = (c.get("details") or {}).get("masterValue")
+            for sub_uuid, sub in (c.get("subControls") or {}).items():
+                if sub.get("type") == "Dimmer" and sub_uuid != master_ref:
+                    controls.append({"uuid": sub_uuid, "name": sub.get("name", sub_uuid),
+                                     "type": "Dimmer", "room": c.get("room")})
     return {"serial": serial, "controls": controls, "rooms": rooms}
 
 
@@ -108,16 +117,23 @@ def flatten_control_state(control_type: str, states: dict) -> dict:
     if control_type in ("Switch", "Pushbutton"):
         return _pick(states, {"active": "active"})
     if control_type == "Dimmer":
-        return _pick(states, {"active": "active", "position": "position"})
+        # A Loxone Dimmer reports only `position` (0..100); there is no separate on/off state, so
+        # on is derived from the brightness (position > 0).
+        return _light_from_position(states)
     if control_type == "LightControllerV2":
-        out = {}
+        # Brightness/on comes from the masterValue Dimmer subcontrol (folded onto this uuid as
+        # `position` by loxone_client); the active scene comes from `activeMoods`.
+        out = _light_from_position(states)
         moods = states.get("activeMoods")
+        if isinstance(moods, str):
+            try:
+                moods = json.loads(moods)
+            except ValueError:
+                moods = None
         if isinstance(moods, list) and moods:
             out["activeMood"] = moods[0]
         elif "activeMood" in states:
             out["activeMood"] = states["activeMood"]
-        if "active" in states:
-            out["active"] = states["active"]
         return out
     if control_type == "PresenceDetector":
         return _pick(states, {"active": "active", "brightness": "brightness"})
@@ -138,6 +154,48 @@ def flatten_control_state(control_type: str, states: dict) -> dict:
 
 def _pick(states: dict, mapping: dict) -> dict:
     return {dst: states[src] for src, dst in mapping.items() if src in states}
+
+
+def _light_from_position(states: dict) -> dict:
+    """Composite-light fields derived from a Dimmer `position` (0..100): the brightness plus an
+    on/off flag (position > 0). Present-fields: returns {} when this batch carries no position."""
+    if "position" not in states:
+        return {}
+    pos = states["position"]
+    out = {"position": pos}
+    try:
+        out["active"] = float(pos) > 0
+    except (TypeError, ValueError):
+        pass
+    return out
+
+
+def _parse_mood_list(raw):
+    """Parse a LightControllerV2 `moodList` state (a JSON array of mood objects, delivered as a
+    string) into [{id, name}]. Returns None for anything that isn't a usable list so a malformed
+    value leaves the previously captured scene list untouched."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            return None
+    if not isinstance(raw, list):
+        return None
+    moods = []
+    for m in raw:
+        if isinstance(m, dict) and "id" in m:
+            moods.append({"id": m["id"], "name": m.get("name", str(m["id"]))})
+    return moods
+
+
+def _is_dim_level(command: str) -> bool:
+    """True when `command` is a bare brightness level (e.g. "55"), as opposed to a verb like
+    "on"/"off"/"changeTo/<mood>". Used to route a LightControllerV2 dim to its masterValue."""
+    try:
+        float(command)
+        return True
+    except (TypeError, ValueError):
+        return False
 
 
 def command_url(uuid: str, command: str) -> str:
@@ -172,7 +230,21 @@ class MiniserverBridge:
         # uuid -> control type, learned from the last structure fetch. Needed to flatten each
         # state callback (flatten_control_state is keyed by control type).
         self._control_types = {}
+        # LightControllerV2 parent uuid -> its masterValue Dimmer subcontrol uuid. A brightness
+        # command for the parent light is redirected to this subcontrol (the parent itself takes
+        # on/off/changeTo but not a bare dim level).
+        self._master_values = {}
         self._types_lock = threading.Lock()
+        # LightControllerV2 parent uuid -> [{id, name}] scene list. A LightControllerV2's moods are
+        # not in the static structure (details.moodList is empty on current firmware); they arrive
+        # as a runtime `moodList` state. Captured here and overlaid onto the published structure so
+        # the worker can offer them as the scene picker's options.
+        self._mood_lists = {}
+        # uuid -> last full published state. A control's fields can arrive in separate event
+        # batches (a LightControllerV2's `activeMood` text state vs. its masterValue `position`
+        # numeric state); each batch is merged in here so publishing the union to the single
+        # retained per-control topic never clobbers a field set by an earlier batch.
+        self._state_cache = {}
 
     def start(self):
         threading.Thread(target=self._run, name=f"loxone-{self.serial}", daemon=True).start()
@@ -226,8 +298,20 @@ class MiniserverBridge:
     def _publish_structure(self):
         loxapp3 = self.client.get_structure()
         structure = build_structure(loxapp3, self.serial)
+        # Overlay runtime scene lists captured from the moodList state onto their parent controls.
+        for c in structure["controls"]:
+            moods = self._mood_lists.get(c["uuid"])
+            if moods:
+                c["moods"] = moods
+        master_values = {}
+        for uid, c in (loxapp3.get("controls") or {}).items():
+            if c.get("type") == "LightControllerV2":
+                mv = (c.get("details") or {}).get("masterValue")
+                if mv:
+                    master_values[uid] = mv
         with self._types_lock:
             self._control_types = {c["uuid"]: c["type"] for c in structure["controls"]}
+            self._master_values = master_values
         self.target.publish(f"{BASE_TOPIC}/{self.serial}/structure", json.dumps(structure),
                             qos=0, retain=True)
         self.target.publish(f"{BASE_TOPIC}/{self.serial}/rooms", json.dumps(structure["rooms"]),
@@ -243,17 +327,34 @@ class MiniserverBridge:
             log(f"[{self.serial}] structure re-fetch failed: {e}")
 
     def _on_state(self, control_uuid, control_type, states):
+        # A LightControllerV2's scene list arrives as a runtime `moodList` state; capture it and, if
+        # it changed, republish the structure so the worker picks up the new scene options.
+        if control_type == "LightControllerV2" and "moodList" in states:
+            moods = _parse_mood_list(states["moodList"])
+            if moods is not None and self._mood_lists.get(control_uuid) != moods:
+                self._mood_lists[control_uuid] = moods
+                try:
+                    self._publish_structure()
+                except Exception as e:  # noqa: BLE001
+                    log(f"[{self.serial}] mood-list republish failed: {e}")
+        flat = flatten_control_state(control_type, states)
         with self._types_lock:
             self._control_types[control_uuid] = control_type
-        flat = flatten_control_state(control_type, states)
-        if not flat:
-            return
-        self.target.publish(f"{BASE_TOPIC}/{self.serial}/{control_uuid}", json.dumps(flat),
+            if not flat:
+                return
+            # Merge this batch's fields into the control's accumulated state and publish the union,
+            # so a partial update never drops a field an earlier batch set (e.g. position vs mood).
+            merged = self._state_cache.setdefault(control_uuid, {})
+            merged.update(flat)
+            payload = json.dumps(merged)
+        self.target.publish(f"{BASE_TOPIC}/{self.serial}/{control_uuid}", payload,
                             qos=0, retain=True)
 
     def forward_command(self, uuid, command):
         with self._types_lock:
             known = uuid in self._control_types
+            ctype = self._control_types.get(uuid)
+            master = self._master_values.get(uuid)
         client = self.client
         if not known:
             log(f"[{self.serial}] command for unknown control {uuid} dropped")
@@ -261,9 +362,14 @@ class MiniserverBridge:
         if not client or not client.is_connected:
             log(f"[{self.serial}] command for {uuid} dropped (client not connected)")
             return
+        # A LightControllerV2's brightness lives on its masterValue Dimmer subcontrol; on/off and
+        # changeTo/<mood> address the parent, but a bare dim level must be sent to masterValue.
+        target = uuid
+        if ctype == "LightControllerV2" and master and _is_dim_level(command):
+            target = master
         try:
-            client.send_command(uuid, command_url(uuid, command))
-            log(f"[{self.serial}] sent {uuid} -> {command}")
+            client.send_command(target, command_url(target, command))
+            log(f"[{self.serial}] sent {target} -> {command}")
         except Exception as e:  # noqa: BLE001
             log(f"[{self.serial}] command failed: {e}")
 
@@ -503,13 +609,18 @@ def main():
 
     def on_connect(cl, u, flags, rc, props=None):
         log(f"target broker connected ({rc})")
-        cl.subscribe(f"{BASE_TOPIC}/+/+/set")
+        # `+/#` (not `+/+/set`) so control uuids that contain a slash (a LightControllerV2's split
+        # "<uuid>/<sub>" circuits) still match; the /set suffix is checked in on_message.
+        cl.subscribe(f"{BASE_TOPIC}/+/#")
 
     def on_message(cl, u, msg):
-        parts = msg.topic.split("/")
-        # <base>/<serial>/<uuid>/set
-        if len(parts) >= 4 and parts[-1] == "set":
-            serial, uuid = parts[-3], parts[-2]
+        # <base>/<serial>/<uuid...>/set -- uuid may itself contain slashes, so split off the base
+        # and the trailing "set" and treat the first remaining segment as the serial.
+        if not msg.topic.endswith("/set"):
+            return
+        rest = msg.topic[len(BASE_TOPIC) + 1:-len("/set")]
+        serial, _, uuid = rest.partition("/")
+        if serial and uuid:
             manager.forward_command(serial, uuid, msg.payload.decode(errors="replace"))
 
     target.on_connect = on_connect

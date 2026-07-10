@@ -8,9 +8,10 @@ public static class LoxoneControlMapper
 {
     public static List<CapabilityDescriptor> Map(LoxoneControl c) => c.Type switch
     {
+        // Generic on/off relay (not necessarily lighting) -> `switch`, matching Shelly/Zigbee.
         "Switch" or "Pushbutton" =>
         [
-            new CapabilityDescriptor { Key = "power", Label = "Power", Unit = UnitType.OnOff, Commandable = true },
+            new CapabilityDescriptor { Key = "switch", Label = "Switch", Unit = UnitType.OnOff, Commandable = true },
         ],
 
         // Composite light card: Unit OnOff, value {on, brightness}.
@@ -19,9 +20,11 @@ public static class LoxoneControlMapper
             new CapabilityDescriptor { Key = "light", Label = "Light", Unit = UnitType.OnOff, Commandable = true },
         ],
 
+        // A lighting controller: on/off master (no brightness of its own) -> `light`, plus a scene
+        // (mood) picker. `light` (not `power`) because it drives a lighting load, like a Dimmer.
         "LightControllerV2" =>
         [
-            new CapabilityDescriptor { Key = "power", Label = "Power", Unit = UnitType.OnOff, Commandable = true },
+            new CapabilityDescriptor { Key = "light", Label = "Light", Unit = UnitType.OnOff, Commandable = true },
             new CapabilityDescriptor
             {
                 Key = "mode", Label = "Scene", Unit = UnitType.Number, Commandable = true,

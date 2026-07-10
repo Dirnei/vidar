@@ -29,12 +29,31 @@ def test_flatten_switch_state():
 
 
 def test_flatten_dimmer_state():
-    out = lx.flatten_control_state("Dimmer", {"active": 1, "position": 42})
-    assert out == {"active": 1, "position": 42}
+    # A Dimmer reports only `position`; on/off is derived from it (position > 0).
+    out = lx.flatten_control_state("Dimmer", {"position": 42})
+    assert out == {"position": 42, "active": True}
+
+
+def test_flatten_dimmer_zero_position_is_off():
+    assert lx.flatten_control_state("Dimmer", {"position": 0}) == {"position": 0, "active": False}
 
 
 def test_flatten_lightcontroller_active_mood():
     out = lx.flatten_control_state("LightControllerV2", {"activeMoods": [778]})
+    assert out["activeMood"] == 778
+
+
+def test_flatten_lightcontroller_position_gives_light_and_mood():
+    # Brightness/on comes from the folded masterValue `position`; scene from activeMoods.
+    out = lx.flatten_control_state("LightControllerV2", {"position": 70, "activeMoods": [778]})
+    assert out["position"] == 70
+    assert out["active"] is True
+    assert out["activeMood"] == 778
+
+
+def test_flatten_lightcontroller_activemoods_json_string():
+    # Loxone text states can arrive as a JSON-array string rather than a list.
+    out = lx.flatten_control_state("LightControllerV2", {"activeMoods": "[778]"})
     assert out["activeMood"] == 778
 
 
@@ -71,10 +90,118 @@ def test_flatten_touch_state():
     assert lx.flatten_control_state("Touch", {"action": 1}) == {"action": 1}
 
 
-def test_flatten_lightcontroller_active_mood_and_active_together():
-    out = lx.flatten_control_state("LightControllerV2", {"activeMoods": [778], "active": 1})
-    assert out["activeMood"] == 778
-    assert out["active"] == 1
+class _RecordingTarget:
+    def __init__(self):
+        self.published = {}
+
+    def publish(self, topic, payload, qos=0, retain=False):
+        self.published[topic] = payload
+
+
+def test_on_state_merges_fields_across_separate_batches():
+    import json as _json
+    t = _RecordingTarget()
+    b = lx.MiniserverBridge("SER", "h", "u", "p", t)
+    # mood arrives in one batch, brightness (folded masterValue position) in another
+    b._on_state("u3", "LightControllerV2", {"activeMoods": [778]})
+    b._on_state("u3", "LightControllerV2", {"position": 70})
+    merged = _json.loads(t.published["loxone2mqtt/SER/u3"])
+    assert merged["activeMood"] == 778
+    assert merged["position"] == 70
+    assert merged["active"] is True
+
+
+def test_forward_command_redirects_brightness_to_mastervalue_but_not_verbs():
+    class FakeClient:
+        is_connected = True
+
+        def __init__(self):
+            self.sent = []
+
+        def send_command(self, uuid, url):
+            self.sent.append((uuid, url))
+
+    b = lx.MiniserverBridge("SER", "h", "u", "p", _RecordingTarget())
+    b.client = FakeClient()
+    b._control_types = {"u3": "LightControllerV2"}
+    b._master_values = {"u3": "u3/masterValue"}
+    b.forward_command("u3", "55")   # bare dim level -> masterValue subcontrol
+    b.forward_command("u3", "on")   # on/off verb -> parent
+    b.forward_command("u3", "changeTo/778")  # scene verb -> parent
+    assert b.client.sent[0][0] == "u3/masterValue"
+    assert b.client.sent[1][0] == "u3"
+    assert b.client.sent[2][0] == "u3"
+
+
+def test_parse_mood_list_from_json_string():
+    raw = '[{"id": 778, "name": "All Off", "used": true}, {"id": 5, "name": "Read"}]'
+    assert lx._parse_mood_list(raw) == [{"id": 778, "name": "All Off"}, {"id": 5, "name": "Read"}]
+
+
+def test_parse_mood_list_rejects_garbage():
+    assert lx._parse_mood_list("not json") is None
+    assert lx._parse_mood_list(123) is None
+
+
+def test_moodlist_state_overlays_scene_options_on_republished_structure():
+    import json as _json
+
+    class FakeClient:
+        def get_structure(self):
+            return {
+                "msInfo": {"serialNr": "SER"},
+                "rooms": {},
+                "controls": {
+                    "u3": {
+                        "name": "Light", "type": "LightControllerV2", "room": None,
+                        "details": {"masterValue": "u3/masterValue"},
+                        "subControls": {"u3/masterValue": {"name": "M", "type": "Dimmer"}},
+                    },
+                },
+            }
+
+    t = _RecordingTarget()
+    b = lx.MiniserverBridge("SER", "h", "u", "p", t)
+    b.client = FakeClient()
+    b._on_state("u3", "LightControllerV2",
+                {"moodList": '[{"id": 778, "name": "All On"}, {"id": 5, "name": "Read"}]'})
+    struct = _json.loads(t.published["loxone2mqtt/SER/structure"])
+    parent = next(c for c in struct["controls"] if c["uuid"] == "u3")
+    assert parent["moods"] == [{"id": 778, "name": "All On"}, {"id": 5, "name": "Read"}]
+
+
+def test_is_dim_level_distinguishes_verbs_from_levels():
+    assert lx._is_dim_level("55") is True
+    assert lx._is_dim_level("0") is True
+    assert lx._is_dim_level("on") is False
+    assert lx._is_dim_level("off") is False
+    assert lx._is_dim_level("changeTo/778") is False
+
+
+def test_build_structure_splits_lightcontroller_circuits_but_not_mastervalue():
+    loxapp3 = {
+        "msInfo": {"serialNr": "504F94A0"},
+        "rooms": {"r2": {"name": "Office"}},
+        "controls": {
+            "u3": {
+                "name": "Office Light", "type": "LightControllerV2", "room": "r2",
+                "details": {"moodList": [{"id": 778, "name": "All On"}], "masterValue": "u3/masterValue"},
+                "subControls": {
+                    "u3/masterValue": {"name": "Master", "type": "Dimmer"},
+                    "u3/AI1": {"name": "Circuit 1", "type": "Dimmer"},
+                    "u3/AI2": {"name": "Circuit 2", "type": "Dimmer"},
+                },
+            },
+        },
+    }
+    s = lx.build_structure(loxapp3, "504F94A0")
+    uuids = {c["uuid"] for c in s["controls"]}
+    # Parent light + the two circuit dimmers, but NOT the masterValue (it backs the parent).
+    assert uuids == {"u3", "u3/AI1", "u3/AI2"}
+    circuit = next(c for c in s["controls"] if c["uuid"] == "u3/AI1")
+    assert circuit["type"] == "Dimmer"
+    assert circuit["name"] == "Circuit 1"
+    assert circuit["room"] == "r2"
 
 
 # ── Onboarding: probe_miniserver / _auth_status_code (Task 9) ───────────────────

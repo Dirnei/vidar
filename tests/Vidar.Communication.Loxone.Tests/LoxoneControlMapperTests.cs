@@ -5,13 +5,13 @@ using Xunit;
 public class LoxoneControlMapperTests
 {
     [Fact]
-    public void Switch_maps_to_commandable_power()
+    public void Switch_maps_to_commandable_switch()
     {
         var caps = LoxoneControlMapper.Map(new LoxoneControl("u1", "Kitchen Relay", "Switch", "r1", []));
-        var power = Assert.Single(caps);
-        Assert.Equal("power", power.Key);
-        Assert.Equal(UnitType.OnOff, power.Unit);
-        Assert.True(power.Commandable);
+        var sw = Assert.Single(caps);
+        Assert.Equal("switch", sw.Key);
+        Assert.Equal(UnitType.OnOff, sw.Unit);
+        Assert.True(sw.Commandable);
     }
 
     [Fact]
@@ -25,11 +25,11 @@ public class LoxoneControlMapperTests
     }
 
     [Fact]
-    public void LightControllerV2_maps_to_power_plus_mode_with_mood_options()
+    public void LightControllerV2_maps_to_light_plus_mode_with_mood_options()
     {
         var caps = LoxoneControlMapper.Map(new LoxoneControl("u3", "Living Light", "LightControllerV2", "r2",
             [new LoxoneMood(1, "Off"), new LoxoneMood(2, "Bright"), new LoxoneMood(778, "All On")]));
-        Assert.Contains(caps, c => c.Key == "power" && c.Commandable);
+        Assert.Contains(caps, c => c.Key == "light" && c.Unit == UnitType.OnOff && c.Commandable);
         var mode = Assert.Single(caps, c => c.Key == "mode");
         Assert.NotNull(mode.Options);
         Assert.Equal(3, mode.Options!.Count);

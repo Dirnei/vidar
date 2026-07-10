@@ -4,10 +4,10 @@ using Xunit;
 public class LoxoneStateMapperTests
 {
     [Fact]
-    public void Switch_active_maps_to_power_bool()
+    public void Switch_active_maps_to_switch_bool()
     {
         var r = LoxoneStateMapper.MapState("Switch", """{"active":1}""");
-        Assert.Contains(r, u => u.CapabilityKey == "power" && (bool)u.Value);
+        Assert.Contains(r, u => u.CapabilityKey == "switch" && (bool)u.Value);
     }
 
     [Fact]
@@ -23,9 +23,19 @@ public class LoxoneStateMapperTests
     [Fact]
     public void LightControllerV2_maps_activeMood_to_mode()
     {
-        var r = LoxoneStateMapper.MapState("LightControllerV2", """{"activeMood":778,"active":1}""");
+        var r = LoxoneStateMapper.MapState("LightControllerV2", """{"activeMood":778}""");
         Assert.Contains(r, u => u.CapabilityKey == "mode" && (double)u.Value == 778d);
-        Assert.Contains(r, u => u.CapabilityKey == "power" && (bool)u.Value);
+    }
+
+    [Fact]
+    public void LightControllerV2_maps_position_to_dimmable_light()
+    {
+        // The sidecar folds the masterValue dimmer onto the parent: {active, position}.
+        var r = LoxoneStateMapper.MapState("LightControllerV2", """{"active":true,"position":70}""");
+        var light = Assert.Single(r, u => u.CapabilityKey == "light");
+        var dict = Assert.IsType<Dictionary<string, object>>(light.Value);
+        Assert.True((bool)dict["on"]);
+        Assert.Equal(70d, dict["brightness"]);
     }
 
     [Fact]

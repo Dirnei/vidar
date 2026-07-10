@@ -85,6 +85,19 @@ public sealed class LoxoneBridgeActor : PluginActorBase
         PublishStatus(enabled ? "running" : "stopped", _children.Count);
     }
 
+    // A device registration arrived (bulk on plugin (re)register, or a single freshly-accepted
+    // device). The owning child may have already run discovery before this id was known — retained
+    // MQTT structure races the cluster registration round-trip — and tagged the control with an
+    // ephemeral id, sending its state to a nonexistent twin. Push the resolved id so the child
+    // re-tags the control and flushes its last state. NativeId is "<serial>/<uuid>".
+    protected override void OnDeviceRegistered(Guid deviceId, string nativeId,
+        RegisterDeviceForPolling registration)
+    {
+        var parts = nativeId.Split('/', 2);
+        if (parts.Length == 2 && _children.TryGetValue(parts[0], out var child))
+            child.Tell(new ResolveControlId(parts[1], deviceId));
+    }
+
     // Spawn a child per configured Miniserver; stop children whose Miniserver was removed.
     private void SyncChildren(bool enabled, Dictionary<string, string> settings)
     {

@@ -37,6 +37,12 @@ public sealed class LoxoneMiniserverActor : ReceiveActor, IWithTimers
     // id assignment via GetDeviceId/Discover); state updates for a control are skipped until then.
     private readonly Dictionary<string, (Guid DeviceId, string Type)> _controls = new();
 
+    // uuid -> latest raw state payload seen, cached regardless of whether the control's DeviceId is
+    // known yet. Retained state can arrive before the structure and ControlIds that resolve the id
+    // (and in any order between them), so we always keep the newest payload and (re)apply it the
+    // moment the id resolves — otherwise initial retained state is lost to that ordering race.
+    private readonly Dictionary<string, string> _latestState = new();
+
     private IMqttClient? _mqttClient;
     private Channel<MqttMessage>? _inbound;
     private Channel<DeviceCommand>? _outbound;
@@ -79,11 +85,12 @@ public sealed class LoxoneMiniserverActor : ReceiveActor, IWithTimers
         Receive<ControlIds>(msg =>
         {
             foreach (var (uuid, deviceId) in msg.ByUuid)
-            {
-                if (_controls.TryGetValue(uuid, out var ctrl))
-                    _controls[uuid] = (deviceId, ctrl.Type);
-            }
+                ResolveControl(uuid, deviceId);
         });
+
+        // The bridge resolved (or corrected) a control's deviceId after a registration arrived —
+        // re-tag it and flush its cached state (fixes the structure-vs-registration startup race).
+        Receive<ResolveControlId>(msg => ResolveControl(msg.Uuid, msg.DeviceId));
 
         Receive<DeviceCommand>(cmd =>
         {
@@ -200,16 +207,38 @@ public sealed class LoxoneMiniserverActor : ReceiveActor, IWithTimers
             return;
         }
 
-        // State topic: loxone2mqtt/<serial>/<uuid>
+        // State topic: loxone2mqtt/<serial>/<uuid>. A control uuid may itself contain a slash (a
+        // LightControllerV2's split "<uuid>/<sub>" circuits), so we can't reject on '/'; ignore only
+        // our own "<uuid>/set" command echoes and rely on the _controls membership check below
+        // (structure/rooms and set-echoes are never keys in it).
         var prefix = $"{_baseTopic}/{_ms.Serial}/";
         if (!m.Topic.StartsWith(prefix)) return;
         var uuid = m.Topic[prefix.Length..];
-        if (uuid.Contains('/')) return; // ignore /set echoes and structure/rooms
+        if (uuid.EndsWith("/set")) return; // ignore our own command echoes
+        // Cache the newest payload unconditionally — even if this control (or its DeviceId) isn't
+        // known yet — so it can be applied once ControlIds resolves the id, whatever the delivery
+        // order of structure/state/ControlIds.
+        _latestState[uuid] = m.Payload;
         if (!_controls.TryGetValue(uuid, out var ctrl)) return;
+        if (ctrl.DeviceId == Guid.Empty) return; // applied when the id resolves
+        ApplyState(ctrl.DeviceId, ctrl.Type, m.Payload);
+    }
 
-        if (ctrl.DeviceId == Guid.Empty) return; // deviceId not yet known (ControlIds reply pending)
-        foreach (var (key, value) in LoxoneStateMapper.MapState(ctrl.Type, m.Payload))
-            _shardProxy.Tell(new DeviceStateUpdate(ctrl.DeviceId, key, value));
+    // Record a control's resolved deviceId and, if it's a real id, apply its latest cached state.
+    // Shared by the ControlIds reply (bulk, at discovery) and ResolveControlId (a later single
+    // registration) so both close the structure-vs-registration ordering race the same way.
+    private void ResolveControl(string uuid, Guid deviceId)
+    {
+        if (!_controls.TryGetValue(uuid, out var ctrl)) return;
+        _controls[uuid] = (deviceId, ctrl.Type);
+        if (deviceId != Guid.Empty && _latestState.TryGetValue(uuid, out var payload))
+            ApplyState(deviceId, ctrl.Type, payload);
+    }
+
+    private void ApplyState(Guid deviceId, string controlType, string payload)
+    {
+        foreach (var (key, value) in LoxoneStateMapper.MapState(controlType, payload))
+            _shardProxy.Tell(new DeviceStateUpdate(deviceId, key, value));
     }
 
     private void StartOutboundStream()

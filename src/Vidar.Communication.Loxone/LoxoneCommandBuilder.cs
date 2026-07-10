@@ -8,7 +8,7 @@ public static class LoxoneCommandBuilder
 {
     public static string? Build(string capabilityKey, object value) => capabilityKey switch
     {
-        "power" => ToBool(value) ? "on" : "off",
+        "switch" => ToBool(value) ? "on" : "off",
         "light" => BuildLight(value),
         // Loxone selects a LightControllerV2 mood via changeTo/<id>. Emit the full verb here so the
         // sidecar's command_url passes it straight through (the slash disambiguates it from a bare

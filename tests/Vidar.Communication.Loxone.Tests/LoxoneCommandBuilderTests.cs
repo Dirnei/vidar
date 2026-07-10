@@ -3,8 +3,8 @@ using Xunit;
 
 public class LoxoneCommandBuilderTests
 {
-    [Fact] public void Power_true_is_on()  => Assert.Equal("on",  LoxoneCommandBuilder.Build("power", true));
-    [Fact] public void Power_false_is_off() => Assert.Equal("off", LoxoneCommandBuilder.Build("power", false));
+    [Fact] public void Switch_true_is_on()  => Assert.Equal("on",  LoxoneCommandBuilder.Build("switch", true));
+    [Fact] public void Switch_false_is_off() => Assert.Equal("off", LoxoneCommandBuilder.Build("switch", false));
 
     [Fact] public void Light_bool_true_is_on() => Assert.Equal("on", LoxoneCommandBuilder.Build("light", true));
     [Fact] public void Light_number_is_brightness_string() => Assert.Equal("55", LoxoneCommandBuilder.Build("light", 55d));

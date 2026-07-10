@@ -24,14 +24,15 @@ public static class LoxoneStateMapper
             {
                 case "Switch":
                 case "Pushbutton":
-                    AddBool(result, p, "active", "power");
+                    AddBool(result, p, "active", "switch");
                     break;
                 case "Dimmer":
                     AddLight(result, p);
                     break;
                 case "LightControllerV2":
                     AddNumber(result, p, "activeMood", "mode");
-                    AddBool(result, p, "active", "power");
+                    // On/off master as the composite `light` value ({on}); no brightness of its own.
+                    AddLight(result, p);
                     break;
                 case "PresenceDetector":
                     AddBool(result, p, "active", "presence");
