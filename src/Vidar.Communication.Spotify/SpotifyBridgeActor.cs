@@ -192,18 +192,20 @@ public sealed class SpotifyBridgeActor : PluginActorBase
         var spec = SpotifyCommandBuilder.Build(cmd.CapabilityKey, cmd.Value, cmd.NativeId, isActive);
         if (spec is null) { Log.Warning("Unrecognized Spotify command {Key}={Value}", cmd.CapabilityKey, cmd.Value); return; }
 
-        // Persist the user's chosen volume immediately so the twin holds it even while the speaker is
-        // offline. (Serialize happens synchronously before the await, so no race with _volumes.)
-        if (cmd.CapabilityKey == "volume")
-        {
-            _volumes[cmd.NativeId] = ToVolume(cmd.Value);
-            await _volumeStore.SaveAsync(_volumes);
-        }
-
         var token = await _oauth.GetAccessTokenAsync(CancellationToken.None);
         if (token is null) { Log.Warning("Spotify command dropped — no access token"); return; }
 
         await SendAsync(spec, token, cmd.CapabilityKey);
+
+        // Persist the user's chosen volume only after the API write so a persist hiccup (e.g. an
+        // overlapping save from a slider drag throwing IOException) can never swallow the actual
+        // Spotify volume change — it can at worst leave the twin's cached volume briefly stale.
+        if (cmd.CapabilityKey == "volume")
+        {
+            _volumes[cmd.NativeId] = ToVolume(cmd.Value);
+            await PersistVolumesAsync();
+        }
+
         self.Tell(RefreshNow.Instance); // reflect the change quickly
     }
 
@@ -251,7 +253,7 @@ public sealed class SpotifyBridgeActor : PluginActorBase
                 _volumes[d.Id] = v;
                 changed = true;
             }
-        if (changed) _ = _volumeStore.SaveAsync(_volumes);
+        if (changed) _ = PersistVolumesAsync();
 
         // 3) Fan the single global playback state out to every accepted twin.
         foreach (var (deviceId, updates) in SpotifyFanOut.Build(m.Playback, m.Devices, _accepted, _volumes))
@@ -262,6 +264,16 @@ public sealed class SpotifyBridgeActor : PluginActorBase
     // v1: no cheap access to the accepted device's friendly name (RegisterDeviceForPolling carries
     // only the native id), so this guard is a no-op. See the id-rotation note in OnDevicesFetched.
     private bool AcceptedNameMatches(string name) => false;
+
+    // Persists _volumes, swallowing failures (e.g. two overlapping saves — a slider drag can fire a
+    // command save and a fetch-driven save close together — racing on the underlying file and
+    // throwing IOException). A lost persist just means the cached volume is briefly stale; it must
+    // never fault the caller's fire-and-forget task or abort a command handler mid-flight.
+    private async Task PersistVolumesAsync()
+    {
+        try { await _volumeStore.SaveAsync(_volumes); }
+        catch (Exception ex) { Log.Warning(ex, "Spotify volume persist failed"); }
+    }
 
     // --- HTTP -----------------------------------------------------------------------------------
 
