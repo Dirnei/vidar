@@ -12,6 +12,7 @@ var clusterSeed = Environment.GetEnvironmentVariable("VIDAR_CLUSTER_SEED") ?? "l
 var hostname = Environment.GetEnvironmentVariable("VIDAR_HOSTNAME") ?? "localhost";
 var port = int.Parse(Environment.GetEnvironmentVariable("VIDAR_AKKA_PORT") ?? "4065");
 var tokenFilePath = Environment.GetEnvironmentVariable("VIDAR_SPOTIFY_TOKEN_PATH") ?? "/data/spotify-token.json";
+var volumePath = Environment.GetEnvironmentVariable("VIDAR_SPOTIFY_VOLUME_PATH") ?? "/data/spotify-volumes.json";
 
 builder.Services.AddAkka("vidar", (configBuilder, sp) =>
 {
@@ -30,7 +31,7 @@ builder.Services.AddAkka("vidar", (configBuilder, sp) =>
         .WithSingletonProxy<PluginRegistry>("plugin-registry", new ClusterSingletonOptions { Role = "host" })
         .WithActors((system, registry, resolver) =>
         {
-            system.ActorOf(SpotifyBridgeActor.Props(tokenFilePath), "spotify-bridge");
+            system.ActorOf(SpotifyBridgeActor.Props(tokenFilePath, volumePath), "spotify-bridge");
         });
 });
 

@@ -43,40 +43,6 @@ public static class SpotifyCommandBuilder
         }
     }
 
-    public static SpotifyRequest? Build(string capabilityKey, object value)
-    {
-        switch (capabilityKey)
-        {
-            case "playback":
-                return ToBool(value)
-                    ? new SpotifyRequest(HttpMethod.Put, "/me/player/play", Empty, null)
-                    : new SpotifyRequest(HttpMethod.Put, "/me/player/pause", Empty, null);
-
-            case "track":
-                var dir = value?.ToString()?.ToLowerInvariant();
-                return dir switch
-                {
-                    "next" => new SpotifyRequest(HttpMethod.Post, "/me/player/next", Empty, null),
-                    "previous" or "prev" => new SpotifyRequest(HttpMethod.Post, "/me/player/previous", Empty, null),
-                    _ => null,
-                };
-
-            case "volume":
-                var pct = Math.Clamp(ToInt(value), 0, 100);
-                return new SpotifyRequest(HttpMethod.Put, "/me/player/volume",
-                    new Dictionary<string, string?> { ["volume_percent"] = pct.ToString() }, null);
-
-            case "zone":
-                var deviceId = value?.ToString();
-                if (string.IsNullOrWhiteSpace(deviceId)) return null;
-                var body = JsonSerializer.Serialize(new { device_ids = new[] { deviceId }, play = true });
-                return new SpotifyRequest(HttpMethod.Put, "/me/player", Empty, body);
-
-            default:
-                return null;
-        }
-    }
-
     private static bool ToBool(object v) => v switch
     {
         bool b => b,

@@ -36,54 +36,6 @@ public static class SpotifyStateMapper
 
     private static SpotifyPlayback Idle() => new(null, false, null, new Dictionary<string, object>());
 
-    public static IReadOnlyList<(string CapabilityKey, object Value)> MapPlayer(string json)
-    {
-        var result = new List<(string, object)>();
-
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            result.Add(("playback", false));
-            result.Add(("now_playing", new Dictionary<string, object>()));
-            return result;
-        }
-
-        JsonDocument doc;
-        try { doc = JsonDocument.Parse(json); }
-        catch (JsonException)
-        {
-            result.Add(("playback", false));
-            result.Add(("now_playing", new Dictionary<string, object>()));
-            return result;
-        }
-
-        using (doc)
-        {
-            var root = doc.RootElement;
-            if (root.ValueKind != JsonValueKind.Object)
-            {
-                result.Add(("playback", false));
-                result.Add(("now_playing", new Dictionary<string, object>()));
-                return result;
-            }
-
-            var isPlaying = root.TryGetProperty("is_playing", out var ip) && ip.ValueKind == JsonValueKind.True;
-            result.Add(("playback", isPlaying));
-
-            if (root.TryGetProperty("device", out var dev) && dev.ValueKind == JsonValueKind.Object)
-            {
-                if (dev.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
-                    result.Add(("zone", id.GetString() ?? ""));
-                if (dev.TryGetProperty("volume_percent", out var vol) && vol.ValueKind == JsonValueKind.Number
-                    && vol.TryGetDouble(out var v))
-                    result.Add(("volume", v));
-            }
-
-            result.Add(("now_playing", BuildNowPlaying(root)));
-        }
-
-        return result;
-    }
-
     private static Dictionary<string, object> BuildNowPlaying(JsonElement root)
     {
         var np = new Dictionary<string, object>();
