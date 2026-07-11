@@ -7,6 +7,35 @@ namespace Vidar.Communication.Spotify;
 // card reliably clears.
 public static class SpotifyStateMapper
 {
+    // Parses GET /me/player into a SpotifyPlayback (active device, playing, active volume,
+    // now-playing). Present-fields only; empty/204 body => idle.
+    public static SpotifyPlayback Parse(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return Idle();
+
+        JsonDocument doc;
+        try { doc = JsonDocument.Parse(json); } catch (JsonException) { return Idle(); }
+        using (doc)
+        {
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object) return Idle();
+
+            var isPlaying = root.TryGetProperty("is_playing", out var ip) && ip.ValueKind == JsonValueKind.True;
+            string? activeId = null;
+            int? activeVol = null;
+            if (root.TryGetProperty("device", out var dev) && dev.ValueKind == JsonValueKind.Object)
+            {
+                if (dev.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
+                    activeId = id.GetString();
+                if (dev.TryGetProperty("volume_percent", out var vol) && vol.ValueKind == JsonValueKind.Number
+                    && vol.TryGetInt32(out var v)) activeVol = v;
+            }
+            return new SpotifyPlayback(activeId, isPlaying, activeVol, BuildNowPlaying(root));
+        }
+    }
+
+    private static SpotifyPlayback Idle() => new(null, false, null, new Dictionary<string, object>());
+
     public static IReadOnlyList<(string CapabilityKey, object Value)> MapPlayer(string json)
     {
         var result = new List<(string, object)>();
