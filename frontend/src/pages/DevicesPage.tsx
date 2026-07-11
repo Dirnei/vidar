@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Device, Room, ActiveFilters, FilterSection } from '../types';
 import { getDevices, getRooms } from '../api/client';
 import { subscribeDeviceState } from '../api/sse';
+import { useCoalescedReload } from '../utils/coalesce';
 import { DeviceRow } from '../components/DeviceRow';
 import { FilterPanel, MobileFilterDrawer } from '../components/FilterPanel';
 
@@ -22,11 +23,13 @@ export function DevicesPage() {
     setLoading(false);
   }, []);
 
+  const scheduleReload = useCoalescedReload(loadData);
+
   useEffect(() => {
     loadData();
-    const unsub = subscribeDeviceState(() => loadData());
+    const unsub = subscribeDeviceState(() => scheduleReload());
     return unsub;
-  }, [loadData]);
+  }, [loadData, scheduleReload]);
 
   // Build a room lookup map
   const roomMap = useMemo(() => {

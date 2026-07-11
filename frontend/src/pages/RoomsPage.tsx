@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { Room, Device, DeviceGroup } from '../types';
 import { getRooms, createRoom, getDevicesInRoom, getRoomGroups } from '../api/client';
 import { subscribeDeviceState } from '../api/sse';
+import { useCoalescedReload } from '../utils/coalesce';
 import { RoomCard } from '../components/RoomCard';
 import { CreateGroupModal } from '../components/CreateGroupModal';
 
@@ -37,11 +38,13 @@ export function RoomsPage() {
     setLoading(false);
   }, []);
 
+  const scheduleReload = useCoalescedReload(loadData);
+
   useEffect(() => {
     loadData();
-    const unsub = subscribeDeviceState(() => loadData());
+    const unsub = subscribeDeviceState(() => scheduleReload());
     return unsub;
-  }, [loadData]);
+  }, [loadData, scheduleReload]);
 
   async function handleAddRoom(e: React.FormEvent) {
     e.preventDefault();

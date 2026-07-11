@@ -21,7 +21,7 @@ function GroupIcon() {
   );
 }
 
-export function GroupRow({ group, onStateChange }: Props) {
+export const GroupRow = React.memo(function GroupRow({ group, onStateChange }: Props) {
   const state = group.state ?? {};
   const capabilities = group.capabilities ?? [];
 
@@ -169,4 +169,4 @@ export function GroupRow({ group, onStateChange }: Props) {
       <div style={{ ...controls, opacity: isOffline ? 0.5 : 1 }}>{renderControls()}</div>
     </div>
   );
-}
+});

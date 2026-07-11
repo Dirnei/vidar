@@ -11,6 +11,7 @@ import {
   getDevice,
 } from '../api/client';
 import { subscribeDeviceState } from '../api/sse';
+import { useCoalescedReload } from '../utils/coalesce';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { ProgressBar } from '../components/ProgressBar';
 import { StatusDot } from '../components/StatusDot';
@@ -52,11 +53,13 @@ export function GroupDetailPage() {
     }
   }, [id]);
 
+  const scheduleReload = useCoalescedReload(loadGroup);
+
   useEffect(() => {
     loadGroup();
-    const unsub = subscribeDeviceState(() => loadGroup());
+    const unsub = subscribeDeviceState(() => scheduleReload());
     return unsub;
-  }, [loadGroup]);
+  }, [loadGroup, scheduleReload]);
 
   async function enterEditMode() {
     if (!group) return;

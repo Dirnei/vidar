@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Device } from '../types';
 import { sendCommand } from '../api/client';
@@ -16,12 +16,25 @@ interface Props {
   groupLabel?: string;
 }
 
-export function DeviceRow({ device, showRoom = false, rooms, onStateChange, groupLabel }: Props) {
-  const state = device.state ?? {};
+export const DeviceRow = React.memo(function DeviceRow({ device, showRoom = false, rooms, onStateChange, groupLabel }: Props) {
+  // Optimistic overrides so a toggle reacts on the FIRST click instead of waiting
+  // for the command round-trip + reload. Cleared whenever authoritative device
+  // state arrives (new `device.state` identity after a reload), so the server
+  // always wins in the end.
+  const [optimistic, setOptimistic] = useState<Record<string, unknown>>({});
+  useEffect(() => { setOptimistic({}); }, [device.state]);
+  const state = { ...(device.state ?? {}), ...optimistic };
 
   async function handleSwitch(value: boolean) {
+    setOptimistic((o) => ({ ...o, switch: value }));
     await sendCommand(device.id, { capabilityKey: 'switch', value });
     onStateChange?.();
+  }
+
+  function handleLight(value: boolean) {
+    const light = (state['light'] as Record<string, unknown> | undefined) ?? {};
+    setOptimistic((o) => ({ ...o, light: { ...light, on: value } }));
+    sendCommand(device.id, { capabilityKey: 'light', value }).then(() => onStateChange?.());
   }
 
   async function handleDimmer(value: number) {
@@ -54,7 +67,7 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
       const lightState = state['light'] as Record<string, unknown> | undefined;
       const isOn = lightState?.on === true;
       items.push(
-        <ToggleSwitch key="light" checked={isOn} onChange={v => sendCommand(device.id, { capabilityKey: 'light', value: v }).then(() => onStateChange?.())} />
+        <ToggleSwitch key="light" checked={isOn} onChange={handleLight} />
       );
     }
 
@@ -194,4 +207,4 @@ export function DeviceRow({ device, showRoom = false, rooms, onStateChange, grou
       <div style={{ ...controls, opacity: isOffline ? 0.5 : 1 }}>{renderControls()}</div>
     </div>
   );
-}
+});

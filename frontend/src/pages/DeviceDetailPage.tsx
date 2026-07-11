@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import type { Device, Room, StateHistoryEntry, CommandHistoryEntry, CapabilityDescriptor, UnitType } from '../types';
 import { getDevice, getRooms, sendCommand, updateDeviceSettings, deleteDevice, getDeviceStateHistory, getDeviceCommandHistory } from '../api/client';
 import { subscribeDeviceState } from '../api/sse';
+import { useCoalescedReload } from '../utils/coalesce';
 import { ToggleSwitch } from '../components/ToggleSwitch';
 import { ProgressBar } from '../components/ProgressBar';
 import { StatusDot } from '../components/StatusDot';
@@ -53,13 +54,15 @@ export function DeviceDetailPage() {
     }
   }, [id]);
 
+  const scheduleReload = useCoalescedReload(loadDevice);
+
   useEffect(() => {
     loadDevice();
     const unsub = subscribeDeviceState((evt) => {
-      if (evt.deviceId === id) loadDevice();
+      if (evt.deviceId === id) scheduleReload();
     });
     return unsub;
-  }, [loadDevice, id]);
+  }, [loadDevice, id, scheduleReload]);
 
   useEffect(() => {
     if (!id || !expert) return;
