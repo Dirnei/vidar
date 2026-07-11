@@ -26,6 +26,19 @@ public class SpotifyFanOutTests
     }
 
     [Fact]
+    public void LiveVolume_WinsOverDifferingPersistedVolume()
+    {
+        var playback = new SpotifyPlayback("a1", true, 55, new Dictionary<string, object>());
+        var devices = new List<SpotifyDevice> { new("a1", "Echo", true, 30) };
+        var accepted = new Dictionary<string, Guid> { ["a1"] = G(1) };
+        var persisted = new Dictionary<string, int> { ["a1"] = 99 }; // stale — must be ignored
+
+        var updates = Assert.Single(SpotifyFanOut.Build(playback, devices, accepted, persisted));
+        var map = updates.Updates.ToDictionary(u => u.Key, u => u.Value);
+        Assert.Equal(30, map["volume"]);
+    }
+
+    [Fact]
     public void InactiveDevice_IsNotPlaying_EmptyNowPlaying()
     {
         var playback = new SpotifyPlayback("a1", true, 55, new Dictionary<string, object> { ["title"] = "Song" });
