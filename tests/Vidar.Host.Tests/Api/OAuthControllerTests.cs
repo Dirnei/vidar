@@ -116,6 +116,35 @@ public sealed class OAuthControllerTests : TestKit
     }
 
     [Fact]
+    public async Task Authorize_Spotify_NoAuthorizeEndpoint_FallsBackToDefault()
+    {
+        // Spotify's authorize endpoint is a fixed constant, so it is not a config field; the
+        // controller supplies the default. Only clientId + scopes are persisted.
+        var config = new ApplicationConfig
+        {
+            Id = "spotify",
+            Name = "Spotify",
+            ApplicationType = ApplicationType.Provider,
+            Enabled = true,
+            Settings = new Dictionary<string, string>
+            {
+                ["clientId"] = "spotify-client",
+                ["oauthScopes"] = "user-read-playback-state",
+            },
+        };
+        _repo.GetByIdAsync("spotify").Returns(config);
+
+        var result = await _sut.Authorize("spotify");
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        var url = ok.Value!.GetType().GetProperty("authorizeUrl")!.GetValue(ok.Value) as string;
+        Assert.NotNull(url);
+        Assert.StartsWith("https://accounts.spotify.com/authorize?", url);
+        Assert.Contains("client_id=spotify-client", url);
+        Assert.Contains("api%2Foauth%2Fspotify%2Fcallback", url, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task Authorize_ValidConfig_ReturnsAuthorizeUrl()
     {
         _repo.GetByIdAsync("homeconnect").Returns(MakeConfig());

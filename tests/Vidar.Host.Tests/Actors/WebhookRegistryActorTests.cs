@@ -231,7 +231,7 @@ public sealed class WebhookRegistryActorTests : TestKit
         var listener = CreateTestProbe();
         registry.Tell(new RegisterWebhookListener("oauth-homeconnect", listener, IntegrationId: "homeconnect"));
 
-        var callback = new OAuthCallbackReceived("homeconnect", "code-123", "state-xyz", DateTimeOffset.UtcNow);
+        var callback = new OAuthCallbackReceived("homeconnect", "code-123", "state-xyz", DateTimeOffset.UtcNow, "http://localhost/api/oauth/homeconnect/callback");
         registry.Tell(callback);
 
         listener.ExpectMsg<OAuthCallbackReceived>(msg =>
@@ -246,7 +246,7 @@ public sealed class WebhookRegistryActorTests : TestKit
         var routeCache = Substitute.For<IWebhookRouteCache>();
         var registry = Sys.ActorOf(WebhookRegistryActor.Props(routeCache));
 
-        var callback = new OAuthCallbackReceived("homeconnect", "code-123", "state-xyz", DateTimeOffset.UtcNow);
+        var callback = new OAuthCallbackReceived("homeconnect", "code-123", "state-xyz", DateTimeOffset.UtcNow, "http://localhost/api/oauth/homeconnect/callback");
         registry.Tell(callback);
 
         // Actor stays alive — register something after to prove it

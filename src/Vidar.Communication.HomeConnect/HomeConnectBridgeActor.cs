@@ -48,6 +48,9 @@ public sealed class HomeConnectBridgeActor : PluginActorBase
         Receive<DeviceCommand>(OnDeviceCommand);
         Receive<WebhookReceived>(OnWebhookReceived);
         Receive<OAuthCallbackReceived>(OnOAuthCallback);
+        // The webhook-registry singleton lives on the host; when it (re)starts our registration is
+        // lost, so re-register on its startup announcement or OAuth callbacks get dropped.
+        Receive<WebhookRegistryStarted>(_ => RegisterOAuthListener());
         Receive<BeginSseStream>(_ => StartSseStream());
         Receive<TokenExchangeFailed>(msg =>
         {
@@ -65,9 +68,13 @@ public sealed class HomeConnectBridgeActor : PluginActorBase
     protected override void PreStart()
     {
         base.PreStart();
+        Mediator.Tell(new Subscribe("webhook-registry-started", Self));
+        RegisterOAuthListener();
+    }
+
+    private void RegisterOAuthListener() =>
         _webhookRegistry.Tell(new RegisterWebhookListener(
             "oauth-homeconnect", Self, IntegrationId: "homeconnect"));
-    }
 
     protected override void PostStop()
     {
@@ -114,8 +121,11 @@ public sealed class HomeConnectBridgeActor : PluginActorBase
             return;
         }
 
-        var hostBaseUrl = settings.GetValueOrDefault("hostBaseUrl", "http://vidar-host:8080");
-        var redirectUri = new Uri($"{hostBaseUrl.TrimEnd('/')}/api/oauth/homeconnect/callback");
+        // The options object requires a redirect URI, but it is never sent on the wire here: the
+        // authorization-code exchange is done manually in ExchangeCodeForTokensAsync using the
+        // host-resolved redirect URI, and the flow is used only as a refresh token provider (refresh
+        // does not send redirect_uri). This placeholder just satisfies the options contract.
+        var redirectUri = new Uri("http://vidar-host:8080/api/oauth/homeconnect/callback");
 
         var oauthOptions = useSimulator
             ? HomeConnectOAuthOptions.ForSimulator(clientId, redirectUri, clientSecret)
@@ -301,10 +311,10 @@ public sealed class HomeConnectBridgeActor : PluginActorBase
         }
 
         Log.Info("OAuth callback received, exchanging code for tokens");
-        _ = ExchangeCodeForTokensAsync(msg.Code);
+        _ = ExchangeCodeForTokensAsync(msg.Code, msg.RedirectUri);
     }
 
-    private async Task ExchangeCodeForTokensAsync(string code)
+    private async Task ExchangeCodeForTokensAsync(string code, string redirectUri)
     {
         try
         {
@@ -317,8 +327,6 @@ public sealed class HomeConnectBridgeActor : PluginActorBase
 
             var clientId = settings.GetValueOrDefault("clientId", "");
             var clientSecret = settings.GetValueOrDefault("clientSecret");
-            var hostBaseUrl = settings.GetValueOrDefault("hostBaseUrl", "http://vidar-host:8080");
-            var redirectUri = $"{hostBaseUrl.TrimEnd('/')}/api/oauth/homeconnect/callback";
 
             var form = new Dictionary<string, string>
             {

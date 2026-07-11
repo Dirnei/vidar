@@ -13,27 +13,28 @@ public sealed class SpotifyOAuth
     private readonly SpotifyTokenStore _store;
     private readonly string _clientId;
     private readonly string _clientSecret;
-    private readonly string _redirectUri;
     private readonly string _tokenEndpoint;
 
     public SpotifyOAuth(HttpClient http, SpotifyTokenStore store, string clientId, string clientSecret,
-        string redirectUri, string tokenEndpoint)
+        string tokenEndpoint)
     {
         _http = http;
         _store = store;
         _clientId = clientId;
         _clientSecret = clientSecret;
-        _redirectUri = redirectUri;
         _tokenEndpoint = tokenEndpoint;
     }
 
-    public async Task ExchangeCodeAsync(string code, CancellationToken ct)
+    // redirectUri is the exact URI the host used for this authorization; Spotify requires the token
+    // exchange to echo it back. It is only needed here (refresh does not use it), so it is passed per
+    // call rather than held on the instance.
+    public async Task ExchangeCodeAsync(string code, string redirectUri, CancellationToken ct)
     {
         var form = new Dictionary<string, string>
         {
             ["grant_type"] = "authorization_code",
             ["code"] = code,
-            ["redirect_uri"] = _redirectUri,
+            ["redirect_uri"] = redirectUri,
         };
         var token = await PostTokenAsync(form, previousRefresh: null, ct);
         if (token is not null) await _store.SaveAsync(token);

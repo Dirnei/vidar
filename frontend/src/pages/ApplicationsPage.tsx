@@ -68,7 +68,6 @@ const APP_DEFS: AppDef[] = [
       { key: 'oauthAuthorizeEndpoint', label: 'Authorize Endpoint', placeholder: 'https://api.home-connect.com/security/oauth/authorize', defaultValue: 'https://api.home-connect.com/security/oauth/authorize', type: 'text' },
       { key: 'oauthTokenEndpoint', label: 'Token Endpoint', placeholder: 'https://api.home-connect.com/security/oauth/token', defaultValue: 'https://api.home-connect.com/security/oauth/token', type: 'text' },
       { key: 'oauthScopes', label: 'Scopes', placeholder: 'IdentifyAppliance Monitor Settings Control', defaultValue: 'IdentifyAppliance Monitor Settings Control', type: 'text' },
-      { key: 'hostBaseUrl', label: 'Vidar Host URL', placeholder: 'http://vidar-host:8080', defaultValue: 'http://vidar-host:8080', type: 'text' },
     ],
   },
   {
@@ -128,10 +127,7 @@ const APP_DEFS: AppDef[] = [
     fields: [
       { key: 'clientId', label: 'Client ID', placeholder: 'Spotify app client ID', type: 'text' },
       { key: 'clientSecret', label: 'Client Secret', placeholder: 'Spotify app client secret', type: 'password' },
-      { key: 'oauthTokenEndpoint', label: 'Token Endpoint', placeholder: 'https://accounts.spotify.com/api/token', defaultValue: 'https://accounts.spotify.com/api/token', type: 'text' },
-      { key: 'oauthAuthorizeEndpoint', label: 'Authorize Endpoint', placeholder: 'https://accounts.spotify.com/authorize', defaultValue: 'https://accounts.spotify.com/authorize', type: 'text' },
       { key: 'oauthScopes', label: 'Scopes', placeholder: 'user-read-playback-state user-modify-playback-state user-read-currently-playing', defaultValue: 'user-read-playback-state user-modify-playback-state user-read-currently-playing', type: 'text' },
-      { key: 'hostBaseUrl', label: 'Vidar Host URL', placeholder: 'http://vidar-host:8080', defaultValue: 'http://vidar-host:8080', type: 'text' },
     ],
   },
   {

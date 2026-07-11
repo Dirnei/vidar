@@ -12,13 +12,9 @@ namespace Vidar.Communication.Spotify;
 // One actor for the single Spotify Player device. Owns the HttpClient + token access and polls
 // the Web API (Spotify has no push). Maps player + device-list responses to DeviceStateUpdates
 // and dispatches transport/volume/zone commands.
-public sealed class SpotifyPlayerActor : ReceiveActor, IWithTimers
+public sealed class SpotifyPlayerActor : ReceiveActor
 {
-    public ITimerScheduler Timers { get; set; } = null!;
-
     private const string ApiBase = "https://api.spotify.com/v1";
-    private static readonly TimeSpan PlayerInterval = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan DevicesInterval = TimeSpan.FromSeconds(20);
 
     private readonly ILoggingAdapter _log = Context.GetLogger();
     private readonly IActorRef _shardProxy;
@@ -26,8 +22,12 @@ public sealed class SpotifyPlayerActor : ReceiveActor, IWithTimers
     private readonly SpotifyOAuth _oauth;
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromSeconds(15) };
 
-    private sealed class PollPlayer { public static readonly PollPlayer Instance = new(); }
-    private sealed class PollDevices { public static readonly PollDevices Instance = new(); }
+    // On-demand fetch triggers — there is NO background polling. The frontend drives refreshes while
+    // the player card is open (a ~10s tick for player state; the device list on dropdown-open/refresh)
+    // via the "refresh"/"refresh_zones" commands, plus one initial fetch on spawn. Spotify's Web API
+    // is pull-only, so gating fetches to "while viewing" is the way to avoid needless calls.
+    private sealed class FetchPlayer { public static readonly FetchPlayer Instance = new(); }
+    private sealed class FetchDevices { public static readonly FetchDevices Instance = new(); }
     private sealed record StateTuples(IReadOnlyList<(string Key, object Value)> Updates);
 
     public static Props Props(Guid deviceId, SpotifyOAuth oauth) =>
@@ -39,16 +39,19 @@ public sealed class SpotifyPlayerActor : ReceiveActor, IWithTimers
         _oauth = oauth;
         _shardProxy = ActorRegistry.For(Context.System).Get<DeviceTwinRegion>();
 
-        ReceiveAsync<PollPlayer>(async _ =>
+        ReceiveAsync<FetchPlayer>(async _ =>
         {
+            // Capture Self before awaiting — it is not valid on the post-await continuation thread.
+            var self = Self;
             var body = await GetAsync("/me/player");
-            if (body is not null) Self.Tell(new StateTuples(SpotifyStateMapper.MapPlayer(body)));
+            if (body is not null) self.Tell(new StateTuples(SpotifyStateMapper.MapPlayer(body)));
         });
 
-        ReceiveAsync<PollDevices>(async _ =>
+        ReceiveAsync<FetchDevices>(async _ =>
         {
+            var self = Self;
             var body = await GetAsync("/me/player/devices");
-            if (body is not null) Self.Tell(new StateTuples(SpotifyDeviceListMapper.MapDevices(body)));
+            if (body is not null) self.Tell(new StateTuples(SpotifyDeviceListMapper.MapDevices(body)));
         });
 
         Receive<StateTuples>(m =>
@@ -62,8 +65,10 @@ public sealed class SpotifyPlayerActor : ReceiveActor, IWithTimers
 
     protected override void PreStart()
     {
-        Timers.StartPeriodicTimer("poll-player", PollPlayer.Instance, TimeSpan.FromSeconds(1), PlayerInterval);
-        Timers.StartPeriodicTimer("poll-devices", PollDevices.Instance, TimeSpan.FromSeconds(2), DevicesInterval);
+        // One initial fetch so the twin has state before the card is ever opened; all further
+        // refreshes are client-driven (see OnCommandAsync). No periodic timers.
+        Self.Tell(FetchPlayer.Instance);
+        Self.Tell(FetchDevices.Instance);
     }
 
     protected override void PostStop() => _http.Dispose();
@@ -91,6 +96,17 @@ public sealed class SpotifyPlayerActor : ReceiveActor, IWithTimers
 
     private async Task OnCommandAsync(DeviceCommand cmd)
     {
+        // Capture Self before awaiting — the post-await continuation runs off the actor thread.
+        var self = Self;
+
+        // Refresh is an explicit on-demand fetch (the frontend's viewing-gated tick + refresh button),
+        // not a Spotify write — trigger a one-shot GET rather than the command builder.
+        switch (cmd.CapabilityKey)
+        {
+            case "refresh": self.Tell(FetchPlayer.Instance); return;
+            case "refresh_zones": self.Tell(FetchDevices.Instance); return;
+        }
+
         var spec = SpotifyCommandBuilder.Build(cmd.CapabilityKey, cmd.Value);
         if (spec is null) { _log.Warning("Unrecognized Spotify command {Key}={Value}", cmd.CapabilityKey, cmd.Value); return; }
 
@@ -114,7 +130,7 @@ public sealed class SpotifyPlayerActor : ReceiveActor, IWithTimers
             else if (!resp.IsSuccessStatusCode)
                 _log.Warning("Spotify command {Key} → {Code}", cmd.CapabilityKey, (int)resp.StatusCode);
             else
-                Self.Tell(PollPlayer.Instance); // reflect the change quickly
+                self.Tell(FetchPlayer.Instance); // reflect the change quickly
         }
         catch (Exception ex) { _log.Warning(ex, "Spotify command {Key} failed", cmd.CapabilityKey); }
     }

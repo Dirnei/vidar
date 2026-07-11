@@ -31,7 +31,7 @@ public class SpotifyOAuthTests
         var stub = new StubHandler();
         var http = new HttpClient(stub);
         var store = new SpotifyTokenStore(path);
-        var oauth = new SpotifyOAuth(http, store, "cid", "secret", "http://cb", "https://token");
+        var oauth = new SpotifyOAuth(http, store, "cid", "secret", "https://token");
         return (oauth, store, stub, path);
     }
 
@@ -41,13 +41,14 @@ public class SpotifyOAuthTests
         var (oauth, store, stub, path) = Make();
         try
         {
-            await oauth.ExchangeCodeAsync("thecode", CancellationToken.None);
+            await oauth.ExchangeCodeAsync("thecode", "http://cb", CancellationToken.None);
             var tok = await store.LoadAsync();
             Assert.Equal("AT", tok!.AccessToken);
             Assert.Equal("RT", tok.RefreshToken);
             Assert.Equal("Basic", stub.Last!.Headers.Authorization!.Scheme);
             Assert.Contains("grant_type=authorization_code", stub.LastBody);
             Assert.Contains("code=thecode", stub.LastBody);
+            Assert.Contains("redirect_uri=http", stub.LastBody);
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }

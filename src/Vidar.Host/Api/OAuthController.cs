@@ -19,6 +19,14 @@ public sealed class OAuthController : ControllerBase
 
     private static readonly HashSet<string> KnownIntegrations = ["homeconnect", "spotify"];
 
+    // Providers whose authorize endpoint is a fixed constant need not expose it as a config field;
+    // the integration supplies the default here. A per-integration setting still overrides this
+    // (Home Connect, for example, switches between production and simulator endpoints).
+    private static readonly Dictionary<string, string> DefaultAuthorizeEndpoints = new()
+    {
+        ["spotify"] = "https://accounts.spotify.com/authorize",
+    };
+
     // Stores CSRF state per integration so the callback can verify it.
     internal static readonly ConcurrentDictionary<string, string> PendingStates = new();
 
@@ -43,7 +51,10 @@ public sealed class OAuthController : ControllerBase
         if (!config.Settings.TryGetValue("clientId", out var clientId) || string.IsNullOrEmpty(clientId))
             return BadRequest(new { error = "Missing 'clientId' in integration settings." });
 
+        // A saved setting wins; otherwise fall back to the integration's fixed default endpoint.
         if (!config.Settings.TryGetValue("oauthAuthorizeEndpoint", out var authorizeEndpoint) || string.IsNullOrEmpty(authorizeEndpoint))
+            DefaultAuthorizeEndpoints.TryGetValue(integrationId, out authorizeEndpoint);
+        if (string.IsNullOrEmpty(authorizeEndpoint))
             return BadRequest(new { error = "Missing 'oauthAuthorizeEndpoint' in integration settings." });
 
         if (!config.Settings.TryGetValue("oauthScopes", out var scopes) || string.IsNullOrEmpty(scopes))
@@ -84,8 +95,12 @@ public sealed class OAuthController : ControllerBase
         if (state != expectedState)
             return BadRequest("Invalid OAuth state (CSRF mismatch).");
 
+        // Rebuild the same redirect URI the Authorize step used (identical expression, same request
+        // origin) and hand it to the plugin so its token exchange matches without any configuration.
+        var redirectUri = $"{Request.Scheme}://{Request.Host}/api/oauth/{integrationId}/callback";
+
         var registry = await _registryProvider.GetAsync();
-        registry.Tell(new OAuthCallbackReceived(integrationId, code, state, DateTimeOffset.UtcNow));
+        registry.Tell(new OAuthCallbackReceived(integrationId, code, state, DateTimeOffset.UtcNow, redirectUri));
 
         return new ContentResult
         {

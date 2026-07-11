@@ -42,8 +42,10 @@ function fmtTime(ms: number): string {
 const discStyleTag = `
   .spotify-disc-spinning { animation: spotify-disc-spin 16s linear infinite; }
   @keyframes spotify-disc-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .spotify-refresh-spinning { animation: spotify-refresh-spin 0.8s linear infinite; }
+  @keyframes spotify-refresh-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) {
-    .spotify-disc-spinning { animation: none; }
+    .spotify-disc-spinning, .spotify-refresh-spinning { animation: none; }
   }
 `;
 
@@ -73,10 +75,50 @@ export function SpotifyPlayerCard({ state, cmd }: Props) {
   const artist = now?.artist?.trim() || null;
   const album = now?.album?.trim() || null;
   const art = now?.artUrl || null;
-  const progressMs = typeof now?.progressMs === 'number' ? now.progressMs : 0;
+  const serverProgressMs = typeof now?.progressMs === 'number' ? now.progressMs : 0;
   const durationMs = typeof now?.durationMs === 'number' ? now.durationMs : 0;
-  const pct = durationMs > 0 ? Math.max(0, Math.min(100, (progressMs / durationMs) * 100)) : 0;
   const hasTrack = Boolean(title || artist || art);
+
+  // --- Live refresh, gated to "card is open" ---
+  // The worker does NO background polling; while this card is mounted we drive a ~10s refresh of
+  // player state. cmd is held in a ref so the effect runs once (mount/unmount) regardless of whether
+  // the parent passes a stable callback. Navigating away clears the interval → polling stops.
+  const cmdRef = React.useRef(cmd);
+  cmdRef.current = cmd;
+  React.useEffect(() => {
+    cmdRef.current('refresh', true);
+    const t = window.setInterval(() => cmdRef.current('refresh', true), 10000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  // Advance the progress bar locally between fetches so it reads as live without polling faster.
+  // The baseline resets whenever the server reports a new position (a fetch or a track change).
+  const baseline = React.useRef({ progress: serverProgressMs, at: Date.now() });
+  const [displayProgressMs, setDisplayProgressMs] = React.useState(serverProgressMs);
+  React.useEffect(() => {
+    baseline.current = { progress: serverProgressMs, at: Date.now() };
+    setDisplayProgressMs(serverProgressMs);
+  }, [serverProgressMs, durationMs]);
+  React.useEffect(() => {
+    if (!playing) return;
+    const t = window.setInterval(() => {
+      const p = baseline.current.progress + (Date.now() - baseline.current.at);
+      setDisplayProgressMs(durationMs > 0 ? Math.min(p, durationMs) : p);
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [playing, durationMs]);
+
+  const progressMs = displayProgressMs;
+  const pct = durationMs > 0 ? Math.max(0, Math.min(100, (progressMs / durationMs) * 100)) : 0;
+
+  // Brief optimistic spin on the refresh button (there is no ack from the worker).
+  const [refreshing, setRefreshing] = React.useState(false);
+  function refreshZones() {
+    cmd('refresh_zones', true);
+    cmd('refresh', true);
+    setRefreshing(true);
+    window.setTimeout(() => setRefreshing(false), 1000);
+  }
 
   const statusColor = playing ? 'var(--accent-green)' : hasTrack ? 'var(--accent-primary)' : 'var(--text-muted)';
   const statusLabel = playing ? 'Playing' : hasTrack ? 'Paused' : 'Nothing playing';
@@ -96,28 +138,46 @@ export function SpotifyPlayerCard({ state, cmd }: Props) {
         <span style={{ width: 9, height: 9, borderRadius: '50%', background: statusColor, flexShrink: 0 }} />
         <span style={{ fontFamily: 'var(--font-heading)', fontSize: 16, fontWeight: 700, color: statusColor }}>{statusLabel}</span>
 
-        {zones.length > 0 ? (
-          <select
-            value={activeZoneRaw !== undefined && activeZoneRaw !== null ? String(activeZoneRaw) : ''}
-            onChange={handleZoneChange}
-            aria-label="Zone"
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, maxWidth: '62%', minWidth: 0 }}>
+          {zones.length > 0 ? (
+            <select
+              value={activeZoneRaw !== undefined && activeZoneRaw !== null ? String(activeZoneRaw) : ''}
+              onChange={handleZoneChange}
+              onMouseDown={() => cmd('refresh_zones', true)}
+              aria-label="Zone"
+              style={{
+                minWidth: 0, flex: '0 1 auto', padding: '6px 10px',
+                background: 'var(--bg-hover)', color: 'var(--text-primary)',
+                border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
+                fontFamily: 'var(--font-body)', fontSize: 13, cursor: 'pointer',
+                overflow: 'hidden', textOverflow: 'ellipsis',
+              }}
+            >
+              {activeZoneRaw === undefined && <option value="" disabled>Select zone</option>}
+              {zones.map(z => (
+                <option key={z.id} value={String(z.id)}>{z.active ? `● ${z.name}` : z.name}</option>
+              ))}
+            </select>
+          ) : (
+            <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+              No zones found
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={refreshZones}
+            aria-label="Refresh zones"
+            title="Refresh zones"
             style={{
-              marginLeft: 'auto', maxWidth: '55%', padding: '6px 10px',
-              background: 'var(--bg-hover)', color: 'var(--text-primary)',
-              border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
-              fontFamily: 'var(--font-body)', fontSize: 13, cursor: 'pointer',
+              flexShrink: 0, width: 30, height: 30, padding: 0, borderRadius: '50%',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+              background: 'var(--bg-hover)', color: 'var(--text-secondary)',
+              border: '1px solid var(--border-default)', cursor: 'pointer',
             }}
           >
-            {activeZoneRaw === undefined && <option value="" disabled>Select zone</option>}
-            {zones.map(z => (
-              <option key={z.id} value={String(z.id)}>{z.active ? `● ${z.name}` : z.name}</option>
-            ))}
-          </select>
-        ) : (
-          <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
-            No zones found
-          </span>
-        )}
+            <RefreshIcon size={15} className={refreshing ? 'spotify-refresh-spinning' : undefined} />
+          </button>
+        </div>
       </div>
 
       {/* Hero: disc + track info */}
@@ -278,6 +338,15 @@ function SkipForwardIcon({ size = 16, color = 'currentColor' }: { size?: number;
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polygon points="5 4 15 12 5 20 5 4" fill={color} stroke="none" />
       <line x1="19" y1="5" x2="19" y2="19" />
+    </svg>
+  );
+}
+
+function RefreshIcon({ size = 16, color = 'currentColor', className }: { size?: number; color?: string; className?: string }) {
+  return (
+    <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+      <polyline points="21 3 21 9 15 9" />
     </svg>
   );
 }

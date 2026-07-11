@@ -26,11 +26,13 @@ public sealed class HomeConnectBridgeActorOAuthTests : TestKit
             HomeConnectBridgeActor.Props());
 
         var callback = new OAuthCallbackReceived(
-            "homeconnect", "test-code", "test-state", DateTimeOffset.UtcNow);
+            "homeconnect", "test-code", "test-state", DateTimeOffset.UtcNow,
+            "http://localhost/api/oauth/homeconnect/callback");
         bridge.Tell(callback);
 
         bridge.Tell(new OAuthCallbackReceived(
-            "homeconnect", "code2", "state2", DateTimeOffset.UtcNow));
+            "homeconnect", "code2", "state2", DateTimeOffset.UtcNow,
+            "http://localhost/api/oauth/homeconnect/callback"));
 
         ExpectNoMsg(TimeSpan.FromMilliseconds(300));
     }
