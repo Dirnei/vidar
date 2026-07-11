@@ -44,6 +44,7 @@ public sealed class SpotifyBridgeActor : PluginActorBase
     private sealed class RefreshNow { public static readonly RefreshNow Instance = new(); }
     private sealed record VolumesLoaded(Dictionary<string, int> Volumes);
     private sealed record DevicesFetched(SpotifyPlayback Playback, IReadOnlyList<SpotifyDevice> Devices);
+    private sealed record VolumeChanged(string NativeId, int Volume);
 
     public static Props Props(string tokenFilePath, string volumeFilePath) =>
         Akka.Actor.Props.Create(() => new SpotifyBridgeActor(tokenFilePath, volumeFilePath));
@@ -58,6 +59,7 @@ public sealed class SpotifyBridgeActor : PluginActorBase
         Receive<RefreshNow>(msg => { _ = FetchAllAsync(); });
         Receive<VolumesLoaded>(m => _volumes = m.Volumes);
         Receive<DevicesFetched>(OnDevicesFetched);
+        Receive<VolumeChanged>(m => { _volumes[m.NativeId] = m.Volume; _ = PersistVolumesAsync(); });
 
         Receive<OAuthCallbackReceived>(OnOAuthCallback);
         // The webhook-registry singleton lives on the host; when it (re)starts our registration is
@@ -180,6 +182,8 @@ public sealed class SpotifyBridgeActor : PluginActorBase
 
     private async Task HandleCommandAsync(DeviceCommand cmd)
     {
+        if (!IsEnabled) return;
+
         // Capture Self before the first await — the post-await continuation runs off the actor thread.
         var self = Self;
 
@@ -200,17 +204,19 @@ public sealed class SpotifyBridgeActor : PluginActorBase
         // Persist the user's chosen volume only after the API write so a persist hiccup (e.g. an
         // overlapping save from a slider drag throwing IOException) can never swallow the actual
         // Spotify volume change — it can at worst leave the twin's cached volume briefly stale.
+        // The mutation + persist are marshalled back onto the actor thread via a self-message: this
+        // continuation runs off the actor thread, and _volumes is a plain Dictionary shared with
+        // OnDevicesFetched (which runs on the actor thread), so touching it here would race.
         if (cmd.CapabilityKey == "volume")
-        {
-            _volumes[cmd.NativeId] = ToVolume(cmd.Value);
-            await PersistVolumesAsync();
-        }
+            self.Tell(new VolumeChanged(cmd.NativeId, ToVolume(cmd.Value)));
 
         self.Tell(RefreshNow.Instance); // reflect the change quickly
     }
 
     private async Task FetchAllAsync()
     {
+        if (!IsEnabled) return;
+
         var self = Self;
         try
         {
