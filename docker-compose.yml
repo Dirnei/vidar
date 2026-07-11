@@ -250,6 +250,7 @@ services:
       - VIDAR_HOSTNAME=vidar-comm-spotify
       - VIDAR_AKKA_PORT=4065
       - VIDAR_SPOTIFY_TOKEN_PATH=/data/spotify-token.json
+      - VIDAR_SPOTIFY_VOLUME_PATH=/data/spotify-volumes.json
     volumes:
       - vidar-spotify-data:/data
 
