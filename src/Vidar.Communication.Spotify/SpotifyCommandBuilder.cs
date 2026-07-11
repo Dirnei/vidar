@@ -10,17 +10,22 @@ public static class SpotifyCommandBuilder
     private static readonly IReadOnlyDictionary<string, string?> Empty =
         new Dictionary<string, string?>();
 
-    // Device-targeted overload: maps a capability command for a specific speaker (deviceId) to a
-    // Spotify Web API request. "Play here" (transfer) when the target is not the active device.
-    public static SpotifyRequest? Build(string capabilityKey, object value, string deviceId, bool isActive)
+    // Maps a capability command to a Spotify Web API request. `deviceId` targets a specific speaker;
+    // when it is null/empty (the central "Spotify Player" acting on whatever is currently playing),
+    // device_id is omitted so the command hits the active device. "Play here" (transfer) applies when
+    // a non-null target is not the active device. The `zone` key transfers the stream to `value`.
+    public static SpotifyRequest? Build(string capabilityKey, object value, string? deviceId, bool isActive)
     {
-        var dev = new Dictionary<string, string?> { ["device_id"] = deviceId };
+        var dev = string.IsNullOrEmpty(deviceId)
+            ? Empty
+            : new Dictionary<string, string?> { ["device_id"] = deviceId };
         switch (capabilityKey)
         {
             case "playback":
                 if (!ToBool(value))
                     return new SpotifyRequest(HttpMethod.Put, "/me/player/pause", dev, null);
-                if (isActive)
+                // No target, or the target is already active → plain play. Otherwise transfer here.
+                if (isActive || string.IsNullOrEmpty(deviceId))
                     return new SpotifyRequest(HttpMethod.Put, "/me/player/play", dev, null);
                 var body = JsonSerializer.Serialize(new { device_ids = new[] { deviceId }, play = true });
                 return new SpotifyRequest(HttpMethod.Put, "/me/player", Empty, body);
@@ -35,8 +40,15 @@ public static class SpotifyCommandBuilder
 
             case "volume":
                 var pct = Math.Clamp(ToInt(value), 0, 100);
-                return new SpotifyRequest(HttpMethod.Put, "/me/player/volume",
-                    new Dictionary<string, string?> { ["volume_percent"] = pct.ToString(), ["device_id"] = deviceId }, null);
+                var q = new Dictionary<string, string?> { ["volume_percent"] = pct.ToString() };
+                if (!string.IsNullOrEmpty(deviceId)) q["device_id"] = deviceId;
+                return new SpotifyRequest(HttpMethod.Put, "/me/player/volume", q, null);
+
+            case "zone":
+                var target = value?.ToString();
+                if (string.IsNullOrWhiteSpace(target)) return null;
+                var transfer = JsonSerializer.Serialize(new { device_ids = new[] { target }, play = true });
+                return new SpotifyRequest(HttpMethod.Put, "/me/player", Empty, transfer);
 
             default:
                 return null;

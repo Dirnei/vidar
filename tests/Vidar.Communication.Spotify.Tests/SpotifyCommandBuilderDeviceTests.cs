@@ -67,4 +67,39 @@ public class SpotifyCommandBuilderDeviceTests
     {
         Assert.Null(SpotifyCommandBuilder.Build("bogus", true, "dev1", isActive: true));
     }
+
+    // --- Central player: null/empty deviceId acts on the active device; `zone` transfers ---
+
+    [Fact]
+    public void Zone_TransfersStreamToTarget()
+    {
+        var r = SpotifyCommandBuilder.Build("zone", "targetX", null, isActive: false)!;
+        Assert.Equal(HttpMethod.Put, r.Method);
+        Assert.Equal("/me/player", r.Path);
+        Assert.Contains("\"device_ids\":[\"targetX\"]", r.JsonBody);
+        Assert.Contains("\"play\":true", r.JsonBody);
+    }
+
+    [Fact]
+    public void Zone_EmptyTarget_ReturnsNull()
+    {
+        Assert.Null(SpotifyCommandBuilder.Build("zone", "", null, isActive: false));
+    }
+
+    [Fact]
+    public void PlaybackTrue_NullDevice_Plays_WithoutDeviceId()
+    {
+        var r = SpotifyCommandBuilder.Build("playback", true, null, isActive: true)!;
+        Assert.Equal("/me/player/play", r.Path);
+        Assert.False(r.Query.ContainsKey("device_id"));
+        Assert.Null(r.JsonBody);
+    }
+
+    [Fact]
+    public void Volume_NullDevice_OmitsDeviceId()
+    {
+        var r = SpotifyCommandBuilder.Build("volume", 40, null, isActive: true)!;
+        Assert.Equal("40", r.Query["volume_percent"]);
+        Assert.False(r.Query.ContainsKey("device_id"));
+    }
 }
