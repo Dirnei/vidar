@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getApplications, getWebhookRoutes, saveApplication, dysonGetAccount, roborockGetAccount, dreoGetAccount, loxoneGetAccount, oauthAuthorize } from '../api/client';
+import { getApplications, getWebhookRoutes, saveApplication, dysonGetAccount, roborockGetAccount, dreoGetAccount, loxoneGetAccount, oauthAuthorize, rescanDevices } from '../api/client';
 import type { Application, WebhookRoute } from '../types';
 import { DysonOnboardingWizard } from './DysonOnboardingPage';
 import { RoborockOnboardingWizard } from './RoborockOnboardingPage';
@@ -123,7 +123,7 @@ const APP_DEFS: AppDef[] = [
     id: 'spotify',
     name: 'Spotify',
     icon: '\u{1F3B5}',
-    description: 'Control your Loxone Audio Server via Spotify. Register a Spotify Developer app, enter its credentials, then Authorize. Requires Spotify Premium.',
+    description: 'Control Spotify playback and route it to any Spotify Connect device (speakers, Echo, a Loxone audio device, …). Register a Spotify Developer app, enter its credentials, then Authorize. Requires Spotify Premium.',
     fields: [
       { key: 'clientId', label: 'Client ID', placeholder: 'Spotify app client ID', type: 'text' },
       { key: 'clientSecret', label: 'Client Secret', placeholder: 'Spotify app client secret', type: 'password' },
@@ -800,6 +800,20 @@ function ApplicationCard({ app, def, webhookRoutes, onSaved }: ApplicationCardPr
             style={{ marginLeft: 'auto' }}
           >
             Authorize
+          </button>
+        )}
+        {app.id === 'spotify' && (
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={async () => {
+              try { await rescanDevices('spotify'); }
+              catch (e) { setSaveError(e instanceof Error ? e.message : 'Rescan failed'); }
+            }}
+            style={{ marginLeft: 8 }}
+            title="Ask Spotify for currently-available devices and add new ones to Setup"
+          >
+            Rescan devices
           </button>
         )}
       </div>

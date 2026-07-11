@@ -279,3 +279,9 @@ export function oauthAuthorize(integrationId: string): Promise<{ authorizeUrl: s
   return request(`/oauth/${integrationId}/authorize`);
 }
 
+// On-demand device rescan (no background polling) — the plugin surfaces newly-available devices
+// into discovery.
+export function rescanDevices(integrationId: string): Promise<void> {
+  return request(`/applications/${integrationId}/rescan`, { method: 'POST' });
+}
+
