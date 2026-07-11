@@ -23,12 +23,6 @@ interface NowPlaying {
   durationMs?: number;
 }
 
-interface SpotifyZone {
-  id: string | number;
-  name: string;
-  active?: boolean;
-}
-
 function fmtTime(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return '0:00';
   const totalSec = Math.floor(ms / 1000);
@@ -66,8 +60,9 @@ const dividerStyle: React.CSSProperties = { height: 1, background: 'var(--border
 
 export function SpotifyPlayerCard({ state, cmd }: Props) {
   const now = state['now_playing'] as NowPlaying | undefined;
-  const zones = (state['zones'] as SpotifyZone[] | undefined) ?? [];
-  const activeZoneRaw = state['zone'];
+  // This card is one Spotify Connect speaker. It shows full playback only when it is the ACTIVE
+  // device (Spotify plays to one device at a time); otherwise it is a "Play here" target.
+  const isActive = state['active'] === true;
   const playing = state['playback'] === true;
   const volume = typeof state['volume'] === 'number' ? (state['volume'] as number) : 0;
 
@@ -113,71 +108,38 @@ export function SpotifyPlayerCard({ state, cmd }: Props) {
 
   // Brief optimistic spin on the refresh button (there is no ack from the worker).
   const [refreshing, setRefreshing] = React.useState(false);
-  function refreshZones() {
-    cmd('refresh_zones', true);
+  function refresh() {
     cmd('refresh', true);
     setRefreshing(true);
     window.setTimeout(() => setRefreshing(false), 1000);
   }
 
-  const statusColor = playing ? 'var(--accent-green)' : hasTrack ? 'var(--accent-primary)' : 'var(--text-muted)';
-  const statusLabel = playing ? 'Playing' : hasTrack ? 'Paused' : 'Nothing playing';
-
-  function handleZoneChange(e: React.ChangeEvent<HTMLSelectElement>) {
-    const val = e.target.value;
-    const match = zones.find(z => String(z.id) === val);
-    cmd('zone', match ? match.id : val);
-  }
+  const statusColor = isActive && playing ? 'var(--accent-green)' : isActive && hasTrack ? 'var(--accent-primary)' : 'var(--text-muted)';
+  const statusLabel = !isActive ? 'Not playing here' : playing ? 'Playing' : hasTrack ? 'Paused' : 'Nothing playing';
 
   return (
     <div style={cardStyle}>
       <style>{discStyleTag}</style>
 
-      {/* Header: status + zone picker */}
+      {/* Header: status + refresh */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ width: 9, height: 9, borderRadius: '50%', background: statusColor, flexShrink: 0 }} />
         <span style={{ fontFamily: 'var(--font-heading)', fontSize: 16, fontWeight: 700, color: statusColor }}>{statusLabel}</span>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6, maxWidth: '62%', minWidth: 0 }}>
-          {zones.length > 0 ? (
-            <select
-              value={activeZoneRaw !== undefined && activeZoneRaw !== null ? String(activeZoneRaw) : ''}
-              onChange={handleZoneChange}
-              onMouseDown={() => cmd('refresh_zones', true)}
-              aria-label="Zone"
-              style={{
-                minWidth: 0, flex: '0 1 auto', padding: '6px 10px',
-                background: 'var(--bg-hover)', color: 'var(--text-primary)',
-                border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
-                fontFamily: 'var(--font-body)', fontSize: 13, cursor: 'pointer',
-                overflow: 'hidden', textOverflow: 'ellipsis',
-              }}
-            >
-              {activeZoneRaw === undefined && <option value="" disabled>Select zone</option>}
-              {zones.map(z => (
-                <option key={z.id} value={String(z.id)}>{z.active ? `● ${z.name}` : z.name}</option>
-              ))}
-            </select>
-          ) : (
-            <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
-              No zones found
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={refreshZones}
-            aria-label="Refresh zones"
-            title="Refresh zones"
-            style={{
-              flexShrink: 0, width: 30, height: 30, padding: 0, borderRadius: '50%',
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              background: 'var(--bg-hover)', color: 'var(--text-secondary)',
-              border: '1px solid var(--border-default)', cursor: 'pointer',
-            }}
-          >
-            <RefreshIcon size={15} className={refreshing ? 'spotify-refresh-spinning' : undefined} />
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={refresh}
+          aria-label="Refresh"
+          title="Refresh"
+          style={{
+            marginLeft: 'auto', flexShrink: 0, width: 30, height: 30, padding: 0, borderRadius: '50%',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            background: 'var(--bg-hover)', color: 'var(--text-secondary)',
+            border: '1px solid var(--border-default)', cursor: 'pointer',
+          }}
+        >
+          <RefreshIcon size={15} className={refreshing ? 'spotify-refresh-spinning' : undefined} />
+        </button>
       </div>
 
       {/* Hero: disc + track info */}
@@ -196,7 +158,7 @@ export function SpotifyPlayerCard({ state, cmd }: Props) {
             />
           )}
           <div
-            className={playing && art ? 'spotify-disc-spinning' : undefined}
+            className={isActive && playing && art ? 'spotify-disc-spinning' : undefined}
             style={{
               position: 'relative', zIndex: 1, width: '100%', height: '100%', borderRadius: '50%',
               overflow: 'hidden', background: 'var(--bg-hover)', border: '1px solid var(--border-default)',
@@ -228,7 +190,7 @@ export function SpotifyPlayerCard({ state, cmd }: Props) {
             fontSize: 14, color: 'var(--text-secondary)', marginTop: 3,
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>
-            {artist ?? (zones.length > 0 ? 'Start something on Spotify' : 'Connect Spotify to control this zone')}
+            {artist ?? (isActive ? 'Start something on Spotify' : 'Not playing here')}
           </div>
           {album && (
             <div style={{
@@ -241,47 +203,62 @@ export function SpotifyPlayerCard({ state, cmd }: Props) {
         </div>
       </div>
 
-      {/* Progress */}
-      <div style={{ marginTop: 16 }}>
-        <div style={{ height: 4, borderRadius: 2, background: 'var(--bg-hover)', overflow: 'hidden' }}>
-          <div style={{ height: '100%', width: `${pct}%`, borderRadius: 2, background: statusColor, transition: 'width 0.3s' }} />
+      {/* Progress (only meaningful on the active speaker) */}
+      {isActive && (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ height: 4, borderRadius: 2, background: 'var(--bg-hover)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${pct}%`, borderRadius: 2, background: statusColor, transition: 'width 0.3s' }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
+            <span>{fmtTime(progressMs)}</span>
+            <span>{fmtTime(durationMs)}</span>
+          </div>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-body)' }}>
-          <span>{fmtTime(progressMs)}</span>
-          <span>{fmtTime(durationMs)}</span>
-        </div>
-      </div>
+      )}
 
-      {/* Transport */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginTop: 18 }}>
-        <button
-          type="button"
-          className="btn-secondary"
-          aria-label="Previous track"
-          onClick={() => cmd('track', 'previous')}
-          style={transportBtnStyle}
-        >
-          <SkipBackIcon size={16} />
-        </button>
-        <button
-          type="button"
-          className="btn-primary"
-          aria-label={playing ? 'Pause' : 'Play'}
-          onClick={() => cmd('playback', !playing)}
-          style={playBtnStyle}
-        >
-          {playing ? <PauseIcon size={20} /> : <PlayIcon size={20} />}
-        </button>
-        <button
-          type="button"
-          className="btn-secondary"
-          aria-label="Next track"
-          onClick={() => cmd('track', 'next')}
-          style={transportBtnStyle}
-        >
-          <SkipForwardIcon size={16} />
-        </button>
-      </div>
+      {/* Transport when active; "Play here" (transfer the stream to this speaker) when not */}
+      {isActive ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginTop: 18 }}>
+          <button
+            type="button"
+            className="btn-secondary"
+            aria-label="Previous track"
+            onClick={() => cmd('track', 'previous')}
+            style={transportBtnStyle}
+          >
+            <SkipBackIcon size={16} />
+          </button>
+          <button
+            type="button"
+            className="btn-primary"
+            aria-label={playing ? 'Pause' : 'Play'}
+            onClick={() => cmd('playback', !playing)}
+            style={playBtnStyle}
+          >
+            {playing ? <PauseIcon size={20} /> : <PlayIcon size={20} />}
+          </button>
+          <button
+            type="button"
+            className="btn-secondary"
+            aria-label="Next track"
+            onClick={() => cmd('track', 'next')}
+            style={transportBtnStyle}
+          >
+            <SkipForwardIcon size={16} />
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 18 }}>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => cmd('playback', true)}
+            style={{ padding: '10px 24px', borderRadius: 999, fontWeight: 600 }}
+          >
+            Play here
+          </button>
+        </div>
+      )}
 
       {/* Volume */}
       <div style={dividerStyle} />
