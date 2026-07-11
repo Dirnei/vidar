@@ -106,6 +106,17 @@ public sealed class ApplicationsController : ControllerBase
         return NoContent();
     }
 
+    // On-demand device rescan: routes a RescanDevices message to the plugin so it can surface newly
+    // available devices into discovery without any background polling (e.g. a "Rescan devices" button).
+    [HttpPost("{id}/rescan")]
+    public async Task<IActionResult> Rescan(string id)
+    {
+        var pluginRegistry = await _pluginRegistryProvider.GetAsync();
+        pluginRegistry.Tell(new RouteToPlugin(id, new RescanDevices(id)));
+        _logger.LogInformation("Requested device rescan for {Id}", id);
+        return Accepted();
+    }
+
     private async Task<Dictionary<string, ApplicationStatusUpdate>> GetStatusesAsync()
     {
         var statusActor = await _statusActorProvider.GetAsync();

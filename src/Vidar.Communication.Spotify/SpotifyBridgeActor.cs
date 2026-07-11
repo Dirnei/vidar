@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -22,6 +23,8 @@ public sealed class SpotifyBridgeActor : PluginActorBase
     protected override string PluginId => "spotify";
 
     private const string ApiBase = "https://api.spotify.com/v1";
+    // The central "control-from-one-place + device picker" device, alongside the per-speaker devices.
+    private const string PlayerNativeId = "player";
 
     private readonly string _tokenFilePath;
     private readonly SpotifyVolumeStore _volumeStore;
@@ -59,6 +62,9 @@ public sealed class SpotifyBridgeActor : PluginActorBase
         Receive<RefreshNow>(msg => { _ = FetchAllAsync(); });
         Receive<VolumesLoaded>(m => _volumes = m.Volumes);
         Receive<DevicesFetched>(OnDevicesFetched);
+        // "Rescan devices" button (host → plugin): one-shot fetch so newly-available Connect devices
+        // surface into discovery. No background polling.
+        Receive<RescanDevices>(_ => { if (IsEnabled) Self.Tell(RefreshNow.Instance); });
         Receive<VolumeChanged>(m => { _volumes[m.NativeId] = m.Volume; _ = PersistVolumesAsync(); });
 
         Receive<OAuthCallbackReceived>(OnOAuthCallback);
@@ -192,8 +198,11 @@ public sealed class SpotifyBridgeActor : PluginActorBase
         if (cmd.CapabilityKey is "refresh" or "refresh_zones") { self.Tell(RefreshNow.Instance); return; }
         if (_oauth is null || _http is null) { Log.Warning("Spotify command dropped — not authorized"); return; }
 
-        var isActive = _activeDeviceId == cmd.NativeId;
-        var spec = SpotifyCommandBuilder.Build(cmd.CapabilityKey, cmd.Value, cmd.NativeId, isActive);
+        // The central player (nativeId "player") is not a real Connect device: it acts on whatever is
+        // currently active (no device_id) and moves the stream via `zone`. A speaker targets its own id.
+        var spec = cmd.NativeId == PlayerNativeId
+            ? SpotifyCommandBuilder.Build(cmd.CapabilityKey, cmd.Value, null, isActive: true)
+            : SpotifyCommandBuilder.Build(cmd.CapabilityKey, cmd.Value, cmd.NativeId, _activeDeviceId == cmd.NativeId);
         if (spec is null) { Log.Warning("Unrecognized Spotify command {Key}={Value}", cmd.CapabilityKey, cmd.Value); return; }
 
         var token = await _oauth.GetAccessTokenAsync(CancellationToken.None);
@@ -207,7 +216,9 @@ public sealed class SpotifyBridgeActor : PluginActorBase
         // The mutation + persist are marshalled back onto the actor thread via a self-message: this
         // continuation runs off the actor thread, and _volumes is a plain Dictionary shared with
         // OnDevicesFetched (which runs on the actor thread), so touching it here would race.
-        if (cmd.CapabilityKey == "volume")
+        // Persist a speaker's chosen volume (not the central player's — its volume mirrors the active
+        // device and is refreshed on the next fetch).
+        if (cmd.CapabilityKey == "volume" && cmd.NativeId != PlayerNativeId)
             self.Tell(new VolumeChanged(cmd.NativeId, ToVolume(cmd.Value)));
 
         self.Tell(RefreshNow.Instance); // reflect the change quickly
@@ -250,6 +261,10 @@ public sealed class SpotifyBridgeActor : PluginActorBase
             Discover(Guid.NewGuid(), d.Id, SpotifyCapabilities.Build(),
                 new Dictionary<string, string> { ["name"] = d.Name });
         }
+        // Also surface the central "Spotify Player" device (control-from-one-place + device picker).
+        if (GetDeviceId(PlayerNativeId) is null)
+            Discover(Guid.NewGuid(), PlayerNativeId, SpotifyCapabilities.BuildPlayer(),
+                new Dictionary<string, string> { ["name"] = "Spotify Player" });
 
         // 2) Persist any live volumes that changed.
         var changed = false;
@@ -261,10 +276,25 @@ public sealed class SpotifyBridgeActor : PluginActorBase
             }
         if (changed) _ = PersistVolumesAsync();
 
-        // 3) Fan the single global playback state out to every accepted twin.
-        foreach (var (deviceId, updates) in SpotifyFanOut.Build(m.Playback, m.Devices, _accepted, _volumes))
+        // 3) Fan per-speaker state out to accepted speaker twins (the central player is not a real
+        //    Connect device, so exclude it and populate it separately below).
+        var speakers = _accepted.Where(kv => kv.Key != PlayerNativeId).ToDictionary(kv => kv.Key, kv => kv.Value);
+        foreach (var (deviceId, updates) in SpotifyFanOut.Build(m.Playback, m.Devices, speakers, _volumes))
             foreach (var (key, value) in updates)
                 ReportState(deviceId, key, value);
+
+        // 3b) The central "Spotify Player" device: global playback state + the full device list for its
+        //     picker (zones) + the active device id (zone).
+        if (GetDeviceId(PlayerNativeId) is Guid playerId)
+        {
+            ReportState(playerId, "playback", m.Playback.IsPlaying);
+            ReportState(playerId, "now_playing", m.Playback.NowPlaying);
+            if (m.Playback.ActiveVolumePercent is int vol) ReportState(playerId, "volume", vol);
+            ReportState(playerId, "zones", m.Devices
+                .Select(d => (object)new Dictionary<string, object> { ["id"] = d.Id, ["name"] = d.Name, ["active"] = d.IsActive })
+                .ToList());
+            if (m.Playback.ActiveDeviceId is string az) ReportState(playerId, "zone", az);
+        }
     }
 
     // v1: no cheap access to the accepted device's friendly name (RegisterDeviceForPolling carries
